@@ -9,6 +9,7 @@ using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Api.Tickets;
 
@@ -39,13 +40,10 @@ public static class TicketAttachmentEndpoints
             CancellationToken ct) =>
         {
             // Queue-access first — return 404 to avoid leaking ticket existence.
-            var ticket = await tickets.GetCoreAsync(id, ct);
-            if (ticket is null) return Results.NotFound();
-
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
-                return Results.NotFound();
+            var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
+            if (ticket is null) return Results.NotFound();
 
             var stored = await StoreUploadedFileAsync(http, id, attachments, blobs, settings, ct);
             if (stored.Error is not null) return stored.Error;
@@ -91,13 +89,10 @@ public static class TicketAttachmentEndpoints
             IAttachmentRepository attachments, IBlobStore blobs,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var ticket = await tickets.GetCoreAsync(id, ct);
-            if (ticket is null) return Results.NotFound();
-
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
-                return Results.NotFound();
+            var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
+            if (ticket is null) return Results.NotFound();
 
             var att = await attachments.GetByIdAsync(attachmentId, ct);
             if (att is null) return Results.NotFound();

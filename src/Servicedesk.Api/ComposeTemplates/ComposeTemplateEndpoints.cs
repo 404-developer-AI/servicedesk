@@ -9,6 +9,7 @@ using Servicedesk.Infrastructure.ComposeTemplates;
 using Servicedesk.Infrastructure.KnowledgeBase;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Access;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Api.ComposeTemplates;
 
@@ -296,10 +297,8 @@ public static class ComposeTemplateEndpoints
             {
                 var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
                 var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-                var ticket = await tickets.GetCoreAsync(ticketGuid, ct);
+                var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, ticketGuid, ct);
                 if (ticket is null) return Results.NotFound();
-                if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
-                    return Results.NotFound();
 
                 tokens = await resolver.ResolveForTicketAsync(ticketGuid, agentEmail, ct);
             }

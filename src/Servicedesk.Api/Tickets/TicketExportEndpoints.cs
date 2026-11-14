@@ -10,6 +10,7 @@ using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Api.Tickets;
 
@@ -28,13 +29,10 @@ public static class TicketExportEndpoints
             IAttachmentRepository attachmentRepo, IBlobStore blobStore,
             [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var detail = await repo.GetByIdAsync(id, ct);
-            if (detail is null) return Results.NotFound();
-
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, detail.Ticket.QueueId, ct))
-                return Results.NotFound();
+            var detail = await repo.GetAccessibleDetailAsync(queueAccess, userId, role, id, ct);
+            if (detail is null) return Results.NotFound();
 
             // Enrich mail events with HTML body from blob storage and attachment metadata
             detail = await mailEnricher.EnrichAsync(detail, ct);

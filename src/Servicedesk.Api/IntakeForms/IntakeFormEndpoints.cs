@@ -12,6 +12,7 @@ using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.IntakeForms;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Triggers;
 
 namespace Servicedesk.Api.IntakeForms;
@@ -553,9 +554,7 @@ public static class IntakeFormEndpoints
     {
         var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-        var ticket = await tickets.GetCoreAsync(ticketId, ct);
-        if (ticket is null) return false;
-        return await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct);
+        return await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, ticketId, ct) is not null;
     }
 
     private static async Task<string?> ValidateTemplateRequestAsync(

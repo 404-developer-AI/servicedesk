@@ -7,6 +7,7 @@ using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Api.Tickets;
 
@@ -219,10 +220,8 @@ public static class TicketProjectEndpoints
         var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-        var detail = await tickets.GetCoreAsync(ticketId, ct);
+        var detail = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, ticketId, ct);
         if (detail is null) return new AccessCheck(userId, role, null, Results.NotFound());
-        if (!await queueAccess.HasQueueAccessAsync(userId, role, detail.QueueId, ct))
-            return new AccessCheck(userId, role, null, Results.NotFound());
         return new AccessCheck(userId, role, detail, null);
     }
 

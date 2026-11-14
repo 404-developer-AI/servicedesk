@@ -11,6 +11,7 @@ using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Api.Iso27001;
 
@@ -162,10 +163,8 @@ public static class IsoEndpoints
         // 4. Load ticket + queue-access gate (same 404-leak pattern as
         //    the rest of the ticket endpoints — unauthorized callers get
         //    NotFound, never a hint that the ticket exists).
-        var detail = await tickets.GetCoreAsync(ticketId, ct);
+        var detail = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, ticketId, ct);
         if (detail is null) return Results.NotFound();
-        if (!await queueAccess.HasQueueAccessAsync(userId, userRole, detail.QueueId, ct))
-            return Results.NotFound();
 
         // 5. Queue + status match the workflow's expected stage.
         if (detail.QueueId != configuredQueueId)

@@ -7,6 +7,7 @@ using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Api.Tickets;
 
@@ -27,13 +28,10 @@ public static class TicketMailEndpoints
             IBlobStore blobs, IQueueAccessService queueAccess, IAuditLogger audit,
             CancellationToken ct) =>
         {
-            var ticket = await tickets.GetCoreAsync(id, ct);
-            if (ticket is null) return Results.NotFound();
-
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
-                return Results.NotFound();
+            var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
+            if (ticket is null) return Results.NotFound();
 
             var row = await mail.GetByIdAsync(mailMessageId, ct);
             if (row is null || row.TicketId != id) return Results.NotFound();
@@ -74,13 +72,10 @@ public static class TicketMailEndpoints
             IQueueAccessService queueAccess, IAuditLogger audit,
             CancellationToken ct) =>
         {
-            var ticket = await tickets.GetCoreAsync(id, ct);
-            if (ticket is null) return Results.NotFound();
-
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
-                return Results.NotFound();
+            var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
+            if (ticket is null) return Results.NotFound();
 
             var att = await attachments.GetByIdAsync(attachmentId, ct);
             if (att is null) return Results.NotFound();

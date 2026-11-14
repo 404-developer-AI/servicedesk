@@ -57,13 +57,10 @@ public static class TicketClaudeEndpoints
         [FromServices] Npgsql.NpgsqlDataSource dataSource,
         CancellationToken ct)
     {
-        var ticket = await tickets.GetCoreAsync(id, ct);
-        if (ticket is null) return Results.NotFound();
-
         var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-        if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
-            return Results.NotFound();
+        var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
+        if (ticket is null) return Results.NotFound();
 
         // Three ownership paths surface a ticket's images:
         //  (a) agent uploads staged directly on the ticket (owner Ticket, no event)
@@ -260,13 +257,10 @@ public static class TicketClaudeEndpoints
         Func<ClaudeProposalResult, Task<IResult>> okBody,
         CancellationToken ct)
     {
-        var ticket = await tickets.GetCoreAsync(id, ct);
-        if (ticket is null) return Results.NotFound();
-
         var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-        if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
-            return Results.NotFound();
+        var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
+        if (ticket is null) return Results.NotFound();
 
         // Per-queue availability gate. The button is hidden client-side when a
         // queue has AI assist switched off, but the same check is enforced here
