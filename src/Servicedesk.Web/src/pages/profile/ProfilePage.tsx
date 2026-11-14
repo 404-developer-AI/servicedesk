@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, ChevronRight } from "lucide-react";
+import { AtSign, ChevronRight, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/auth/authStore";
 import { TwoFactorSection } from "@/pages/profile/TwoFactorSection";
@@ -82,6 +82,24 @@ export function ProfilePage() {
             <div className="text-sm font-medium">My tags</div>
             <div className="text-xs text-muted-foreground">
               Every @@-tag you have received, with its acknowledged / viewed status.
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </Link>
+      ) : null}
+
+      {isAgent ? (
+        <Link
+          to="/profile/group-tags"
+          className="glass-card flex items-center gap-3 p-4 transition-colors hover:bg-glass-hover"
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/25 bg-primary/10">
+            <Users className="h-4 w-4 text-primary" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">My group tags</div>
+            <div className="text-xs text-muted-foreground">
+              Tags for the groups you belong to, with who acknowledged them.
             </div>
           </div>
           <ChevronRight className="h-4 w-4 text-muted-foreground" />

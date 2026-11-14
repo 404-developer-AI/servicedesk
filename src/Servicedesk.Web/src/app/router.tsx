@@ -742,6 +742,14 @@ const profileMentionsRoute = createRoute({
   component: MentionHistoryPage,
 });
 
+// v0.1.54 — history of the group tags of the user's groups.
+const profileGroupTagsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/profile/group-tags",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: lazyRouteComponent(() => import("@/pages/profile/GroupTagHistoryPage"), "GroupTagHistoryPage"),
+});
+
 // Parent route renders the master-detail layout (secondary nav rail + Outlet).
 // Each section is a child route so every category has its own URL and the
 // back-button / deep-linking work naturally.
@@ -1211,6 +1219,7 @@ const routeTree = rootRoute.addChildren([
   kbArticleEditRoute,
   profileRoute,
   profileMentionsRoute,
+  profileGroupTagsRoute,
   activityFeedRoute,
   assetsRoute,
   ordersRoute,

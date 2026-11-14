@@ -67,6 +67,16 @@ describe("splitMentions", () => {
     expect(splitMentions([jan, sales])).toEqual({
       userIds: [jan.id],
       mailboxIds: ["33333333-3333-3333-3333-333333333333"],
+      groupIds: [],
+    });
+  });
+
+  it("routes group-tag ids to their own bucket without the prefix", () => {
+    const group = { id: "group:44444444-4444-4444-4444-444444444444", label: "Back office", kind: "group" as const };
+    expect(splitMentions([jan, group])).toEqual({
+      userIds: [jan.id],
+      mailboxIds: [],
+      groupIds: ["44444444-4444-4444-4444-444444444444"],
     });
   });
 });

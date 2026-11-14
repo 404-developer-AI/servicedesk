@@ -12,6 +12,7 @@ import { usePresenceConnection } from "@/hooks/usePresence";
 import { useNotificationSignalR } from "@/hooks/useNotificationSignalR";
 import { useTimesheetCommentsSignalR } from "@/hooks/useTimesheetCommentsSignalR";
 import { useBackofficeFormsSignalR } from "@/hooks/useBackofficeFormsSignalR";
+import { useGroupTagsSignalR } from "@/hooks/useGroupTagsSignalR";
 import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { useTelavoxCallStream } from "@/hooks/useTelavoxCallStream";
 import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
@@ -49,6 +50,8 @@ export function AppShell() {
   });
   const popupDurationMs = (notificationSettings.data?.popupDurationSeconds ?? 10) * 1000;
   useNotificationSignalR(popupDurationMs);
+  // v0.1.54 — group tags (toast + shared block refresh).
+  useGroupTagsSignalR(popupDurationMs);
   // v0.0.84 — Timesheet → Comments per-user push (red dots + inbox refresh).
   useTimesheetCommentsSignalR();
 
