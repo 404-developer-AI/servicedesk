@@ -87,6 +87,11 @@ describe("http", () => {
     expect(apiFieldErrors(err)).toEqual({ start: "Required" });
   });
 
+  it("reads ProblemDetails detail/title as the message", () => {
+    expect(apiErrorMessage(new ApiError(409, "/u", "x", { title: "Conflict", detail: "Cancel is disabled." }))).toBe("Cancel is disabled.");
+    expect(apiErrorMessage(new ApiError(500, "/u", "x", { title: "An error occurred" }))).toBe("An error occurred");
+  });
+
   it("tolerates a non-JSON error body", async () => {
     mockFetch(() => new Response("<html>oops</html>", { status: 502 }));
     const err = await requestResponse("GET", "/api/x").catch((e: unknown) => e);

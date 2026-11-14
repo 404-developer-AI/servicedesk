@@ -30,8 +30,9 @@ export class ApiError extends Error {
 }
 
 /// Human-readable server message of an `ApiError`: `body.message`, else
-/// `body.error`. `null` when there is none — callers then show their own
-/// fallback text.
+/// `body.error` (the API's `{ error, message }` shape), else a ProblemDetails
+/// `detail` / `title`. `null` when there is none — callers then show their
+/// own fallback text.
 export function apiErrorMessage(err: unknown): string | null {
   if (!(err instanceof ApiError) || err.body === null || typeof err.body !== "object") {
     return null;
@@ -39,6 +40,8 @@ export function apiErrorMessage(err: unknown): string | null {
   const b = err.body as Record<string, unknown>;
   if (typeof b.message === "string" && b.message.length > 0) return b.message;
   if (typeof b.error === "string" && b.error.length > 0) return b.error;
+  if (typeof b.detail === "string" && b.detail.length > 0) return b.detail;
+  if (typeof b.title === "string" && b.title.length > 0) return b.title;
   return null;
 }
 

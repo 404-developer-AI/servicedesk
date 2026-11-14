@@ -95,9 +95,7 @@ public static class TicketTimesheetEndpoints
             if (!effectiveSilent
                 && !await settings.GetAsync<bool>(SettingKeys.Timesheet.TimeAlertAllowCancel, ct))
             {
-                return Results.Problem(
-                    "Cancel is disabled for this warning — allow more time or disable hour tracking.",
-                    statusCode: 409);
+                return Results.Json(new { error = "Cancel is disabled for this warning — allow more time or disable hour tracking." }, statusCode: 409);
             }
             await svc.DismissAsync(ticketId, ActorContext.GetUserId(http), effectiveSilent, ct);
             return Results.NoContent();
@@ -124,11 +122,11 @@ public static class TicketTimesheetEndpoints
             {
                 TicketTimeAlertExtendResult.Ok => Results.NoContent(),
                 TicketTimeAlertExtendResult.NotConfirmed =>
-                    Results.Problem("Customer confirmation is required before raising the limit.", statusCode: 422),
+                    Results.Json(new { error = "Customer confirmation is required before raising the limit." }, statusCode: 422),
                 TicketTimeAlertExtendResult.InvalidMinutes =>
-                    Results.Problem("The number of minutes to add is invalid.", statusCode: 400),
+                    Results.Json(new { error = "The number of minutes to add is invalid." }, statusCode: 400),
                 TicketTimeAlertExtendResult.TicketNotFound => Results.NotFound(),
-                _ => Results.Problem("Could not raise the ticket limit.", statusCode: 409),
+                _ => Results.Json(new { error = "Could not raise the ticket limit." }, statusCode: 409),
             };
         })
         .WithName("ExtendTicketTimeAlert")
@@ -153,9 +151,9 @@ public static class TicketTimesheetEndpoints
             {
                 TicketTimeAlertDisableResult.Ok => Results.NoContent(),
                 TicketTimeAlertDisableResult.ReasonRequired =>
-                    Results.Problem("A reason is required to disable hour tracking.", statusCode: 422),
+                    Results.Json(new { error = "A reason is required to disable hour tracking." }, statusCode: 422),
                 TicketTimeAlertDisableResult.TicketNotFound => Results.NotFound(),
-                _ => Results.Problem("Could not disable hour tracking.", statusCode: 409),
+                _ => Results.Json(new { error = "Could not disable hour tracking." }, statusCode: 409),
             };
         })
         .WithName("DisableTicketTimeAlert")

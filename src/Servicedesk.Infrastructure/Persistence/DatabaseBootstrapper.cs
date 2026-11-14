@@ -2076,19 +2076,19 @@ public sealed class DatabaseBootstrapper : IHostedService
             END IF;
         END $do$;
 
-        -- v0.0.27 — bestaande installs die op de v0.0.26-scope-lijst zaten
+        -- v0.0.27 — existing installs on the v0.0.26 scope list
         -- ('openid offline_access profile WK.BE.Administrations
-        -- WK.BE.Accounting.Read') krijgen WK.BE.Accounting.Write erbij,
-        -- anders komt elke push-tak PUT/POST terug als 403 vanuit Wolters
-        -- Kluwer. Niet idempotent qua effect (we schrijven settings.value),
-        -- dus achter een data_migrations marker. De saved scope-string zal
-        -- na deze append verschillen van scopes_at_authorize op de actieve
-        -- connectie → de "Reconnect required"-pill in de UI fire'd
-        -- automatisch zodra de admin de pagina opent.
+        -- WK.BE.Accounting.Read') get WK.BE.Accounting.Write appended;
+        -- otherwise every push PUT/POST comes back 403 from Wolters
+        -- Kluwer. Not idempotent in effect (it writes settings.value), so
+        -- it runs behind a data_migrations marker. After the append the
+        -- saved scope string differs from scopes_at_authorize on the active
+        -- connection, so the "Reconnect required" pill shows as soon as the
+        -- admin opens the page.
         --
-        -- We raken alleen de Adsolut.Scopes-rij aan, alleen wanneer de
-        -- scope nog ontbreekt, en preserveren de bestaande spaties +
-        -- volgorde door eenvoudig te concateneren.
+        -- Only the Adsolut.Scopes row is touched, only when the scope is
+        -- still missing, and existing spacing and order are kept by plain
+        -- concatenation.
         DO $do$
         BEGIN
             IF NOT EXISTS (
@@ -2179,8 +2179,8 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- reserved columns for a future KbScheduleWorker; both stay NULL
         -- in v0.0.31.
         --
-        -- Attachments hergebruiken het bestaande blob-pipeline-pattern via
-        -- owner_kind='KbArticle'. Geen separate KB-attachment-tabel.
+        -- Attachments reuse the existing blob pipeline via
+        -- owner_kind='KbArticle'. No separate KB attachment table.
         --
         -- FTS-config: 'simple' + lower() — unaccent() is STABLE and cannot
         -- live in a STORED generated column on this install layout.
@@ -4061,9 +4061,9 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS last_rds_counts   JSONB       NOT NULL DEFAULT '{}'::jsonb;
 
         -- Per-user opt-in flag for the Assets page (mirrors kb_enabled,
-        -- timesheet_enabled, activity_feed_enabled). Customer-rol blijft
-        -- altijd geblokkeerd op route- en search-source-niveau; deze flag
-        -- bestaat alleen voor Agent en Admin.
+        -- timesheet_enabled, activity_feed_enabled). The Customer role stays
+        -- blocked at route and search-source level regardless; this flag
+        -- exists for Agent and Admin only.
         ALTER TABLE users
             ADD COLUMN IF NOT EXISTS assets_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
