@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Mailbox } from "lucide-react";
+import { Mailbox, Users } from "lucide-react";
 import type { MentionPickerItem } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +28,7 @@ export const MentionList = React.forwardRef<MentionListHandle, MentionListProps>
     }, [items]);
 
     const labelFor = React.useCallback((item: MentionPickerItem) => {
-      if (item.kind === "mailbox") return item.label ?? item.email;
+      if (item.kind === "mailbox" || item.kind === "group") return item.label ?? item.email;
       return item.email.split("@")[0] || item.email;
     }, []);
 
@@ -82,6 +82,7 @@ export const MentionList = React.forwardRef<MentionListHandle, MentionListProps>
           items.map((item, i) => {
             const isSelected = i === selectedIndex;
             const isMailbox = item.kind === "mailbox";
+            const isGroup = item.kind === "group";
             const label = labelFor(item);
             return (
               <button
@@ -104,8 +105,9 @@ export const MentionList = React.forwardRef<MentionListHandle, MentionListProps>
                 {isMailbox && (
                   <Mailbox className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" />
                 )}
+                {isGroup && <Users className="size-3.5 shrink-0 text-primary" />}
                 <span className="font-medium shrink-0">
-                  {isMailbox ? label : `@${label}`}
+                  {isMailbox || isGroup ? label : `@${label}`}
                 </span>
                 <span className="text-xs text-muted-foreground/70 truncate">
                   {item.email}
@@ -113,7 +115,9 @@ export const MentionList = React.forwardRef<MentionListHandle, MentionListProps>
                 <span
                   className={cn(
                     "ml-auto shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
-                    isMailbox
+                    isGroup
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : isMailbox
                       ? "border-emerald-400/60 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-200"
                       : item.roleName === "Admin"
                         ? "border-amber-400/60 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"

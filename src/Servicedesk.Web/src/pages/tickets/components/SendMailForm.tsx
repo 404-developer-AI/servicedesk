@@ -552,7 +552,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
 
   const mutation = useMutation({
     mutationFn: () => {
-      const { userIds, mailboxIds } = splitMentionIds(mentionedUserIds);
+      const { userIds, mailboxIds, groupIds } = splitMentionIds(mentionedUserIds);
       return ticketApi.sendMail(ticketId, {
         kind,
         to,
@@ -563,6 +563,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         attachmentIds: attachments.readyAttachmentIds,
         mentionedUserIds: userIds.length > 0 ? userIds : undefined,
         mentionedMailboxIds: mailboxIds.length > 0 ? mailboxIds : undefined,
+        mentionedGroupIds: groupIds.length > 0 ? groupIds : undefined,
         linkedFormIds: linkedFormIds.length > 0 ? linkedFormIds : undefined,
         // True when a signature was pre-loaded for this composition: the server
         // then swaps the body's marker for the real signature (or, if the agent

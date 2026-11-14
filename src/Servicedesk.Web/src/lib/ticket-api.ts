@@ -1,4 +1,5 @@
 import { ApiError, request } from "@/lib/http";
+import { tagGroupApi } from "@/lib/group-tags-api";
 
 // One ApiError class for the whole app (lib/http.ts). Re-exported for
 // existing importers.
@@ -721,6 +722,9 @@ export type NewTicketEvent = {
   /// Tagging-only mailbox ids tagged via @@-mention. Filtered to active rows
   /// server-side; each receives a notification mail (no in-app entry).
   mentionedMailboxIds?: string[];
+  /// v0.1.54 — group-tag ids tagged via @@-mention: one shared tag for the
+  /// group's members, never a mail.
+  mentionedGroupIds?: string[];
 };
 
 export type TicketAttachmentMeta = {
@@ -766,6 +770,8 @@ export type SendOutboundMailRequest = {
   mentionedUserIds?: string[];
   /// Tagging-only mailbox ids tagged via @@-mention. See NewTicketEvent.
   mentionedMailboxIds?: string[];
+  /// Group-tag ids tagged via @@-mention. See NewTicketEvent.
+  mentionedGroupIds?: string[];
   /// Intake-form instance ids embedded via `::`-mention (v0.0.19). Each id
   /// must be a Draft instance owned by this ticket; the server mints a
   /// token, embeds the public link in the body and atomically flips the
@@ -869,7 +875,7 @@ export type MentionPickerItem = {
   id: string;
   email: string;
   roleName: string;
-  kind: "agent" | "mailbox";
+  kind: "agent" | "mailbox" | "group";
   /// Display label; mailboxes use their friendly name, agents the email local-part.
   label?: string;
 };
@@ -1543,13 +1549,15 @@ export const mailMailboxApi = {
     ),
 };
 
-/// Merged @@-mention typeahead: agents first, then tagging mailboxes. Mailbox
-/// ids are prefixed `mbox:` so the submit-time split routes them correctly.
+/// Merged @@-mention typeahead: agents first, then group tags, then tagging
+/// mailboxes. Mailbox ids are prefixed `mbox:` and group ids `group:` so the
+/// submit-time split routes them correctly.
 export const mentionApi = {
   search: async (q: string): Promise<MentionPickerItem[]> => {
-    const [agents, mailboxes] = await Promise.all([
+    const [agents, mailboxes, groups] = await Promise.all([
       userApi.searchAgents(q),
       taggingMailboxApi.searchForMention(q),
+      tagGroupApi.searchForMention(q).catch(() => []),
     ]);
     const agentItems: MentionPickerItem[] = agents.map((a) => ({
       id: a.id,
@@ -1564,7 +1572,14 @@ export const mentionApi = {
       kind: "mailbox",
       label: m.name,
     }));
-    return [...agentItems, ...mailboxItems];
+    const groupItems: MentionPickerItem[] = groups.map((g) => ({
+      id: `group:${g.id}`,
+      email: `${g.memberCount} member${g.memberCount === 1 ? "" : "s"}`,
+      roleName: "Group",
+      kind: "group",
+      label: g.name,
+    }));
+    return [...agentItems, ...groupItems, ...mailboxItems];
   },
 };
 

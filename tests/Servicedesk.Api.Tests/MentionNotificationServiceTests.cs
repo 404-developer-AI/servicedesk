@@ -54,6 +54,35 @@ public sealed class MentionNotificationServiceTests
     }
 
     [Fact]
+    public async Task Group_mention_writes_one_shared_tag_pushes_members_and_never_mails()
+    {
+        var repo = new StubRepo();
+        var notifier = new StubNotifier();
+        var graph = new StubGraph();
+        var settings = new StubSettings();
+        settings.Set(SettingKeys.Notifications.MentionEmailEnabled, "true");
+        var groupId = Guid.NewGuid();
+        var member = Guid.NewGuid();
+        var groups = new StubTagGroups();
+        groups.Active[groupId] = ("Back office", new List<Guid> { member, SourceUserId });
+        var tags = new StubGroupTags();
+        var groupPush = new RecordingGroupTagNotifier();
+        var svc = new MentionNotificationService(repo, notifier, new StubUsers("bob@example.com"),
+            new StubTaxonomy("support@desk.test"), graph, settings, new StubTaggingMailboxes(),
+            groups, tags, groupPush, NullLogger<MentionNotificationService>.Instance);
+
+        await svc.PublishAsync(MakeSource(Array.Empty<Guid>()) with { MentionedGroupIds = new[] { groupId, Guid.NewGuid() } }, default);
+
+        var tag = Assert.Single(tags.Created);          // unknown/inactive group dropped
+        Assert.Equal(groupId, tag.GroupId);
+        var push = Assert.Single(groupPush.Received);
+        Assert.Equal(new[] { member }, push.Users);     // the author is not pushed
+        Assert.Empty(graph.Sent);                       // never a mail
+        Assert.Empty(repo.Rows);                        // no personal bell rows
+        Assert.Empty(notifier.Pushed);
+    }
+
+    [Fact]
     public async Task Profile_mail_opt_out_keeps_the_bell_but_sends_no_mail()
     {
         var (svc, repo, notifier, graph, _) = Build(
@@ -151,7 +180,8 @@ public sealed class MentionNotificationServiceTests
         tagging.Active.Add(new TaggingMailbox(
             mailboxId, "Accounting", "accounting@desk.test", true, DateTime.UtcNow, DateTime.UtcNow));
         var svc = new MentionNotificationService(repo, notifier, users, taxonomy, graph, settings,
-            tagging, NullLogger<MentionNotificationService>.Instance);
+            tagging, new StubTagGroups(), new StubGroupTags(), new RecordingGroupTagNotifier(),
+            NullLogger<MentionNotificationService>.Instance);
 
         await svc.PublishAsync(MakeSource(Array.Empty<Guid>(), new[] { mailboxId }), default);
 
@@ -182,7 +212,8 @@ public sealed class MentionNotificationServiceTests
         tagging.Active.Add(new TaggingMailbox(
             mailboxId, "Old Box", "old@desk.test", false, DateTime.UtcNow, DateTime.UtcNow));
         var svc = new MentionNotificationService(repo, notifier, users, taxonomy, graph, settings,
-            tagging, NullLogger<MentionNotificationService>.Instance);
+            tagging, new StubTagGroups(), new StubGroupTags(), new RecordingGroupTagNotifier(),
+            NullLogger<MentionNotificationService>.Instance);
 
         await svc.PublishAsync(MakeSource(Array.Empty<Guid>(), new[] { mailboxId }), default);
 
@@ -222,7 +253,8 @@ public sealed class MentionNotificationServiceTests
         var settings = new StubSettings();
         var taggingMailboxes = new StubTaggingMailboxes();
         var svc = new MentionNotificationService(repo, notifier, users, taxonomy, graph, settings,
-            taggingMailboxes, NullLogger<MentionNotificationService>.Instance);
+            taggingMailboxes, new StubTagGroups(), new StubGroupTags(), new RecordingGroupTagNotifier(),
+            NullLogger<MentionNotificationService>.Instance);
         return (svc, repo, notifier, graph, settings);
     }
 
@@ -453,5 +485,51 @@ public sealed class MentionNotificationServiceTests
             Task.FromResult(true);
 
         public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => Task.FromResult(true);
+    }
+
+    private sealed class StubTagGroups : Servicedesk.Infrastructure.TagGroups.ITagGroupRepository
+    {
+        public Dictionary<Guid, (string Name, List<Guid> Members)> Active { get; } = new();
+        public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.TagGroupRef>> ResolveActiveByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.TagGroupRef>>(ids.Where(Active.ContainsKey)
+                .Select(i => new Servicedesk.Infrastructure.TagGroups.TagGroupRef(i, Active[i].Name, Active[i].Members.Count)).ToList());
+        public Task<IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>> ListMemberIdsAsync(IReadOnlyCollection<Guid> groupIds, CancellationToken ct)
+            => Task.FromResult<IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>>(groupIds.Where(Active.ContainsKey)
+                .ToDictionary(g => g, g => (IReadOnlyList<Guid>)Active[g].Members));
+        public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.TagGroup>> ListAsync(CancellationToken ct) => throw new NotImplementedException();
+        public Task<Servicedesk.Infrastructure.TagGroups.TagGroup?> GetAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Guid> CreateAsync(string name, bool isActive, IReadOnlyCollection<Guid> memberIds, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> UpdateAsync(Guid id, string name, bool isActive, IReadOnlyCollection<Guid> memberIds, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.TagGroupRef>> SearchActiveAsync(string? search, int limit, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> IsMemberOfAnyActiveAsync(Guid userId, CancellationToken ct) => throw new NotImplementedException();
+    }
+
+    private sealed class StubGroupTags : Servicedesk.Infrastructure.TagGroups.IGroupTagRepository
+    {
+        public List<Servicedesk.Infrastructure.TagGroups.NewGroupTag> Created { get; } = new();
+        public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.GroupTagRow>> CreateManyAsync(
+            IReadOnlyList<Servicedesk.Infrastructure.TagGroups.NewGroupTag> rows, CancellationToken ct)
+        {
+            Created.AddRange(rows);
+            return Task.FromResult<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.GroupTagRow>>(rows.Select(r =>
+                new Servicedesk.Infrastructure.TagGroups.GroupTagRow(Guid.NewGuid(), r.GroupId, "Group", r.TicketId, r.TicketNumber,
+                    r.TicketSubject, r.EventId, r.EventType, r.SourceUserId, null, r.PreviewText, DateTime.UtcNow, null, null, null)).ToList());
+        }
+        public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.GroupTagRow>> ListPendingForUserAsync(Guid userId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.GroupTagRow>> ListHistoryForUserAsync(Guid userId, Servicedesk.Infrastructure.TagGroups.GroupTagCursor? cursor, int limit, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Guid?> AckAsync(Guid tagId, Guid userId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> IsVisibleToAsync(Guid tagId, Guid userId, CancellationToken ct) => throw new NotImplementedException();
+    }
+
+    private sealed class RecordingGroupTagNotifier : Servicedesk.Infrastructure.Realtime.IGroupTagNotifier
+    {
+        public List<(IReadOnlyCollection<Guid> Users, Servicedesk.Infrastructure.Realtime.GroupTagPush Push)> Received { get; } = new();
+        public Task GroupTagReceivedAsync(IReadOnlyCollection<Guid> userIds, Servicedesk.Infrastructure.Realtime.GroupTagPush payload, CancellationToken ct)
+        {
+            Received.Add((userIds, payload));
+            return Task.CompletedTask;
+        }
+        public Task GroupTagsChangedAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct) => Task.CompletedTask;
     }
 }

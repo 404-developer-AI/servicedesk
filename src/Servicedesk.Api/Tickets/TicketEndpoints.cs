@@ -1148,8 +1148,12 @@ public static class TicketEndpoints
                 var resolved = await taggingMailboxes.ResolveActiveByIdsAsync(incomingMailboxes, ct);
                 mentionedMailboxIds = resolved.Select(m => m.Id).ToList();
             }
-            var metadataJson = mentionedIds.Count > 0 || mentionedMailboxIds.Count > 0
-                ? JsonSerializer.Serialize(new { mentionedUserIds = mentionedIds, mentionedMailboxIds })
+            // v0.1.54 — group tags: resolved to active groups inside the
+            // mention service; only a bounded, de-duplicated id list travels.
+            var mentionedGroupIds = (req.MentionedGroupIds ?? Array.Empty<Guid>())
+                .Where(g => g != Guid.Empty).Distinct().Take(20).ToList();
+            var metadataJson = mentionedIds.Count > 0 || mentionedMailboxIds.Count > 0 || mentionedGroupIds.Count > 0
+                ? JsonSerializer.Serialize(new { mentionedUserIds = mentionedIds, mentionedMailboxIds, mentionedGroupIds })
                 : null;
 
             // Plain-text body derivation (HTML → text when only HTML was
@@ -1196,12 +1200,13 @@ public static class TicketEndpoints
                 attachmentCount = req.AttachmentIds?.Count ?? 0,
                 mentionedUserCount = mentionedIds.Count,
                 mentionedMailboxCount = mentionedMailboxIds.Count,
+                mentionedGroupCount = mentionedGroupIds.Count,
             }, ct);
 
             // @@-mention notification raamwerk (v0.0.12 stap 4). Fire-and-forget
             // semantics: the service logs + swallows everything. The request
             // result is already decided, so an errant notifier can't 500 us.
-            if (mentionedIds.Count > 0 || mentionedMailboxIds.Count > 0)
+            if (mentionedIds.Count > 0 || mentionedMailboxIds.Count > 0 || mentionedGroupIds.Count > 0)
             {
                 var sourceEmail = http.User.FindFirst(ClaimTypes.Email)?.Value ?? string.Empty;
                 await mentionService.PublishAsync(new MentionNotificationSource(
@@ -1216,7 +1221,8 @@ public static class TicketEndpoints
                     MentionedUserIds: mentionedIds,
                     BodyHtml: evt.BodyHtml ?? string.Empty,
                     BodyText: evt.BodyText ?? string.Empty,
-                    MentionedMailboxIds: mentionedMailboxIds), ct);
+                    MentionedMailboxIds: mentionedMailboxIds,
+                    MentionedGroupIds: mentionedGroupIds), ct);
             }
 
             // v0.0.38 — compose-template-linked surveys. Fires AFTER the
@@ -1301,6 +1307,7 @@ public static class TicketEndpoints
                 MentionedUserIds: req.MentionedUserIds,
                 LinkedFormIds: req.LinkedFormIds,
                 MentionedMailboxIds: req.MentionedMailboxIds,
+                MentionedGroupIds: req.MentionedGroupIds,
                 SignaturePreloaded: req.SignaturePreloaded,
                 AuthorRole: userRole);
 
@@ -2442,7 +2449,10 @@ public static class TicketEndpoints
         IReadOnlyList<Guid>? ComposeTemplateIds = null,
         // v0.0.60 — tagging-only mailbox ids tagged via @@-mention. Filtered
         // to active rows server-side; each gets a notification mail.
-        IReadOnlyList<Guid>? MentionedMailboxIds = null);
+        IReadOnlyList<Guid>? MentionedMailboxIds = null,
+        // v0.1.54 — group-tag ids tagged via @@-mention (one shared tag per
+        // group, never a mail).
+        IReadOnlyList<Guid>? MentionedGroupIds = null);
 
     public sealed record UpdateEventRequest(
         string? BodyText,
@@ -2467,6 +2477,8 @@ public static class TicketEndpoints
         IReadOnlyList<Guid>? ComposeTemplateIds = null,
         // v0.0.60 — tagging-only mailbox ids tagged via @@-mention.
         IReadOnlyList<Guid>? MentionedMailboxIds = null,
+        // v0.1.54 — group-tag ids tagged via @@-mention.
+        IReadOnlyList<Guid>? MentionedGroupIds = null,
         // v0.0.61 — the compose window pre-loaded the signature as a fixed
         // block, so the body carries a data-sd-signature marker the send path
         // swaps for the real signature (above the quoted history).

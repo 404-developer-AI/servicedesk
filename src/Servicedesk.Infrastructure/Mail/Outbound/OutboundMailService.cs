@@ -321,6 +321,8 @@ public sealed class OutboundMailService : IOutboundMailService
             var resolvedMailboxes = await _taggingMailboxes.ResolveActiveByIdsAsync(incomingMailboxes, ct);
             mentionedMailboxIds = resolvedMailboxes.Select(m => m.Id).ToList();
         }
+        var mentionedGroupIds = (request.MentionedGroupIds ?? Array.Empty<Guid>())
+            .Where(g => g != Guid.Empty).Distinct().Take(20).ToList();
 
         // The timeline event keeps the agent's message + quote but never the
         // signature block: strip the marker so a bare <div data-sd-signature>
@@ -428,7 +430,7 @@ public sealed class OutboundMailService : IOutboundMailService
         // @@-mention notification raamwerk (v0.0.12 stap 4). Mirrors the
         // event-endpoint hook; fire-and-forget so a notification-channel
         // failure never undoes the mail we already put on the wire.
-        if (mentionedIds.Count > 0 || mentionedMailboxIds.Count > 0)
+        if (mentionedIds.Count > 0 || mentionedMailboxIds.Count > 0 || mentionedGroupIds.Count > 0)
         {
             var sourceUser = await _users.FindByIdAsync(request.AuthorUserId, ct);
             await _mentions.PublishAsync(new MentionNotificationSource(
@@ -443,7 +445,8 @@ public sealed class OutboundMailService : IOutboundMailService
                 MentionedUserIds: mentionedIds,
                 BodyHtml: persistedBodyHtml,
                 BodyText: bodyText,
-                MentionedMailboxIds: mentionedMailboxIds), ct);
+                MentionedMailboxIds: mentionedMailboxIds,
+                MentionedGroupIds: mentionedGroupIds), ct);
         }
 
         return OutboundMailResult.Ok(evt, mentionedIds.Count);

@@ -24,4 +24,7 @@ public sealed record MentionNotificationSource(
     string BodyText,
     /// Tagging-only mailbox ids (already filtered to active rows). Each gets a
     /// notification mail but no DB row / SignalR push — they aren't users.
-    IReadOnlyList<Guid> MentionedMailboxIds);
+    IReadOnlyList<Guid> MentionedMailboxIds,
+    /// v0.1.54 — group-tag ids as sent by the composer; the service resolves
+    /// the active ones. One shared tag per group, never a mail.
+    IReadOnlyList<Guid>? MentionedGroupIds = null);

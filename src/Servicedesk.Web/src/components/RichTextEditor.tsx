@@ -944,21 +944,25 @@ export function extractMentionIds(doc: unknown): string[] {
   return out;
 }
 
-/// Split the flat mention-id list emitted by `onMentionsChange` into the two
+/// Split the flat mention-id list emitted by `onMentionsChange` into the
 /// server-side buckets. Tagging-mailbox ids are carried in the document with a
-/// `mbox:` prefix (so the mention node needs no schema change); we strip it
-/// here and route them to `mailboxIds`. Everything else is an agent user-id.
+/// `mbox:` prefix and group-tag ids (v0.1.54) with `group:` (so the mention
+/// node needs no schema change); we strip the prefix here and route them.
+/// Everything else is an agent user-id.
 export function splitMentionIds(ids: string[]): {
   userIds: string[];
   mailboxIds: string[];
+  groupIds: string[];
 } {
   const userIds: string[] = [];
   const mailboxIds: string[] = [];
+  const groupIds: string[] = [];
   for (const id of ids) {
     if (id.startsWith("mbox:")) mailboxIds.push(id.slice(5));
+    else if (id.startsWith("group:")) groupIds.push(id.slice(6));
     else userIds.push(id);
   }
-  return { userIds, mailboxIds };
+  return { userIds, mailboxIds, groupIds };
 }
 
 /// Suggestion-plugin wiring for the `::` mention. The picker mixes two

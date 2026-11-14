@@ -7,6 +7,7 @@ using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.TaggingMailboxes;
+using Servicedesk.Infrastructure.TagGroups;
 
 namespace Servicedesk.Infrastructure.Notifications;
 
@@ -28,6 +29,9 @@ public sealed class MentionNotificationService : IMentionNotificationService
     private readonly IGraphMailClient _graph;
     private readonly ISettingsService _settings;
     private readonly ITaggingMailboxRepository _taggingMailboxes;
+    private readonly ITagGroupRepository _tagGroups;
+    private readonly IGroupTagRepository _groupTags;
+    private readonly IGroupTagNotifier _groupTagNotifier;
     private readonly ILogger<MentionNotificationService> _logger;
 
     public MentionNotificationService(
@@ -38,6 +42,9 @@ public sealed class MentionNotificationService : IMentionNotificationService
         IGraphMailClient graph,
         ISettingsService settings,
         ITaggingMailboxRepository taggingMailboxes,
+        ITagGroupRepository tagGroups,
+        IGroupTagRepository groupTags,
+        IGroupTagNotifier groupTagNotifier,
         ILogger<MentionNotificationService> logger)
     {
         _repo = repo;
@@ -47,12 +54,16 @@ public sealed class MentionNotificationService : IMentionNotificationService
         _graph = graph;
         _settings = settings;
         _taggingMailboxes = taggingMailboxes;
+        _tagGroups = tagGroups;
+        _groupTags = groupTags;
+        _groupTagNotifier = groupTagNotifier;
         _logger = logger;
     }
 
     public async Task PublishAsync(MentionNotificationSource source, CancellationToken ct)
     {
-        if (source.MentionedUserIds.Count == 0 && source.MentionedMailboxIds.Count == 0) return;
+        var groupIds = source.MentionedGroupIds ?? Array.Empty<Guid>();
+        if (source.MentionedUserIds.Count == 0 && source.MentionedMailboxIds.Count == 0 && groupIds.Count == 0) return;
 
         // Fall back to a stripped HTML body when BodyText is empty. The
         // events-endpoint (Note / Comment) sends only BodyHtml; OutboundMail
@@ -124,6 +135,11 @@ public sealed class MentionNotificationService : IMentionNotificationService
                 }
             }
         }
+
+        // --- Group tags (v0.1.54): one shared row per group, NEVER a mail ---
+        if (groupIds.Count > 0)
+            await PublishGroupTagsAsync(source, groupIds, effectiveBodyText, ct);
+        if (source.MentionedUserIds.Count == 0 && source.MentionedMailboxIds.Count == 0) return;
 
         // --- Mail: shared kill-switch + queue mailbox for users AND mailboxes ---
         var mailEnabled = await _settings.GetAsync<bool>(SettingKeys.Notifications.MentionEmailEnabled, ct);
@@ -227,6 +243,44 @@ public sealed class MentionNotificationService : IMentionNotificationService
                         mbx.Id, mbx.Email, source.TicketId);
                 }
             }
+        }
+    }
+
+    /// One shared group_tags row per active group, then a toast push to every
+    /// member except the author. Deliberately no mail path at all. Best effort
+    /// like the rest of the fan-out: a failure is logged, never thrown.
+    private async Task PublishGroupTagsAsync(
+        MentionNotificationSource source, IReadOnlyList<Guid> groupIds, string bodyText, CancellationToken ct)
+    {
+        try
+        {
+            var groups = await _tagGroups.ResolveActiveByIdsAsync(groupIds, ct);
+            if (groups.Count == 0) return;
+            var preview = BuildPreview(bodyText);
+            var created = await _groupTags.CreateManyAsync(groups.Select(g => new NewGroupTag(
+                g.Id, source.TicketId, source.TicketNumber, source.TicketSubject,
+                source.EventId, source.EventType, source.SourceUserId, preview)).ToList(), ct);
+            var members = await _tagGroups.ListMemberIdsAsync(groups.Select(g => g.Id).ToList(), ct);
+            foreach (var tag in created)
+            {
+                var recipients = (members.GetValueOrDefault(tag.GroupId) ?? Array.Empty<Guid>())
+                    .Where(u => u != source.SourceUserId).ToList();
+                try
+                {
+                    await _groupTagNotifier.GroupTagReceivedAsync(recipients, new GroupTagPush(
+                        tag.Id, tag.GroupId, tag.GroupName, tag.TicketId, tag.TicketNumber, tag.TicketSubject,
+                        tag.EventId, source.SourceUserEmail, tag.PreviewText), ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Group tag push failed for tag {TagId}.", tag.Id);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to write group tags for ticket {TicketId} event {EventId}.",
+                source.TicketId, source.EventId);
         }
     }
 

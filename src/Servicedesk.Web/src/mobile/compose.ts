@@ -10,7 +10,7 @@ export type ComposeKind = "note" | "call";
 /// A tagged colleague or tagging mailbox. `id` is the picker id — an agent
 /// user id, or `mbox:<id>` for a tagging mailbox (same convention as the
 /// desktop editor, see splitMentionIds).
-export type ComposeMention = { id: string; label: string; kind: "agent" | "mailbox" };
+export type ComposeMention = { id: string; label: string; kind: "agent" | "mailbox" | "group" };
 
 export type ComposeDraft = { text: string; mentions: ComposeMention[] };
 
@@ -76,6 +76,7 @@ export function mentionFromPicker(item: MentionPickerItem): ComposeMention {
   // Same labels as the desktop picker: email local-part for agents, the
   // friendly name for a tagging mailbox.
   if (item.kind === "mailbox") return { id: item.id, label: item.label ?? item.email, kind: "mailbox" };
+  if (item.kind === "group") return { id: item.id, label: item.label ?? item.email, kind: "group" };
   const at = item.email.indexOf("@");
   return { id: item.id, label: at > 0 ? item.email.slice(0, at) : item.email, kind: "agent" };
 }
@@ -133,14 +134,18 @@ export function composeHtml(text: string, mentions: readonly ComposeMention[]): 
 }
 
 /// Agent ids vs tagging-mailbox ids for the request (server buckets).
-export function splitMentions(mentions: readonly ComposeMention[]): { userIds: string[]; mailboxIds: string[] } {
+export function splitMentions(mentions: readonly ComposeMention[]): {
+  userIds: string[]; mailboxIds: string[]; groupIds: string[];
+} {
   const userIds: string[] = [];
   const mailboxIds: string[] = [];
+  const groupIds: string[] = [];
   for (const m of mentions) {
     if (m.id.startsWith("mbox:")) mailboxIds.push(m.id.slice(5));
+    else if (m.id.startsWith("group:")) groupIds.push(m.id.slice(6));
     else userIds.push(m.id);
   }
-  return { userIds, mailboxIds };
+  return { userIds, mailboxIds, groupIds };
 }
 
 /// The `@@query` the caret is in, if any — the trigger that opens the picker

@@ -66,7 +66,7 @@ export function ComposeSheet({
   // the request is in flight must not clear the other slot's draft.
   const submit = useMutation({
     mutationFn: (v: { kind: ComposeKind; text: string; mentions: ComposeMention[] }) => {
-      const { userIds, mailboxIds } = splitMentions(v.mentions);
+      const { userIds, mailboxIds, groupIds } = splitMentions(v.mentions);
       return ticketApi.addEvent(ticketId, {
         eventType: v.kind === "call" ? "Call" : "Note",
         bodyHtml: composeHtml(v.text, v.mentions),
@@ -74,6 +74,7 @@ export function ComposeSheet({
         isInternal: true,
         mentionedUserIds: userIds.length > 0 ? userIds : undefined,
         mentionedMailboxIds: mailboxIds.length > 0 ? mailboxIds : undefined,
+        mentionedGroupIds: groupIds.length > 0 ? groupIds : undefined,
       });
     },
     onSuccess: (_res, v) => {

@@ -375,7 +375,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
 
   const mutation = useMutation({
     mutationFn: () => {
-      const { userIds, mailboxIds } = splitMentionIds(mentionedUserIds);
+      const { userIds, mailboxIds, groupIds } = splitMentionIds(mentionedUserIds);
       return ticketApi.addEvent(ticketId, {
         eventType: isCall ? "Call" : isInternal ? "Note" : "Comment",
         bodyHtml: bodyHtml || undefined,
@@ -383,6 +383,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         attachmentIds: attachments.readyAttachmentIds,
         mentionedUserIds: userIds.length > 0 ? userIds : undefined,
         mentionedMailboxIds: mailboxIds.length > 0 ? mailboxIds : undefined,
+        mentionedGroupIds: groupIds.length > 0 ? groupIds : undefined,
       });
     },
     onSuccess: () => {
