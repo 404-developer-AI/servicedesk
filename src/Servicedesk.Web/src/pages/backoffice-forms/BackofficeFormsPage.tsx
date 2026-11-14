@@ -114,8 +114,8 @@ export function BackofficeFormsPage() {
         </p>
       </header>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="glass-panel flex items-center gap-1 p-1" role="tablist" aria-label="Status">
+      <div className="flex flex-col gap-3">
+        <div className="glass-panel flex w-fit items-center gap-1 p-1" role="tablist" aria-label="Status">
           {TABS.map((t) => {
             const Icon = t.icon;
             const n = countFor(t.id);
@@ -140,7 +140,8 @@ export function BackofficeFormsPage() {
           })}
         </div>
 
-        <div className="relative min-w-56 flex-1 sm:max-w-xs">
+        <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-56 flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search form, answers, ticket # or company…" className="pl-9" />
@@ -159,6 +160,7 @@ export function BackofficeFormsPage() {
             <X className="mr-1 h-3.5 w-3.5" /> Clear
           </Button>
         )}
+        </div>
       </div>
 
       <div className="glass-panel flex-1 overflow-hidden">

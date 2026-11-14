@@ -178,6 +178,7 @@ function FormSettingsCard() {
   });
 
   const enabled = val("Forms.Enabled", "true") === "true";
+  const boNoteRequired = val("Forms.BackofficeHandleNoteRequired", "true") === "true";
   const busy = settingsQ.isLoading || update.isPending;
 
   return (
@@ -201,6 +202,17 @@ function FormSettingsCard() {
         </div>
         <Switch checked={enabled} disabled={busy}
           onCheckedChange={(v) => update.mutate({ key: "Forms.Enabled", value: v ? "true" : "false" })} />
+      </label>
+      <label className="flex items-start justify-between gap-4 rounded-md border border-glass bg-glass px-3 py-2.5">
+        <div className="min-w-0 space-y-0.5">
+          <div className="text-sm font-medium text-foreground">Note required when handling a back office form</div>
+          <div className="text-xs text-muted-foreground">
+            Back office must write what was done (e.g. the contract updated in the CRM) before marking a form as
+            handled. Off allows handling without a note.
+          </div>
+        </div>
+        <Switch checked={boNoteRequired} disabled={busy}
+          onCheckedChange={(v) => update.mutate({ key: "Forms.BackofficeHandleNoteRequired", value: v ? "true" : "false" })} />
       </label>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {NUMBER_SETTINGS.map((s) => {

@@ -707,6 +707,16 @@
 .sd-form-pill:hover {
   background: color-mix(in oklab, var(--color-primary) 18%, transparent);
 }
+/* The label/value table right after a form note's title. `.rich-prose`
+   wraps "anywhere" (fine for mail bodies), which lets a long answer squeeze
+   the label column down to one letter per line. Labels keep a readable
+   minimum and break between words only; long answers wrap instead. */
+.rich-prose p:has(> .sd-form-pill) + table td:first-child {
+  min-width: 9rem;
+  max-width: 16rem;
+  padding-right: 1rem;
+  overflow-wrap: break-word;
+}
 
 /* v0.1.33 — placeholder for an external image in a mail / note / KB body
    (lib/remoteImages.ts swaps the <img> for it before anything is fetched).
