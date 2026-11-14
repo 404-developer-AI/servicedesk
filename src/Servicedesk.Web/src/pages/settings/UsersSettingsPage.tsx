@@ -47,6 +47,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { serverNowMs } from "@/hooks/useServerTime";
 
 type Role = "Agent" | "Admin";
 
@@ -1219,7 +1220,7 @@ function useDebounced<T>(value: T, delayMs: number): T {
 
 function formatRelative(utc: string): string {
   const date = new Date(utc);
-  const diffMs = Date.now() - date.getTime();
+  const diffMs = serverNowMs() - date.getTime();
   const minutes = Math.floor(diffMs / 60_000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;

@@ -222,3 +222,15 @@ export function useServerTimeZone(): string | null {
 export function getServerTimeSnapshot(): ServerTime | null {
   return snapshot.time;
 }
+
+/**
+ * Non-reactive server "now" in UTC ms — the drop-in replacement for
+ * `Date.now()` in pure helpers (relative-time labels, "expires in" maths).
+ * Extrapolated from the last sync anchor on the monotonic clock, so it is
+ * second-accurate even when the ticking store has no subscribers. Falls back
+ * to the client clock only before the very first sync.
+ */
+export function serverNowMs(): number {
+  if (!anchor) return Date.now();
+  return anchor.serverUtcMs + (performance.now() - anchor.monotonicMs);
+}

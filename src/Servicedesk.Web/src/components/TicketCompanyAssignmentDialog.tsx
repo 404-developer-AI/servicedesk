@@ -206,7 +206,7 @@ export function TicketCompanyAssignmentDialog({
           {!isSearching && (
             <>
               {loadingDefault && (
-                <RowSkeleton label="Contact-links laden..." />
+                <RowSkeleton label="Loading contact links..." />
               )}
               {!loadingDefault && (contactOptions?.length ?? 0) === 0 && (
                 <EmptyRow label="No existing company links for this contact. Type above to search." />
@@ -241,7 +241,7 @@ export function TicketCompanyAssignmentDialog({
 
           {isSearching && (
             <>
-              {searching && <RowSkeleton label="Zoeken..." />}
+              {searching && <RowSkeleton label="Searching..." />}
               {!searching && (searchResults?.length ?? 0) === 0 && (
                 <EmptyRow label={`Geen actieve companies gevonden voor "${trimmed}".`} />
               )}

@@ -34,6 +34,7 @@ import { SettingField } from "@/components/settings/SettingField";
 import { AdsolutScopesPicker } from "@/components/settings/AdsolutScopesPicker";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 import { cn } from "@/lib/utils";
+import { serverNowMs } from "@/hooks/useServerTime";
 
 const ADSOLUT_SETTINGS_QUERY_KEY = ["settings", "list", "Adsolut"] as const;
 const ADSOLUT_STATUS_QUERY_KEY = ["integrations", "adsolut", "status"] as const;
@@ -88,7 +89,7 @@ function daysUntil(iso: string | null | undefined): number | null {
   if (!iso) return null;
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return null;
-  return Math.round((t - Date.now()) / (24 * 60 * 60 * 1000));
+  return Math.round((t - serverNowMs()) / (24 * 60 * 60 * 1000));
 }
 
 function statusFromQuery(): string | null {
@@ -478,7 +479,7 @@ export function AdsolutIntegrationPage() {
     if (!externalToken?.accessTokenExpiresUtc) return null;
     const t = new Date(externalToken.accessTokenExpiresUtc).getTime();
     if (Number.isNaN(t)) return null;
-    return Math.round((t - Date.now()) / 60000);
+    return Math.round((t - serverNowMs()) / 60000);
   }, [externalToken?.accessTokenExpiresUtc]);
 
   const copyExternalToken = async () => {
@@ -504,7 +505,7 @@ export function AdsolutIntegrationPage() {
     const d = status.data?.lastRefreshedUtc;
     if (!d) return null;
     const expiry = new Date(d).getTime() + REFRESH_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-    return Math.round((expiry - Date.now()) / (24 * 60 * 60 * 1000));
+    return Math.round((expiry - serverNowMs()) / (24 * 60 * 60 * 1000));
   }, [status.data?.lastRefreshedUtc]);
 
   if (status.isLoading || settingsList.isLoading || secret.isLoading) {

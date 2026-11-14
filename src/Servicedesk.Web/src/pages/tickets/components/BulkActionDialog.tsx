@@ -26,6 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { PendingTillField } from "@/components/PendingTillField";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
+import { htmlToText } from "@/lib/sanitize";
 
 /// Sentinel option id for "clear the assignee" — never collides with a user id.
 const UNASSIGN = "__unassign__";
@@ -44,9 +45,7 @@ const SKIP_REASON_LABEL: Record<string, string> = {
 /// Strip tags to decide whether the composer holds any real content: an
 /// empty Tiptap document still serialises as `<p></p>`.
 function hasText(html: string): boolean {
-  const div = document.createElement("div");
-  div.innerHTML = html;
-  return (div.textContent ?? "").trim().length > 0 || /<img\b/i.test(html);
+  return htmlToText(html).length > 0 || /<img\b/i.test(html);
 }
 
 type BulkActionDialogProps = {

@@ -49,6 +49,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 import { cn } from "@/lib/utils";
+import { serverNowMs } from "@/hooks/useServerTime";
 
 const STATUS_QK = ["integrations", "zammad", "status"] as const;
 const SECRET_QK = ["integrations", "zammad", "secret"] as const;
@@ -153,7 +154,7 @@ export function ZammadIntegrationPage() {
   const test = useMutation({
     mutationFn: () => zammadAdminApi.testConnection(),
     onSuccess: (result) => {
-      setLastTest({ at: Date.now(), result });
+      setLastTest({ at: serverNowMs(), result });
       const who =
         result.me.email ||
         [result.me.firstName, result.me.lastName].filter(Boolean).join(" ") ||

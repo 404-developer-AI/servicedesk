@@ -233,9 +233,11 @@ function EditableDescription({
   }, [html, text]);
 
   const save = async () => {
-    const div = document.createElement("div");
-    div.innerHTML = draftHtml;
-    const plainText = div.textContent ?? "";
+    // DOMParser: an inert document. A detached `div.innerHTML` is NOT inert —
+    // it fetches <img> sources and fires their handlers — and draftHtml can
+    // still be the raw inbound-mail body when saved unedited.
+    const plainText =
+      new DOMParser().parseFromString(stripBaseTags(draftHtml), "text/html").body.textContent ?? "";
     await onSave(draftHtml, plainText);
     setEditing(false);
   };

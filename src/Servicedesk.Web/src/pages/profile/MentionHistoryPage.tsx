@@ -10,10 +10,10 @@ import {
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 
-/// v0.0.12 stap 4 — full history of tags received by the current user.
-/// Cursor-paginated with "Meer laden". Status badges distinguish between
-/// "Open" (still unacked), "Gedismiss" (acked without viewing) and
-/// "Bekeken" (clicked through at least once). Same ownership guards as
+/// Full history of tags received by the current user.
+/// Cursor-paginated with "Load more". Status badges distinguish between
+/// "Open" (still unacked), "Dismissed" (acked without viewing) and
+/// "Viewed" (clicked through at least once). Same ownership guards as
 /// the navbar widget: every row comes from /api/notifications/history
 /// which filters on the calling user's id.
 export function MentionHistoryPage() {
@@ -48,10 +48,10 @@ export function MentionHistoryPage() {
           <ArrowLeft className="h-3 w-3" />
           Profile
         </Link>
-        <h1 className="font-display text-display-sm font-semibold">Mijn tags</h1>
+        <h1 className="font-display text-display-sm font-semibold">My tags</h1>
         <p className="text-xs text-muted-foreground">
-          Elke keer dat iemand jou @@-tagt in een ticket, wordt dat hier bewaard —
-          inclusief of je het al bekeken of acked hebt.
+          Every time someone @@-tags you on a ticket, it is kept here — including
+          whether you have viewed or acked it.
         </p>
       </header>
 
@@ -60,14 +60,14 @@ export function MentionHistoryPage() {
           <div className="px-4 py-8 text-center text-xs text-muted-foreground/70">Loading…</div>
         ) : pages.length === 0 ? (
           <div className="px-4 py-8 text-center text-xs text-muted-foreground/70">
-            Geen tags ontvangen. Zodra iemand jou tagt, verschijnt het hier.
+            No tags yet. As soon as someone tags you, it shows up here.
           </div>
         ) : (
           <table className="w-full text-left text-sm">
             <thead className="border-b border-glass text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">
               <tr>
-                <th className="px-3 py-2 font-medium">Tijd</th>
-                <th className="px-3 py-2 font-medium">Van</th>
+                <th className="px-3 py-2 font-medium">Time</th>
+                <th className="px-3 py-2 font-medium">From</th>
                 <th className="px-3 py-2 font-medium">Ticket</th>
                 <th className="px-3 py-2 font-medium">Preview</th>
                 <th className="px-3 py-2 font-medium">Status</th>
@@ -92,7 +92,7 @@ export function MentionHistoryPage() {
               disabled={query.isFetching}
               className="rounded-md border border-glass bg-glass px-3 py-1.5 text-xs text-foreground hover:bg-glass-hover disabled:opacity-50"
             >
-              {query.isFetching ? "Laden…" : "Meer laden"}
+              {query.isFetching ? "Loading…" : "Load more"}
             </button>
           </div>
         ) : null}
@@ -107,9 +107,9 @@ function Row({ n, offsetMinutes }: { n: UserNotification; offsetMinutes: number 
 
   const status: { label: string; tone: string } =
     n.viewedUtc !== null
-      ? { label: "Bekeken", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" }
+      ? { label: "Viewed", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" }
       : n.ackedUtc !== null
-        ? { label: "Gedismiss", tone: "bg-glass text-muted-foreground border-glass" }
+        ? { label: "Dismissed", tone: "bg-glass text-muted-foreground border-glass" }
         : { label: "Open", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" };
 
   return (

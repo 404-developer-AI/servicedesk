@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/auth/authStore";
-import { toServerLocal, useServerOffsetMinutes } from "@/hooks/useServerTime";
+import { toServerLocal, useServerOffsetMinutes, serverNowMs } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 import { ClientNotesSheet, type NotesTarget } from "./ClientNotesSheet";
 
@@ -34,7 +34,7 @@ const OVERVIEW_QK = ["assets", "remote-desktop", "overview"] as const;
 
 function relativeTime(iso: string | null): string {
   if (!iso) return "never";
-  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffMs = serverNowMs() - new Date(iso).getTime();
   const sec = Math.round(diffMs / 1000);
   if (sec < 60) return `${sec}s ago`;
   const min = Math.round(sec / 60);

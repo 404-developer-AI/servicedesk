@@ -5,11 +5,12 @@ import { Activity, Phone, ChevronRight, Lock } from "lucide-react";
 import { activityApi, type ActivityEntry } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActivityFeedSignalR } from "@/hooks/useActivityFeedSignalR";
+import { serverNowMs } from "@/hooks/useServerTime";
 
 const TILE_LIMIT = 12;
 
 function relativeTime(utc: string): string {
-  const diff = Date.now() - new Date(utc).getTime();
+  const diff = serverNowMs() - new Date(utc).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;

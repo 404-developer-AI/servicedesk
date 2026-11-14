@@ -39,6 +39,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TriggerEditorSheet } from "./triggers/TriggerEditorSheet";
 import { CollapsibleSettingsCard } from "@/components/settings/CollapsibleSettingsCard";
 import { cn } from "@/lib/utils";
+import { serverNowMs } from "@/hooks/useServerTime";
 
 // v0.0.100 — engine knobs (Triggers.* category) surfaced on this page; the
 // scheduler-side ones existed since v0.0.24 but had no UI until now.
@@ -955,7 +956,7 @@ function DeleteGroupDialog({
 function formatRelative(iso: string): string {
   const t = Date.parse(iso);
   if (!Number.isFinite(t)) return iso;
-  const diffMs = Date.now() - t;
+  const diffMs = serverNowMs() - t;
   const diffMin = Math.round(diffMs / 60_000);
   if (diffMin < 1) return "just now";
   if (diffMin < 60) return `${diffMin} min ago`;

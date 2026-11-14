@@ -28,6 +28,7 @@ import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditL
 import { CompanyLinkPicker } from "@/components/integrations/CompanyLinkPicker";
 import sophosLogo from "@/assets/integrations/sophos.svg";
 import { cn } from "@/lib/utils";
+import { serverNowMs } from "@/hooks/useServerTime";
 
 const STATUS_QK = ["integrations", "sophos", "status"] as const;
 const TENANTS_QK = ["integrations", "sophos", "tenants"] as const;
@@ -59,7 +60,7 @@ function relativeFromUtc(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return null;
-  const mins = Math.round((Date.now() - then) / 60000);
+  const mins = Math.round((serverNowMs() - then) / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hours = Math.round(mins / 60);

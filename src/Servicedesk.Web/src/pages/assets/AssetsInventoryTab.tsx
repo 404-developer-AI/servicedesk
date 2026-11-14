@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { AssetDetailSheet } from "./AssetDetailSheet";
 import { cn } from "@/lib/utils";
+import { serverNowMs } from "@/hooks/useServerTime";
 
 const TYPE_OPTIONS = [
   { value: "all", label: "All" },
@@ -50,7 +51,7 @@ const SORT_OPTIONS: { value: AssetSort; label: string }[] = [
 
 function relativeTime(iso: string | null): string {
   if (!iso) return "never";
-  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffMs = serverNowMs() - new Date(iso).getTime();
   const sec = Math.round(diffMs / 1000);
   if (sec < 60) return `${sec}s ago`;
   const min = Math.round(sec / 60);

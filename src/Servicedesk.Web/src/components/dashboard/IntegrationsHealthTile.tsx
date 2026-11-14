@@ -35,6 +35,7 @@ import sophosLogo from "@/assets/integrations/sophos.svg";
 import telavoxLogo from "@/assets/integrations/telavox.svg";
 import veeamLogo from "@/assets/integrations/veeam.svg";
 import zammadLogo from "@/assets/integrations/zammad.svg";
+import { serverNowMs } from "@/hooks/useServerTime";
 
 const QUERY_KEY = ["admin", "integrations-health"] as const;
 
@@ -429,7 +430,7 @@ function NextSyncHint({ iso }: { iso: string }) {
 
   const target = new Date(iso).getTime();
   if (Number.isNaN(target)) return null;
-  const phrase = formatRelative(target - Date.now());
+  const phrase = formatRelative(target - serverNowMs());
   return (
     <p className="text-[11px] text-muted-foreground/70" title={formatDateTime(iso, undefined, true)}>
       Next sync {phrase}
@@ -572,7 +573,7 @@ function MirrorCard({
             className="font-medium text-foreground"
             title={lastSyncUtc ? formatDateTime(lastSyncUtc, undefined, true) : undefined}
           >
-            {lastSyncUtc ? formatRelative(new Date(lastSyncUtc).getTime() - Date.now()) : "never"}
+            {lastSyncUtc ? formatRelative(new Date(lastSyncUtc).getTime() - serverNowMs()) : "never"}
           </span>
         </div>
         {nextSyncUtc ? <NextSyncHint iso={nextSyncUtc} /> : null}

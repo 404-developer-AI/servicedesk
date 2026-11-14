@@ -15,7 +15,7 @@ import { TicketTypeBadge } from "@/components/TicketTypeBadge";
 import { ContactHoverCard } from "@/components/ContactHoverCard";
 import { ListChecks } from "lucide-react";
 import type { TicketListItem } from "@/lib/ticket-api";
-import { useServerOffsetMinutes, useServerNowMs, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, useServerNowMs, toServerLocal, serverNowMs } from "@/hooks/useServerTime";
 import { colorPillStyle } from "@/lib/colorPill";
 import { flagColors, ticketRowAccentStyle, useTicketFlagSettings } from "@/lib/ticketFlags";
 import { formatDuration } from "@/lib/timesheet-api";
@@ -42,7 +42,7 @@ function ChecklistChip({ done, total }: { done: number; total: number }) {
 }
 
 function relativeTime(utc: string): string {
-  const diff = Date.now() - new Date(utc).getTime();
+  const diff = serverNowMs() - new Date(utc).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;

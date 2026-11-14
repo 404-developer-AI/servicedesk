@@ -35,6 +35,7 @@ import { IntakePrefillDrawer } from "@/components/intake/IntakePrefillDrawer";
 import { useAuth } from "@/auth/authStore";
 import { orderMentionItems } from "@/pages/orders/orderMention";
 import { kbLinkMentionItems } from "@/pages/kb/kbLinkMention";
+import { htmlToText } from "@/lib/sanitize";
 
 export type MailRecipient = { address: string; name: string };
 
@@ -206,17 +207,6 @@ function extractTypedBody(html: string): string {
   return html.slice(0, cut).replace(/<p>[^<]*\bwrote:\s*<\/p>\s*$/i, "");
 }
 
-/// Strip HTML to plain text, inserting a space at block boundaries so adjacent
-/// paragraphs/words don't fuse (textContent alone would glue them).
-function htmlToPlainText(html: string): string {
-  const spaced = html
-    .replace(/<\/(p|div|li|h[1-6]|tr|blockquote)>/gi, " ")
-    .replace(/<br\s*\/?>/gi, " ");
-  const el = document.createElement("div");
-  el.innerHTML = spaced;
-  return (el.textContent || "").replace(/\s+/g, " ").trim();
-}
-
 /// Lower-case + strip diacritics so matching is case- and accent-insensitive.
 function normalizeForMatch(s: string): string {
   return s
@@ -235,7 +225,7 @@ function parseKeywords(csv: string): string[] {
 /// True when the agent's own typed text contains any keyword (substring match).
 function typedTextMentionsAttachment(bodyHtml: string, keywords: string[]): boolean {
   if (keywords.length === 0) return false;
-  const text = normalizeForMatch(htmlToPlainText(extractTypedBody(bodyHtml)));
+  const text = normalizeForMatch(htmlToText(extractTypedBody(bodyHtml)));
   if (!text) return false;
   return keywords.some((kw) => text.includes(kw));
 }
