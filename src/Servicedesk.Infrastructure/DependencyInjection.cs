@@ -599,6 +599,8 @@ public static class DependencyInjection
                            Servicedesk.Infrastructure.Tickets.TicketMutationService>();
         // Agent-supplied ticket HTML is sanitised at the API boundary (defence in
         // depth on top of DOMPurify at render).
+        services.AddSingleton<Servicedesk.Infrastructure.Tickets.IQueueStatusScope,
+                              Servicedesk.Infrastructure.Tickets.QueueStatusScope>();
         services.AddSingleton<Servicedesk.Infrastructure.Tickets.ITicketHtmlSanitizer,
                               Servicedesk.Infrastructure.Tickets.TicketHtmlSanitizer>();
         services.AddScoped<Servicedesk.Infrastructure.Tickets.ITicketBulkActionService,

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Servicedesk.Infrastructure.Checklists;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Infrastructure.Triggers.Actions;
 
@@ -9,17 +10,20 @@ internal sealed class SetStatusHandler : ITriggerActionHandler
     private readonly IChecklistCloseGuard _checklistGuard;
     private readonly IChecklistCloseBlockReporter _blockReporter;
     private readonly ITriggerRepository _triggers;
+    private readonly IQueueStatusScope _statusScope;
 
     public SetStatusHandler(
         SystemFieldMutator mutator,
         IChecklistCloseGuard checklistGuard,
         IChecklistCloseBlockReporter blockReporter,
-        ITriggerRepository triggers)
+        ITriggerRepository triggers,
+        IQueueStatusScope statusScope)
     {
         _mutator = mutator;
         _checklistGuard = checklistGuard;
         _blockReporter = blockReporter;
         _triggers = triggers;
+        _statusScope = statusScope;
     }
 
     public string Kind => "set_status";
@@ -28,6 +32,20 @@ internal sealed class SetStatusHandler : ITriggerActionHandler
     {
         if (!ActionJson.TryReadGuid(actionJson, "status_id", out var newStatusId))
             return TriggerActionResult.Failed(Kind, "Action is missing required string 'status_id'.");
+
+        // Same rule as an agent write (TicketMutationService precheck): the
+        // status must be allowed in the ticket's queue. Out of scope = a
+        // logged no-op, the rest of the trigger still runs.
+        if (newStatusId != ctx.Ticket.StatusId
+            && !await _statusScope.IsStatusAllowedAsync(ctx.Ticket.QueueId, newStatusId, ct))
+        {
+            return TriggerActionResult.NoOp(Kind, new
+            {
+                column = "status_id",
+                reason = "status_not_in_queue_scope",
+                to = newStatusId,
+            });
+        }
 
         // v0.0.103 — checklist close block. A trigger that resolves/closes a
         // ticket (e.g. "Closed without Invoice" on a CWI note) must not slip

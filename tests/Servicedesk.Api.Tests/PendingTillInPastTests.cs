@@ -205,7 +205,7 @@ public sealed class PendingTillInPastTests
         => new(
             Fake<ITicketRepository>.Create(TicketRepoHandler(ticket)),
             Fake<IQueueAccessService>.Create(QueueAccessHandler(hasQueueAccess)),
-            Fake<ITaxonomyRepository>.Create(Unexpected),
+            Fake<IQueueStatusScope>.Create(Unexpected),
             Fake<IStatusGateService>.Create(Unexpected),
             Fake<IAuditLogger>.Create(Unexpected),
             Fake<ITicketListNotifier>.Create(Unexpected),

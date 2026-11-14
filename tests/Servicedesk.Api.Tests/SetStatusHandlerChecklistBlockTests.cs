@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Checklists;
+using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Infrastructure.Triggers.Actions;
 using Xunit;
@@ -11,7 +12,9 @@ namespace Servicedesk.Api.Tests;
 /// block: with an incomplete blocking checklist the action is a no-op
 /// (reason checklist_incomplete), the reporter is told (timeline event +
 /// notification for the causing agent) and the mutator is never reached.
-/// Same-status and unblocked calls never consult the reporter.
+/// Same-status and unblocked calls never consult the reporter. A status
+/// outside the queue's allowed list is refused before anything else — the
+/// same rule an agent write gets from TicketMutationService.
 public sealed class SetStatusHandlerChecklistBlockTests
 {
     private static readonly Guid TriggerId = Guid.NewGuid();
@@ -26,7 +29,7 @@ public sealed class SetStatusHandlerChecklistBlockTests
         var reporter = new RecordingReporter();
         // Mutator with a null data source: if the handler ever reached it,
         // the test would blow up with a NullReferenceException.
-        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("Closed without Invoice [CWI]"));
+        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("Closed without Invoice [CWI]"), new FakeScope(allowed: true));
 
         var result = await handler.ApplyAsync(Action(ClosedStatus), Context(triggeringAuthor: AgentId), default);
 
@@ -47,7 +50,7 @@ public sealed class SetStatusHandlerChecklistBlockTests
     {
         var guard = new FakeGuard(blockers: 1);
         var reporter = new RecordingReporter();
-        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("x"));
+        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("x"), new FakeScope(allowed: true));
 
         // Same-status: the handler skips the guard and the mutator answers
         // no-op from the ids alone (no DB round-trip).
@@ -62,11 +65,28 @@ public sealed class SetStatusHandlerChecklistBlockTests
     {
         var guard = new FakeGuard(blockers: 0);
         var reporter = new RecordingReporter();
-        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("x"));
+        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("x"), new FakeScope(allowed: true));
 
         // Reaching the (null-backed) mutator proves the guard let it through.
         await Assert.ThrowsAnyAsync<Exception>(() => handler.ApplyAsync(Action(ClosedStatus), Context(null), default));
         Assert.Equal(1, guard.Calls);
+        Assert.Empty(reporter.Calls);
+    }
+
+    [Fact]
+    public async Task Status_outside_the_queue_scope_is_a_noop_before_guard_or_mutator()
+    {
+        var guard = new FakeGuard(blockers: 0);
+        var reporter = new RecordingReporter();
+        var scope = new FakeScope(allowed: false);
+        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("x"), scope);
+
+        var result = await handler.ApplyAsync(Action(ClosedStatus), Context(null), default);
+
+        Assert.Equal(TriggerActionStatus.NoOp, result.Status);
+        Assert.Contains("status_not_in_queue_scope", JsonSerializer.Serialize(result.ChangeSummary));
+        Assert.Equal(1, scope.Calls);
+        Assert.Equal(0, guard.Calls);
         Assert.Empty(reporter.Calls);
     }
 
@@ -85,6 +105,18 @@ public sealed class SetStatusHandlerChecklistBlockTests
             ? null
             : new TicketEvent(7, ticketId, "Note", triggeringAuthor, null, "agent@x", "Closed without Invoice [CWI]", null, "{}", true, DateTime.UtcNow, null, null);
         return new TriggerEvaluationContext(ticketId, ticket, evt, TriggerChangeSet.ArticleOnly(isTicketCreation: false), DateTime.UtcNow, TriggerId);
+    }
+
+    private sealed class FakeScope : IQueueStatusScope
+    {
+        private readonly bool _allowed;
+        public int Calls;
+        public FakeScope(bool allowed) => _allowed = allowed;
+        public Task<bool> IsStatusAllowedAsync(Guid queueId, Guid statusId, CancellationToken ct)
+        {
+            Calls++;
+            return Task.FromResult(_allowed);
+        }
     }
 
     private sealed class FakeGuard : IChecklistCloseGuard

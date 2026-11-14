@@ -1,19 +1,10 @@
 import { csrfHeader } from "@/lib/csrf";
+import { ApiError } from "@/lib/api";
 
-export class ApiError extends Error {
-  readonly status: number;
-  readonly url: string;
-  /// Parsed JSON body of the failed response, if the server returned
-  /// application/json. Lets callers branch on error codes (e.g.
-  /// "status_gate_required") instead of just status numbers.
-  readonly body: unknown;
-  constructor(status: number, url: string, message: string, body: unknown = null) {
-    super(message);
-    this.status = status;
-    this.url = url;
-    this.body = body;
-  }
-}
+// One ApiError class for the whole app: a second class here made
+// `apiErrorMessage()` (instanceof the lib/api one) drop every server
+// message thrown from this module. Re-exported for existing importers.
+export { ApiError };
 
 async function request<T>(
   method: string,

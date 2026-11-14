@@ -3,7 +3,6 @@ using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Checklists;
 using Servicedesk.Infrastructure.KnowledgeBase;
-using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Sla;
@@ -129,7 +128,7 @@ public sealed class TicketMutationService : ITicketMutationService
 {
     private readonly ITicketRepository _tickets;
     private readonly IQueueAccessService _queueAccess;
-    private readonly ITaxonomyRepository _taxonomy;
+    private readonly IQueueStatusScope _statusScope;
     private readonly IStatusGateService _gates;
     private readonly IAuditLogger _audit;
     private readonly ITicketListNotifier _notifier;
@@ -142,7 +141,7 @@ public sealed class TicketMutationService : ITicketMutationService
     public TicketMutationService(
         ITicketRepository tickets,
         IQueueAccessService queueAccess,
-        ITaxonomyRepository taxonomy,
+        IQueueStatusScope statusScope,
         IStatusGateService gates,
         IAuditLogger audit,
         ITicketListNotifier notifier,
@@ -154,7 +153,7 @@ public sealed class TicketMutationService : ITicketMutationService
     {
         _tickets = tickets;
         _queueAccess = queueAccess;
-        _taxonomy = taxonomy;
+        _statusScope = statusScope;
         _gates = gates;
         _audit = audit;
         _notifier = notifier;
@@ -214,13 +213,8 @@ public sealed class TicketMutationService : ITicketMutationService
         if (update.StatusId.HasValue)
         {
             var targetQueueId = update.QueueId ?? current.QueueId;
-            var targetQueue = await _taxonomy.GetQueueAsync(targetQueueId, ct);
-            if (targetQueue is not null
-                && targetQueue.AllowedStatusIds is { Count: > 0 } allowed
-                && !allowed.Contains(update.StatusId.Value))
-            {
+            if (!await _statusScope.IsStatusAllowedAsync(targetQueueId, update.StatusId.Value, ct))
                 return FieldUpdatePrecheck.Fail(TicketMutationCheck.StatusNotInQueueScope);
-            }
         }
 
         // v0.0.103 — checklist close block. A hard rule, not a gate: no
