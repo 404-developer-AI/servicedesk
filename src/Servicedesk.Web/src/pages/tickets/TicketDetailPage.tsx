@@ -124,11 +124,13 @@ function TicketNumber({ number }: { number: number }) {
 /* ─── Editable subject ─── */
 
 function EditableSubject({
+  ticketId,
   number,
   value,
   ticketTypeId,
   onSave,
 }: {
+  ticketId: string;
   number: number;
   value: string;
   ticketTypeId?: string | null;
@@ -166,6 +168,7 @@ function EditableSubject({
     return (
       <div className="group flex items-center gap-3">
         <TicketNumber number={number} />
+        <FollowButton ticketId={ticketId} />
         {ticketTypeId && <TicketTypeBadge ticketTypeId={ticketTypeId} />}
         <h1 className="text-2xl font-semibold tracking-tight text-foreground leading-tight flex-1 min-w-0 truncate">
           {value}
@@ -185,6 +188,7 @@ function EditableSubject({
   return (
     <div className="flex items-center gap-3">
       <TicketNumber number={number} />
+      <FollowButton ticketId={ticketId} />
       {ticketTypeId && <TicketTypeBadge ticketTypeId={ticketTypeId} />}
       <input
         ref={inputRef}
@@ -1346,6 +1350,7 @@ function TicketDetailBody({
             live on the Description label row below so long subjects stay visible */}
         <div className="shrink-0 pb-4">
           <EditableSubject
+            ticketId={ticketId}
             number={ticket.number}
             value={ticket.subject}
             ticketTypeId={ticket.ticketTypeId}
@@ -1443,7 +1448,6 @@ function TicketDetailBody({
                 />
               )}
               <SlaPill ticketId={ticket.id} className="shrink-0 justify-end" />
-              <FollowButton ticketId={ticketId} />
               <ExportPdfButton ticketId={ticketId} />
             </div>
           </div>
