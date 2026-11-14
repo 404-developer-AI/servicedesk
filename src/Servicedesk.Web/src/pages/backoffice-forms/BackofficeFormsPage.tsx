@@ -1,5 +1,6 @@
 import * as React from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useRouterState } from "@tanstack/react-router";
 import { CheckCircle2, ClipboardList, Hand, Inbox, Layers, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -42,8 +43,8 @@ const EMPTY_TEXT: Record<BackofficeFormTab, string> = {
 /// newest first. `?form=<id>` opens a form directly (search, notifications).
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function formIdFromUrl(): string | null {
-  const id = new URLSearchParams(window.location.search).get("form");
+function formIdFrom(search: string): string | null {
+  const id = new URLSearchParams(search).get("form");
   return id && UUID_RE.test(id) ? id : null;
 }
 
@@ -55,7 +56,14 @@ export function BackofficeFormsPage() {
   const [companyId, setCompanyId] = React.useState<string | null>(null);
   const [submittedBy, setSubmittedBy] = React.useState<string | null>(null);
   const [page, setPage] = React.useState(1);
-  const [openId, setOpenId] = React.useState<string | null>(formIdFromUrl);
+  const [openId, setOpenId] = React.useState<string | null>(() => formIdFrom(window.location.search));
+  // A search hit or notification while the page is already open changes
+  // only the query string — open that form too.
+  const searchStr = useRouterState({ select: (s) => s.location.searchStr });
+  React.useEffect(() => {
+    const id = formIdFrom(searchStr);
+    if (id) setOpenId(id);
+  }, [searchStr]);
   const q = useDebounced(search, 250);
 
   React.useEffect(() => setPage(1), [tab, q, templateId, companyId, submittedBy]);

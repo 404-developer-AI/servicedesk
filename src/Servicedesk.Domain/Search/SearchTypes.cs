@@ -32,6 +32,9 @@ public static class SearchSourceKind
     // v0.1.52 - filled forms on tickets (hit -> the ticket, form opened).
     // Agents/admins only, queue-scoped like tickets.
     public const string TicketForms = "ticket-forms";
+    // v0.1.54 - the Back office forms work list (hit -> /backoffice-forms
+    // with the form opened). Flag holders only, not queue-scoped.
+    public const string BackofficeForms = "backoffice-forms";
     // v0.1.0 - customer-portal accounts (registrations, invited users);
     // hit -> the linked contact. Agents/admins only.
     public const string PortalAccounts = "portal-accounts";
@@ -73,6 +76,9 @@ public static class SearchFeature
     /// user's own rows. Mutually exclusive with <see cref="Feedback"/> — a
     /// principal never carries both (full wins at flag-resolution time).
     public const string FeedbackOwnOnly = "feedbackOwnOnly";
+
+    /// v0.1.54 — gates the Back office forms source (backoffice_forms_enabled).
+    public const string BackofficeForms = "backofficeForms";
 }
 
 /// Sort order for the full-page search. Parsed from the `sort` query param

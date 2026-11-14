@@ -754,6 +754,8 @@ public static class DependencyInjection
         // v0.1.52 — filled ticket forms (queue-scoped like tickets).
         services.AddSingleton<TicketFormSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TicketFormSearchSource>()));
+        services.AddSingleton<BackofficeFormSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<BackofficeFormSearchSource>()));
 
         // v0.1.0 — Customer portal: accounts + one-time tokens, Turnstile
         // verification, transactional mail, scoped ticket queries and the

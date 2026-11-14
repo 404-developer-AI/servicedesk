@@ -755,7 +755,8 @@ public sealed class UserService : IUserService
                    COALESCE(adsolut_timesheet_enabled, FALSE) AS AdsolutTimesheet,
                    COALESCE(assets_enabled, FALSE)           AS Assets,
                    COALESCE(feedback_enabled, FALSE)         AS Feedback,
-                   COALESCE(feedback_own_only, FALSE)        AS FeedbackOwnOnly
+                   COALESCE(feedback_own_only, FALSE)        AS FeedbackOwnOnly,
+                   COALESCE(backoffice_forms_enabled, FALSE) AS BackofficeForms
             FROM users WHERE id = @id
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
@@ -768,6 +769,7 @@ public sealed class UserService : IUserService
         if (row.AdsolutOrders) set.Add(Domain.Search.SearchFeature.AdsolutOrders);
         if (row.AdsolutTimesheet) set.Add(Domain.Search.SearchFeature.AdsolutTimesheet);
         if (row.Assets) set.Add(Domain.Search.SearchFeature.Assets);
+        if (row.BackofficeForms) set.Add(Domain.Search.SearchFeature.BackofficeForms);
         // Full feedback access wins over own-only; only one feedback feature is
         // ever added so the search source can pick its scope unambiguously.
         if (row.Feedback) set.Add(Domain.Search.SearchFeature.Feedback);
@@ -783,6 +785,7 @@ public sealed class UserService : IUserService
         public bool Assets { get; set; }
         public bool Feedback { get; set; }
         public bool FeedbackOwnOnly { get; set; }
+        public bool BackofficeForms { get; set; }
     }
 }
 
