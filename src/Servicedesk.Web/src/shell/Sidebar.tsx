@@ -38,6 +38,7 @@ import { openCopilotWindow } from "@/lib/copilotWindow";
 import { RecentTickets } from "@/shell/RecentTickets";
 import { NotificationsWidget } from "@/shell/NotificationsWidget";
 import { GroupTagsWidget } from "@/shell/GroupTagsWidget";
+import { FollowingWidget } from "@/shell/FollowingWidget";
 import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
 import { useAuth, authStore } from "@/auth/authStore";
 import { authApi } from "@/lib/api";
@@ -499,6 +500,7 @@ export function Sidebar() {
       */}
       <NotificationsWidget collapsed={collapsed} />
       <GroupTagsWidget collapsed={collapsed} />
+      <FollowingWidget collapsed={collapsed} />
 
       {/*
         When the sidebar is collapsed, Settings + New ticket live above the

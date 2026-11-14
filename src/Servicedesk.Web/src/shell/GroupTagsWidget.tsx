@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import { Check, ExternalLink, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,6 +8,7 @@ import { errorMessage } from "@/lib/http";
 import { useServerTimeZone } from "@/hooks/useServerTime";
 import { formatDateTime } from "@/lib/dateFormat";
 import { GROUP_TAGS_KEY, groupTagApi, type GroupTag } from "@/lib/group-tags-api";
+import { PulseDot } from "@/shell/PulseDot";
 
 /// v0.1.54 — the Group tags block under the personal Tags block. Every
 /// member of a group sees the same tags; one member acknowledging a tag
@@ -63,19 +63,6 @@ export function GroupTagsWidget({ collapsed }: { collapsed: boolean }) {
         </PopoverContent>
       </Popover>
     </div>
-  );
-}
-
-function PulseDot({ count }: { count: number | null }) {
-  return (
-    <motion.span
-      animate={{ opacity: [1, 0.35, 1] }}
-      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-      className="absolute -top-0.5 -right-0.5 flex h-2.5 min-w-2.5 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
-      aria-hidden={count === null ? true : undefined}
-    >
-      {count !== null && count > 0 && count < 10 ? count : ""}
-    </motion.span>
   );
 }
 

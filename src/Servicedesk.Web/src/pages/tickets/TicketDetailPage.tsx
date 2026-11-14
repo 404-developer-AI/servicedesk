@@ -59,6 +59,7 @@ import { stripBaseTags } from "@/lib/sanitize";
 import { TicketFormHost } from "@/components/forms/TicketFormHost";
 import type { TicketFormSummary } from "@/lib/forms-api";
 import { formatBytes } from "@/lib/format";
+import { FollowButton } from "./components/FollowButton";
 
 type TicketDetailPageProps = {
   ticketId: string;
@@ -1442,6 +1443,7 @@ function TicketDetailBody({
                 />
               )}
               <SlaPill ticketId={ticket.id} className="shrink-0 justify-end" />
+              <FollowButton ticketId={ticketId} />
               <ExportPdfButton ticketId={ticketId} />
             </div>
           </div>

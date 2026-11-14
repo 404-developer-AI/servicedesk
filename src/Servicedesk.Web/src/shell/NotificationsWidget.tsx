@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import { Bell, X, AtSign, CheckCheck, ExternalLink, ListChecks, MessageSquareReply, ThumbsUp } from "lucide-react";
 import {
   Popover,
@@ -10,6 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { notificationApi, notificationHash, notificationHeadline, type UserNotification } from "@/lib/notification-api";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
+import { PulseDot } from "@/shell/PulseDot";
 
 type Props = {
   collapsed: boolean;
@@ -84,21 +84,6 @@ export function NotificationsWidget({ collapsed }: Props) {
         </PopoverContent>
       </Popover>
     </div>
-  );
-}
-
-function PulseDot({ count }: { count: number | null }) {
-  // Small red-dot badge with a slow pulse. `count` null → pure indicator
-  // (used when an adjacent count badge already shows the number).
-  return (
-    <motion.span
-      animate={{ opacity: [1, 0.35, 1] }}
-      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-      className="absolute -top-0.5 -right-0.5 flex h-2.5 min-w-2.5 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold leading-none text-white shadow-[0_0_0_2px_hsl(var(--background))]"
-      aria-hidden={count === null ? true : undefined}
-    >
-      {count !== null && count > 0 && count < 10 ? count : ""}
-    </motion.span>
   );
 }
 
