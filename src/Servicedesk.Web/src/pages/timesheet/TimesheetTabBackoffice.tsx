@@ -527,7 +527,7 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
                       opened={openedTicketId === r.ticketId}
                       onOpen={() => {
                         setOpenedTicketId(r.ticketId);
-                        openTicketInSharedWindow(r.ticketId);
+                        void copyAndOpenTicket(r.ticketNumber, r.ticketId);
                       }}
                       onSelect={(shift) => selectRow(index, shift)}
                       onSetCheck={(checked) =>
@@ -572,6 +572,19 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
 }
 
 // ---- row --------------------------------------------------------------
+
+/// Same as the Adsolut tab: copy the bare ticket number (no "Ticket#"
+/// prefix) to the clipboard, then open the ticket in the one shared ticket
+/// window. The window opens even when the clipboard write is refused.
+async function copyAndOpenTicket(ticketNumber: number, ticketId: string) {
+  try {
+    await navigator.clipboard.writeText(String(ticketNumber));
+    toast.success(`Ticket #${ticketNumber} copied — opening…`);
+  } catch {
+    toast.error("Could not copy the ticket number");
+  }
+  openTicketInSharedWindow(ticketId);
+}
 
 function TicketRow({
   row,
@@ -642,13 +655,13 @@ function renderCell(
 ) {
   switch (id) {
     case "number":
-      // Same as the Adsolut tab: opens the ticket in the one shared ticket
-      // window (reused on every click) and highlights this row.
+      // Same as the Adsolut tab: copies the number, opens the ticket in the
+      // one shared ticket window (reused on every click), highlights the row.
       return (
         <button
           type="button"
           onClick={onOpen}
-          title="Open the ticket (in the shared ticket window)"
+          title="Copy number & open the ticket"
           className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-xs text-purple-200 transition-colors hover:bg-purple-500/15 hover:text-purple-100"
         >
           #{row.ticketNumber}
