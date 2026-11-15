@@ -32,7 +32,8 @@ public static class SettingKeys
         // it had no read site, and HSTS is owned by nginx — the layer that
         // terminates TLS. The stale settings row is deleted by the
         // bootstrapper so the dead knob disappears from the Settings UI.
-        public const string CspReportUri = "Security.Csp.ReportUri";
+        // The CSP report path is deployment config (Security:Csp:ReportUri),
+        // read once by ContentSecurityPolicyMiddleware — not a DB setting.
         public const string CspReportDedupWindowSeconds = "Security.Csp.ReportDedupWindowSeconds";
         public const string CspIgnoredReportDirectives = "Security.Csp.IgnoredReportDirectives";
 
@@ -95,13 +96,10 @@ public static class SettingKeys
 
     public static class Tickets
     {
-        public const string DefaultPrioritySlug = "Tickets.DefaultPrioritySlug";
         public const string ListPageSize = "Tickets.ListPageSize";
 
-        // Hook settings for v0.0.6+ portal/mail features. Rows exist now so
-        // the knob is visible in Settings even though no code consumes them.
+        // Portal hook: a self-registration opens a system ticket.
         public const string NewUserCreatesNotificationTicket = "Tickets.NewUserCreatesNotificationTicket";
-        public const string SystemTicketsQueueSlug = "Tickets.SystemTicketsQueueSlug";
 
         public const string DefaultColumnLayout = "Tickets.DefaultColumnLayout";
 
@@ -221,11 +219,6 @@ public static class SettingKeys
         public const string ForgottenAttachmentEnabled = "Mail.ForgottenAttachmentEnabled";
         public const string ForgottenAttachmentKeywords = "Mail.ForgottenAttachmentKeywords";
         public const string ReplyThreadingEnabled = "Mail.ReplyThreadingEnabled";
-    }
-
-    public static class Companies
-    {
-        public const string SearchLimit = "Companies.SearchLimit";
     }
 
     public static class Contacts
@@ -1099,9 +1092,7 @@ public static class SettingKeys
         public const string Enabled = "Sla.Enabled";
         public const string FirstContactTriggers = "Sla.FirstContact.Triggers";
         public const string PauseOnPending = "Sla.PauseOnPending";
-        public const string HolidaysCountryCode = "Sla.Holidays.CountryCode";
         public const string HolidaysAutoSync = "Sla.Holidays.AutoSync";
-        public const string DashboardShowAvgPickup = "Sla.Dashboard.ShowAvgPickupTile";
         public const string RecalcIntervalSeconds = "Sla.RecalcIntervalSeconds";
         /// v0.0.101 — tickets per sweep cycle; the worker walks the open set
         /// with a cursor across cycles, so a full pass takes
@@ -1866,8 +1857,6 @@ public static class SettingDefaults
             "Maximum CSP violation reports accepted per IP within the CSP-report rate limit window. Flood protection for the audit log; read at startup, a change requires an app restart."),
         new SettingDefault(SettingKeys.Security.RateLimitCspReportWindowSeconds, "60", "int", "Security",
             "CSP-report rate limit window length, in seconds. Read at startup, a change requires an app restart."),
-        new SettingDefault(SettingKeys.Security.CspReportUri, "/api/security/csp-report", "string", "Security",
-            "Path the browser should POST CSP violation reports to."),
         new SettingDefault(SettingKeys.Security.CspReportDedupWindowSeconds, "600", "int", "Security",
             "Window (seconds) during which an identical CSP violation report (same directive + blocked resource) from the same IP is logged only once. 0 disables deduplication."),
         new SettingDefault(SettingKeys.Security.CspIgnoredReportDirectives, "img-src", "string", "Security",
@@ -1943,14 +1932,10 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.Ui.MobileAutoRedirect, "true", "bool", "Ui",
             "Send staff on a touch device (phone or tablet) to the mobile web version (/m): ticket views, ticket detail, search, notes, calls and mentions. Each person can still switch to the desktop version on their device. Off = every device opens the desktop app."),
 
-        new SettingDefault(SettingKeys.Tickets.DefaultPrioritySlug, "normal", "string", "Tickets",
-            "Slug of the priority assigned to new tickets when none is specified."),
         new SettingDefault(SettingKeys.Tickets.ListPageSize, "1000", "int", "Tickets",
             "Maximum tickets loaded at once in the ticket list and saved views. The list loads in a single request (no lazy loading); a view with more matches than this shows the first N with a 'refine your filters' note. Clamped to a hard ceiling of 5000 to protect the browser and database."),
         new SettingDefault(SettingKeys.Tickets.NewUserCreatesNotificationTicket, "false", "bool", "Tickets",
             "When true, a system ticket is auto-created whenever a new user registers on the portal."),
-        new SettingDefault(SettingKeys.Tickets.SystemTicketsQueueSlug, "", "string", "Tickets",
-            "Slug of the queue that receives auto-generated system tickets."),
         new SettingDefault(SettingKeys.Tickets.DefaultColumnLayout,
             "number,subject,requester,companyName,queueName,statusName,priorityName,assigneeEmail,updatedUtc",
             "string", "Tickets",
@@ -2075,10 +2060,6 @@ public static class SettingDefaults
             "Comma-separated keywords (EN + NL) that trigger the forgotten-attachment warning. Matching is case- and accent-insensitive and substring-based, so a stem like 'attach' covers attached/attachment and 'bijlage' covers bijlagen. Leave empty to effectively disable the check."),
         new SettingDefault(SettingKeys.Mail.ReplyThreadingEnabled, "true", "bool", "Mail",
             "Send mail on an existing ticket as a real reply to the customer's latest mail, so In-Reply-To / References headers go out. Ticket systems on the customer side (Kayako, Freshdesk, Zendesk, …) need these to add our reply to their existing ticket instead of opening a new one. Falls back to a plain new message when that mail is no longer in the sending mailbox, or when the queue sends from another mailbox than it receives on. Turn off only to restore the old always-new-message behaviour."),
-
-        // Companies — v0.0.9.
-        new SettingDefault(SettingKeys.Companies.SearchLimit, "25", "int", "Companies",
-            "Maximum number of results returned by the Companies global-search source."),
 
         // Contacts — v0.0.10.
         new SettingDefault(SettingKeys.Contacts.PageSize, "25", "int", "Contacts",
@@ -2318,12 +2299,8 @@ public static class SettingDefaults
             "Ticket event types that count as first contact and stop the first-response timer. Allowed: Mail, Comment, Note, Call (a phone call logged from the Call composer), StatusChange, AssignmentChange, QueueChange."),
         new SettingDefault(SettingKeys.Sla.PauseOnPending, "true", "bool", "Sla",
             "When the ticket enters status category 'Pending' (waiting on customer), pause the SLA timer."),
-        new SettingDefault(SettingKeys.Sla.HolidaysCountryCode, "BE", "string", "Sla",
-            "ISO-3166 alpha-2 country code used to auto-sync public holidays (BE, NL, DE, FR, ...). Empty disables auto-sync."),
         new SettingDefault(SettingKeys.Sla.HolidaysAutoSync, "true", "bool", "Sla",
             "When true, the holiday sync worker pulls this year + next from date.nager.at and refreshes daily."),
-        new SettingDefault(SettingKeys.Sla.DashboardShowAvgPickup, "true", "bool", "Sla",
-            "Show the 'Average first-response per queue' tile on the dashboard."),
         new SettingDefault(SettingKeys.Sla.RecalcIntervalSeconds, "60", "int", "Sla",
             "How often (seconds) the SLA recalc worker runs one sweep cycle over open tickets (minimum 15)."),
         new SettingDefault(SettingKeys.Sla.RecalcBatchSize, "500", "int", "Sla",

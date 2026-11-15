@@ -5997,6 +5997,18 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- mail. Disk pressure is handled by BlobDiskCriticalPercent instead.
         DELETE FROM settings WHERE key = 'Storage.PerMailboxMonthlyCapMB';
 
+        -- Settings that were shown and saved but never read anywhere: the CSP
+        -- report path is deployment config, the per-schema holiday
+        -- country_code replaced the global one, and the others never got a
+        -- consumer. Deleting the rows removes the dead knobs from the UI.
+        DELETE FROM settings WHERE key IN (
+            'Security.Csp.ReportUri',
+            'Tickets.DefaultPrioritySlug',
+            'Tickets.SystemTicketsQueueSlug',
+            'Companies.SearchLimit',
+            'Sla.Holidays.CountryCode',
+            'Sla.Dashboard.ShowAvgPickupTile');
+
         -- Attachment rows left behind by KB-article hard deletes and feedback
         -- deletes before both started removing them (attachments.owner_id is
         -- polymorphic, no FK). Their download routes already 404 without the
