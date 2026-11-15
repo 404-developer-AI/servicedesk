@@ -120,6 +120,10 @@ export function TrmmIntegrationPage() {
       qc.invalidateQueries({ queryKey: SECRET_QK });
       qc.invalidateQueries({ queryKey: STATUS_QK });
     },
+    onError: (err) => {
+      const upstream = apiErrorMessage(err);
+      toast.error(upstream ?? (err instanceof ApiError ? `Clear failed (${err.status})` : "Clear failed"));
+    },
   });
 
   const saveBaseUrl = useMutation({
