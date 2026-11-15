@@ -36,7 +36,7 @@ public sealed class GroupTagDbTests
         var b = await seed.UserAsync("Agent");
         var outsider = await seed.UserAsync("Agent");
         var groups = new TagGroupRepository(_db.DataSource);
-        var group = await groups.CreateAsync($"Back office {Guid.NewGuid():N}"[..20], true, new[] { a, b }, default);
+        var group = await groups.CreateAsync($"Back office {Guid.NewGuid():N}"[..20], true, false, new[] { a, b }, default);
         var tags = new GroupTagRepository(_db.DataSource);
         var tag = Assert.Single(await tags.CreateManyAsync(new[] { Tag(group, await TicketAsync()) }, default));
 
@@ -46,7 +46,7 @@ public sealed class GroupTagDbTests
         Assert.False(await tags.IsVisibleToAsync(tag.Id, outsider, default));
 
         Assert.Null(await tags.AckAsync(tag.Id, outsider, default)); // not a member
-        Assert.Equal(group, await tags.AckAsync(tag.Id, b, default));
+        Assert.Equal(new GroupTagAck(group, false), await tags.AckAsync(tag.Id, b, default));
 
         Assert.DoesNotContain(await tags.ListPendingForUserAsync(a, default), t => t.Id == tag.Id);
         var history = await tags.ListHistoryForUserAsync(a, null, 50, default);
@@ -62,7 +62,7 @@ public sealed class GroupTagDbTests
         var a = await seed.UserAsync("Agent");
         var b = await seed.UserAsync("Agent");
         var groups = new TagGroupRepository(_db.DataSource);
-        var group = await groups.CreateAsync($"Race {Guid.NewGuid():N}"[..20], true, new[] { a, b }, default);
+        var group = await groups.CreateAsync($"Race {Guid.NewGuid():N}"[..20], true, false, new[] { a, b }, default);
         var tags = new GroupTagRepository(_db.DataSource);
         var tag = Assert.Single(await tags.CreateManyAsync(new[] { Tag(group, await TicketAsync()) }, default));
 
@@ -78,11 +78,11 @@ public sealed class GroupTagDbTests
         var a = await seed.UserAsync("Agent");
         var groups = new TagGroupRepository(_db.DataSource);
         var name = $"Sleepy {Guid.NewGuid():N}"[..20];
-        var group = await groups.CreateAsync(name, true, new[] { a }, default);
+        var group = await groups.CreateAsync(name, true, false, new[] { a }, default);
         var tags = new GroupTagRepository(_db.DataSource);
         var tag = Assert.Single(await tags.CreateManyAsync(new[] { Tag(group, await TicketAsync()) }, default));
 
-        Assert.True(await groups.UpdateAsync(group, name, false, new[] { a }, default));
+        Assert.True(await groups.UpdateAsync(group, name, false, false, new[] { a }, default));
 
         Assert.Empty(await groups.ResolveActiveByIdsAsync(new[] { group }, default));
         Assert.DoesNotContain(await tags.ListPendingForUserAsync(a, default), t => t.Id == tag.Id);
@@ -96,7 +96,7 @@ public sealed class GroupTagDbTests
         var agent = await seed.UserAsync("Agent");
         var customer = await seed.UserAsync("Customer");
         var groups = new TagGroupRepository(_db.DataSource);
-        var group = await groups.CreateAsync($"Mixed {Guid.NewGuid():N}"[..20], true, new[] { agent, customer }, default);
+        var group = await groups.CreateAsync($"Mixed {Guid.NewGuid():N}"[..20], true, false, new[] { agent, customer }, default);
 
         var loaded = await groups.GetAsync(group, default);
         Assert.Equal(new[] { agent }, loaded!.Members.Select(m => m.UserId));
@@ -118,13 +118,91 @@ public sealed class GroupTagDbTests
         var late = await seed.UserAsync("Agent");
         var groups = new TagGroupRepository(_db.DataSource);
         var name = $"Shift {Guid.NewGuid():N}"[..20];
-        var group = await groups.CreateAsync(name, true, new[] { a }, default);
+        var group = await groups.CreateAsync(name, true, false, new[] { a }, default);
         var tags = new GroupTagRepository(_db.DataSource);
         var tag = Assert.Single(await tags.CreateManyAsync(new[] { Tag(group, await TicketAsync()) }, default));
 
-        await groups.UpdateAsync(group, name, true, new[] { late }, default);
+        await groups.UpdateAsync(group, name, true, false, new[] { late }, default);
 
         Assert.Contains(await tags.ListPendingForUserAsync(late, default), t => t.Id == tag.Id);
         Assert.DoesNotContain(await tags.ListPendingForUserAsync(a, default), t => t.Id == tag.Id);
+    }
+
+    [PostgresFact]
+    public async Task Personal_group_tag_is_read_by_each_member_separately()
+    {
+        var seed = new DbSeed(_db.DataSource);
+        var a = await seed.UserAsync("Agent");
+        var b = await seed.UserAsync("Agent");
+        var outsider = await seed.UserAsync("Agent");
+        var groups = new TagGroupRepository(_db.DataSource);
+        var group = await groups.CreateAsync($"Everyone {Guid.NewGuid():N}"[..20], true, true, new[] { a, b }, default);
+        var tags = new GroupTagRepository(_db.DataSource);
+        var tag = Assert.Single(await tags.CreateManyAsync(new[] { Tag(group, await TicketAsync()) }, default));
+        Assert.True(tag.PersonalAck);
+
+        Assert.Null(await tags.AckAsync(tag.Id, outsider, default));
+        Assert.Equal(new GroupTagAck(group, true), await tags.AckAsync(tag.Id, a, default));
+        Assert.Null(await tags.AckAsync(tag.Id, a, default)); // already read — idempotent
+
+        Assert.DoesNotContain(await tags.ListPendingForUserAsync(a, default), t => t.Id == tag.Id);
+        var forB = Assert.Single(await tags.ListPendingForUserAsync(b, default), t => t.Id == tag.Id);
+        Assert.Null(forB.ReadByMeUtc);
+
+        var mine = Assert.Single(await tags.ListHistoryForUserAsync(a, null, 50, default), t => t.Id == tag.Id);
+        Assert.NotNull(mine.ReadByMeUtc);
+        Assert.Null(mine.AckedUtc); // never closed for the group
+        Assert.Equal(1, mine.ReadCount);
+        Assert.Equal(2, mine.RecipientCount);
+
+        Assert.Equal(new GroupTagAck(group, true), await tags.AckAsync(tag.Id, b, default));
+        Assert.DoesNotContain(await tags.ListPendingForUserAsync(b, default), t => t.Id == tag.Id);
+        Assert.Equal(2, Assert.Single(await tags.ListHistoryForUserAsync(b, null, 50, default), t => t.Id == tag.Id).ReadCount);
+    }
+
+    [PostgresFact]
+    public async Task Member_added_after_a_personal_tag_does_not_inherit_it()
+    {
+        var seed = new DbSeed(_db.DataSource);
+        var a = await seed.UserAsync("Agent");
+        var late = await seed.UserAsync("Agent");
+        var groups = new TagGroupRepository(_db.DataSource);
+        var name = $"Everyone {Guid.NewGuid():N}"[..20];
+        var group = await groups.CreateAsync(name, true, true, new[] { a }, default);
+        var tags = new GroupTagRepository(_db.DataSource);
+        var tag = Assert.Single(await tags.CreateManyAsync(new[] { Tag(group, await TicketAsync()) }, default));
+
+        await groups.UpdateAsync(group, name, true, true, new[] { a, late }, default);
+
+        Assert.Contains(await tags.ListPendingForUserAsync(a, default), t => t.Id == tag.Id);
+        Assert.DoesNotContain(await tags.ListPendingForUserAsync(late, default), t => t.Id == tag.Id);
+        Assert.DoesNotContain(await tags.ListHistoryForUserAsync(late, null, 50, default), t => t.Id == tag.Id);
+        Assert.False(await tags.IsVisibleToAsync(tag.Id, late, default));
+        Assert.Null(await tags.AckAsync(tag.Id, late, default));
+        Assert.Equal(1, Assert.Single(await tags.ListHistoryForUserAsync(a, null, 50, default), t => t.Id == tag.Id).RecipientCount);
+    }
+
+    [PostgresFact]
+    public async Task Switching_the_mode_only_affects_new_tags()
+    {
+        var seed = new DbSeed(_db.DataSource);
+        var a = await seed.UserAsync("Agent");
+        var b = await seed.UserAsync("Agent");
+        var groups = new TagGroupRepository(_db.DataSource);
+        var name = $"Switch {Guid.NewGuid():N}"[..20];
+        var group = await groups.CreateAsync(name, true, false, new[] { a, b }, default);
+        var tags = new GroupTagRepository(_db.DataSource);
+        var shared = Assert.Single(await tags.CreateManyAsync(new[] { Tag(group, await TicketAsync()) }, default));
+
+        Assert.True(await groups.UpdateAsync(group, name, true, true, new[] { a, b }, default));
+        Assert.True((await groups.GetAsync(group, default))!.PersonalAck);
+        var personal = Assert.Single(await tags.CreateManyAsync(new[] { Tag(group, await TicketAsync()) }, default));
+
+        Assert.False(shared.PersonalAck);
+        Assert.True(personal.PersonalAck);
+        // The older tag is still shared: one ack clears it for both members.
+        Assert.Equal(new GroupTagAck(group, false), await tags.AckAsync(shared.Id, a, default));
+        Assert.DoesNotContain(await tags.ListPendingForUserAsync(b, default), t => t.Id == shared.Id);
+        Assert.Contains(await tags.ListPendingForUserAsync(b, default), t => t.Id == personal.Id);
     }
 }

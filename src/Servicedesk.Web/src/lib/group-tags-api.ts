@@ -3,12 +3,16 @@ import { request } from "@/lib/http";
 /// v0.1.54 — group tags. An admin-defined group of agents that can be
 /// @@-tagged like a person; the whole group shares ONE tag (never a mail)
 /// that stays in every member's Group tags block until one member
-/// acknowledges it.
+/// acknowledges it — or, for a personal-acknowledgement group, until each
+/// member has marked it as read for themselves.
 
 export interface TagGroup {
   id: string;
   name: string;
   isActive: boolean;
+  /// Every member acknowledges each tag personally (e.g. an "Everyone"
+  /// group). Snapshotted onto each tag, so a switch only affects new tags.
+  personalAck: boolean;
   members: { userId: string; email: string }[];
   createdUtc: string;
   updatedUtc: string;
@@ -17,6 +21,7 @@ export interface TagGroup {
 export interface TagGroupInput {
   name: string;
   isActive: boolean;
+  personalAck: boolean;
   memberIds: string[];
 }
 
@@ -24,6 +29,7 @@ export interface TagGroupSearchItem {
   id: string;
   name: string;
   memberCount: number;
+  personalAck: boolean;
 }
 
 export interface GroupTag {
@@ -40,6 +46,13 @@ export interface GroupTag {
   createdUtc: string;
   ackedUtc: string | null;
   ackedByEmail: string | null;
+  /// Personal tag: each member marks it as read for themselves; ackedUtc
+  /// stays null. readByMeUtc = the caller's own read.
+  personalAck: boolean;
+  readByMeUtc: string | null;
+  /// "Read by X of Y" — history only, personal tags only (0 otherwise).
+  readCount: number;
+  recipientCount: number;
 }
 
 export type GroupTagCursor = { createdUtc: string; id: string };

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ExternalLink, Users } from "lucide-react";
+import { Check, ExternalLink, UserCheck, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -12,7 +12,9 @@ import { PulseDot } from "@/shell/PulseDot";
 
 /// v0.1.54 — the Group tags block under the personal Tags block. Every
 /// member of a group sees the same tags; one member acknowledging a tag
-/// clears it for all (the server pushes GroupTagsChanged). Clicking a tag
+/// clears it for all (the server pushes GroupTagsChanged). Tags of a
+/// personal-acknowledgement group ("Everyone confirms") are marked as such
+/// and the check only marks them read for the caller. Clicking a tag
 /// opens the ticket but does NOT acknowledge it, and there is deliberately
 /// no "Ack all". Hidden for agents who belong to no active group.
 export function GroupTagsWidget({ collapsed, className }: { collapsed: boolean; className?: string }) {
@@ -95,15 +97,24 @@ function GroupTagPanel({ items, loading }: { items: GroupTag[]; loading: boolean
         <div className="max-h-[320px] divide-y divide-glass overflow-y-auto">
           {items.map((t) => {
             const who = t.sourceUserEmail?.split("@")[0] ?? "agent";
+            const Icon = t.personalAck ? UserCheck : Users;
             return (
               <div key={t.id} className="flex items-start gap-2 px-3 py-2 transition-colors hover:bg-glass-hover">
                 <button type="button" onClick={() => open(t)} className="flex min-w-0 flex-1 items-start gap-2 text-left"
-                  title="Open the ticket (the tag stays until someone acknowledges it)">
-                  <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                  title={t.personalAck
+                    ? "Open the ticket (the tag stays until you mark it as read)"
+                    : "Open the ticket (the tag stays until someone acknowledges it)"}>
+                  <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
                   <div className="min-w-0 flex-auto">
                     <div className="flex items-center gap-1 text-xs">
                       <span className="truncate font-medium text-foreground">{t.groupName}</span>
                       <span className="font-mono text-[11px] text-muted-foreground">#{t.ticketNumber}</span>
+                      {t.personalAck ? (
+                        <span className="ml-auto shrink-0 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-px text-[10px] font-medium text-primary"
+                          title="Every member marks this tag as read personally">
+                          Everyone confirms
+                        </span>
+                      ) : null}
                     </div>
                     <div className="mt-0.5 truncate text-[11px] text-muted-foreground/90">
                       {t.previewText || t.ticketSubject}
@@ -114,8 +125,10 @@ function GroupTagPanel({ items, loading }: { items: GroupTag[]; loading: boolean
                   </div>
                 </button>
                 <button type="button" onClick={() => ack.mutate(t.id)} disabled={ack.isPending}
-                  title="Acknowledge for the whole group"
-                  aria-label={`Acknowledge tag on #${t.ticketNumber} for ${t.groupName}`}
+                  title={t.personalAck ? "Mark as read (only for you)" : "Acknowledge for the whole group"}
+                  aria-label={t.personalAck
+                    ? `Mark tag on #${t.ticketNumber} from ${t.groupName} as read for yourself`
+                    : `Acknowledge tag on #${t.ticketNumber} for ${t.groupName}`}
                   className="shrink-0 rounded-md border border-glass p-1 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary">
                   <Check className="h-3.5 w-3.5" />
                 </button>

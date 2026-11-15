@@ -498,14 +498,14 @@ public sealed class MentionNotificationServiceTests
         public Dictionary<Guid, (string Name, List<Guid> Members)> Active { get; } = new();
         public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.TagGroupRef>> ResolveActiveByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.TagGroupRef>>(ids.Where(Active.ContainsKey)
-                .Select(i => new Servicedesk.Infrastructure.TagGroups.TagGroupRef(i, Active[i].Name, Active[i].Members.Count)).ToList());
+                .Select(i => new Servicedesk.Infrastructure.TagGroups.TagGroupRef(i, Active[i].Name, Active[i].Members.Count, false)).ToList());
         public Task<IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>> ListMemberIdsAsync(IReadOnlyCollection<Guid> groupIds, CancellationToken ct)
             => Task.FromResult<IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>>(groupIds.Where(Active.ContainsKey)
                 .ToDictionary(g => g, g => (IReadOnlyList<Guid>)Active[g].Members));
         public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.TagGroup>> ListAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<Servicedesk.Infrastructure.TagGroups.TagGroup?> GetAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Guid> CreateAsync(string name, bool isActive, IReadOnlyCollection<Guid> memberIds, CancellationToken ct) => throw new NotImplementedException();
-        public Task<bool> UpdateAsync(Guid id, string name, bool isActive, IReadOnlyCollection<Guid> memberIds, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Guid> CreateAsync(string name, bool isActive, bool personalAck, IReadOnlyCollection<Guid> memberIds, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> UpdateAsync(Guid id, string name, bool isActive, bool personalAck, IReadOnlyCollection<Guid> memberIds, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.TagGroupRef>> SearchActiveAsync(string? search, int limit, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> IsMemberOfAnyActiveAsync(Guid userId, CancellationToken ct) => throw new NotImplementedException();
@@ -520,11 +520,11 @@ public sealed class MentionNotificationServiceTests
             Created.AddRange(rows);
             return Task.FromResult<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.GroupTagRow>>(rows.Select(r =>
                 new Servicedesk.Infrastructure.TagGroups.GroupTagRow(Guid.NewGuid(), r.GroupId, "Group", r.TicketId, r.TicketNumber,
-                    r.TicketSubject, r.EventId, r.EventType, r.SourceUserId, null, r.PreviewText, DateTime.UtcNow, null, null, null)).ToList());
+                    r.TicketSubject, r.EventId, r.EventType, r.SourceUserId, null, r.PreviewText, DateTime.UtcNow, null, null, null, false, null, 0, 0)).ToList());
         }
         public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.GroupTagRow>> ListPendingForUserAsync(Guid userId, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<Servicedesk.Infrastructure.TagGroups.GroupTagRow>> ListHistoryForUserAsync(Guid userId, Servicedesk.Infrastructure.TagGroups.GroupTagCursor? cursor, int limit, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Guid?> AckAsync(Guid tagId, Guid userId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Servicedesk.Infrastructure.TagGroups.GroupTagAck?> AckAsync(Guid tagId, Guid userId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> IsVisibleToAsync(Guid tagId, Guid userId, CancellationToken ct) => throw new NotImplementedException();
     }
 

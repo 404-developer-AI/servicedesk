@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
 import { GROUP_TAGS_KEY, groupTagApi, type GroupTag, type GroupTagCursor } from "@/lib/group-tags-api";
 
 /// v0.1.54 — history of the group tags of every active group the user
-/// belongs to (open and acknowledged, with who acknowledged it). Cursor
+/// belongs to (open and acknowledged, with who acknowledged it; personal
+/// "Everyone confirms" tags show the caller's own read + "read by X of Y"). Cursor
 /// paged like My tags; /api/group-tags/history only returns the caller's
 /// own groups.
 export function GroupTagHistoryPage() {
@@ -39,7 +40,7 @@ export function GroupTagHistoryPage() {
         <h1 className="font-display text-display-sm font-semibold">My group tags</h1>
         <p className="text-xs text-muted-foreground">
           Every tag for the groups you belong to — open, or acknowledged and by whom. One acknowledgement clears a tag
-          for the whole group.
+          for the whole group, except for groups where each member confirms personally.
         </p>
       </header>
 
@@ -78,13 +79,14 @@ export function GroupTagHistoryPage() {
                       {t.previewText && <div className="mt-0.5 truncate text-[11px] text-muted-foreground/80">{t.previewText}</div>}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2">
-                      <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
-                        t.ackedUtc
-                          ? "border-glass-strong bg-glass text-muted-foreground"
-                          : "border-red-400/40 bg-red-500/10 text-red-600 dark:text-red-300")}>
-                        {t.ackedUtc ? `Acknowledged · ${t.ackedByEmail?.split("@")[0] ?? "someone"}` : "Open"}
-                      </span>
-                      {t.ackedUtc && <div className="mt-0.5 text-[10px] text-muted-foreground/70">{formatDateTime(t.ackedUtc, zone)}</div>}
+                      {t.personalAck ? <PersonalStatus tag={t} zone={zone} /> : (
+                        <>
+                          <StatusChip done={!!t.ackedUtc}>
+                            {t.ackedUtc ? `Acknowledged · ${t.ackedByEmail?.split("@")[0] ?? "someone"}` : "Open"}
+                          </StatusChip>
+                          {t.ackedUtc && <div className="mt-0.5 text-[10px] text-muted-foreground/70">{formatDateTime(t.ackedUtc, zone)}</div>}
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -102,5 +104,30 @@ export function GroupTagHistoryPage() {
         ) : null}
       </section>
     </div>
+  );
+}
+
+function StatusChip({ done, children }: { done: boolean; children: React.ReactNode }) {
+  return (
+    <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
+      done
+        ? "border-glass-strong bg-glass text-muted-foreground"
+        : "border-red-400/40 bg-red-500/10 text-red-600 dark:text-red-300")}>
+      {children}
+    </span>
+  );
+}
+
+/// "Everyone confirms" tag: the caller's own read, plus how many of the
+/// members who were in the group at tag time have read it (no names).
+function PersonalStatus({ tag, zone }: { tag: GroupTag; zone: string | null }) {
+  return (
+    <>
+      <StatusChip done={!!tag.readByMeUtc}>{tag.readByMeUtc ? "Read by you" : "Unread"}</StatusChip>
+      <div className="mt-0.5 text-[10px] text-muted-foreground/70">
+        {tag.readByMeUtc ? `${formatDateTime(tag.readByMeUtc, zone)} · ` : ""}
+        Read by {tag.readCount} of {tag.recipientCount}
+      </div>
+    </>
   );
 }

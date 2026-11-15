@@ -6778,6 +6778,20 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_group_tags_history
             ON group_tags (group_id, created_utc DESC, id DESC);
 
+        -- Personal-acknowledgement groups (e.g. "Everyone"): every member who
+        -- was in the group when the tag was made marks it as read for
+        -- themselves. The mode is snapshotted onto the tag at creation, so
+        -- switching a group later never re-opens or closes existing tags.
+        -- Personal tags never set acked_utc; per-member reads live below.
+        ALTER TABLE tag_groups ADD COLUMN IF NOT EXISTS personal_ack BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE group_tags ADD COLUMN IF NOT EXISTS personal_ack BOOLEAN NOT NULL DEFAULT FALSE;
+        CREATE TABLE IF NOT EXISTS group_tag_reads (
+            tag_id              UUID        NOT NULL REFERENCES group_tags(id) ON DELETE CASCADE,
+            user_id             UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            read_utc            TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (tag_id, user_id)
+        );
+
         -- ===================================================================
         -- v0.1.54 — Replies and likes on internal notes / internal calls.
         -- Threads are an adjacency list PLUS the root: every reply stores the

@@ -11,7 +11,8 @@ namespace Servicedesk.Api.TagGroups;
 /// v0.1.54 — group tags. Groups of agents (admin config on Settings → Users)
 /// that can be @@-tagged like a person; a group mention writes one shared
 /// tag that every member sees in the sidebar until one of them acknowledges
-/// it. Never a mail.
+/// it — or, for a personal-acknowledgement group (e.g. "Everyone"), until
+/// each member marks it as read for themselves. Never a mail.
 /// <list type="bullet">
 /// <item><b>Admin</b> — CRUD under <c>/api/settings/tag-groups</c>.</item>
 /// <item><b>Agent</b> — picker search <c>/api/tag-groups/search</c>; the
@@ -38,12 +39,13 @@ public static class TagGroupEndpoints
             var (err, name, members) = await ValidateAsync(req, users, ct);
             if (err is not null) return Results.BadRequest(new { error = err });
             Guid id;
-            try { id = await repo.CreateAsync(name!, req.IsActive ?? true, members!, ct); }
+            try { id = await repo.CreateAsync(name!, req.IsActive ?? true, req.PersonalAck ?? false, members!, ct); }
             catch (Npgsql.PostgresException pg) when (pg.SqlState == "23505")
             {
                 return Results.Conflict(new { error = "An active group with this name already exists." });
             }
-            await AuditAsync(audit, http, "tag_group.create", id, new { name, memberCount = members!.Count });
+            await AuditAsync(audit, http, "tag_group.create", id,
+                new { name, personalAck = req.PersonalAck ?? false, memberCount = members!.Count });
             return Results.Created($"/api/settings/tag-groups/{id}", MapGroup((await repo.GetAsync(id, ct))!));
         }).WithName("CreateTagGroup").WithOpenApi();
 
@@ -57,7 +59,8 @@ public static class TagGroupEndpoints
             if (existing is null) return Results.NotFound();
             try
             {
-                if (!await repo.UpdateAsync(id, name!, req.IsActive ?? existing.IsActive, members!, ct))
+                if (!await repo.UpdateAsync(id, name!, req.IsActive ?? existing.IsActive,
+                        req.PersonalAck ?? existing.PersonalAck, members!, ct))
                     return Results.NotFound();
             }
             catch (Npgsql.PostgresException pg) when (pg.SqlState == "23505")
@@ -65,7 +68,11 @@ public static class TagGroupEndpoints
                 return Results.Conflict(new { error = "Another active group already uses this name." });
             }
             await AuditAsync(audit, http, "tag_group.update", id,
-                new { name, isActive = req.IsActive ?? existing.IsActive, memberCount = members!.Count });
+                new
+                {
+                    name, isActive = req.IsActive ?? existing.IsActive,
+                    personalAck = req.PersonalAck ?? existing.PersonalAck, memberCount = members!.Count,
+                });
             return Results.Ok(MapGroup((await repo.GetAsync(id, ct))!));
         }).WithName("UpdateTagGroup").WithOpenApi();
 
@@ -84,7 +91,7 @@ public static class TagGroupEndpoints
         app.MapGet("/api/tag-groups/search", async (string? q, int? limit, ITagGroupRepository repo, CancellationToken ct) =>
         {
             var rows = await repo.SearchActiveAsync(q, limit ?? 20, ct);
-            return Results.Ok(rows.Select(r => new { id = r.Id, name = r.Name, memberCount = r.MemberCount }));
+            return Results.Ok(rows.Select(r => new { id = r.Id, name = r.Name, memberCount = r.MemberCount, personalAck = r.PersonalAck }));
         })
             .WithTags("TagGroupsAgent")
             .WithName("SearchTagGroups")
@@ -126,8 +133,8 @@ public static class TagGroupEndpoints
             IGroupTagNotifier notifier, IAuditLogger audit, ILoggerFactory logs, CancellationToken ct) =>
         {
             var userId = CurrentUserId(http);
-            var groupId = await repo.AckAsync(id, userId, ct);
-            if (groupId is null)
+            var result = await repo.AckAsync(id, userId, ct);
+            if (result is null)
             {
                 // Someone else was quicker (or it is gone): the caller only
                 // needs a refresh. Not a member → 404, like any other id probe.
@@ -135,11 +142,21 @@ public static class TagGroupEndpoints
                     ? Results.Ok(new { acked = false })
                     : Results.NotFound();
             }
-            await AuditAsync(audit, http, "group_tag.acked", id, new { groupId });
+            var groupId = result.GroupId;
+            // Personal tag: only the caller read it — refresh just their own
+            // tabs. Shared tag: gone for the whole group.
+            await AuditAsync(audit, http, result.Personal ? "group_tag.read" : "group_tag.acked", id, new { groupId });
             try
             {
-                var members = await groups.ListMemberIdsAsync(new[] { groupId.Value }, ct);
-                await notifier.GroupTagsChangedAsync(members.GetValueOrDefault(groupId.Value) ?? Array.Empty<Guid>(), ct);
+                if (result.Personal)
+                {
+                    await notifier.GroupTagsChangedAsync(new[] { userId }, ct);
+                }
+                else
+                {
+                    var members = await groups.ListMemberIdsAsync(new[] { groupId }, ct);
+                    await notifier.GroupTagsChangedAsync(members.GetValueOrDefault(groupId) ?? Array.Empty<Guid>(), ct);
+                }
             }
             catch (Exception ex)
             {
@@ -151,7 +168,9 @@ public static class TagGroupEndpoints
         return app;
     }
 
-    public sealed record UpsertRequest(string? Name, bool? IsActive, IReadOnlyList<Guid>? MemberIds);
+    /// <c>PersonalAck</c> — every member acknowledges each tag personally
+    /// (null on update = keep). Only affects tags made after the change.
+    public sealed record UpsertRequest(string? Name, bool? IsActive, IReadOnlyList<Guid>? MemberIds, bool? PersonalAck = null);
 
     private static async Task<(string? Error, string? Name, IReadOnlyList<Guid>? Members)> ValidateAsync(
         UpsertRequest req, IUserService users, CancellationToken ct)
@@ -176,6 +195,7 @@ public static class TagGroupEndpoints
         id = g.Id,
         name = g.Name,
         isActive = g.IsActive,
+        personalAck = g.PersonalAck,
         members = g.Members.Select(m => new { userId = m.UserId, email = m.Email }),
         createdUtc = g.CreatedUtc,
         updatedUtc = g.UpdatedUtc,
@@ -196,6 +216,10 @@ public static class TagGroupEndpoints
         createdUtc = t.CreatedUtc,
         ackedUtc = t.AckedUtc,
         ackedByEmail = t.AckedByEmail,
+        personalAck = t.PersonalAck,
+        readByMeUtc = t.ReadByMeUtc,
+        readCount = t.ReadCount,
+        recipientCount = t.RecipientCount,
     };
 
     private static Task AuditAsync(IAuditLogger audit, HttpContext http, string eventType, Guid target, object? payload)

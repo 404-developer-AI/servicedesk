@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Pencil, Plus, Trash2, Users, X } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2, UserCheck, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentPicker } from "@/components/AgentPicker";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -24,7 +25,8 @@ const KEY = ["admin", "tag-groups"] as const;
 
 /// v0.1.54 — admin management of group tags (Settings → Users). Tagging a
 /// group with @@ gives all its members one shared tag in their Group tags
-/// block — never a mail.
+/// block — never a mail. A personal-acknowledgement group (e.g. "Everyone")
+/// makes every member mark each tag as read for themselves.
 export function TagGroupsCard() {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -63,8 +65,9 @@ export function TagGroupsCard() {
           <div>
             <h2 className="text-sm font-semibold leading-tight text-foreground">Group tags</h2>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Groups of agents you can tag with @@ like a person. Every member sees one shared tag in their Group tags
-              block until one of them acknowledges it. Never a mail.
+              Groups of agents you can tag with @@ like a person. Every member sees the tag in their Group tags block
+              until one of them acknowledges it — or, when each member confirms personally, until they have marked it
+              as read themselves. Never a mail.
             </p>
           </div>
         </div>
@@ -92,6 +95,13 @@ export function TagGroupsCard() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium text-foreground">{g.name}</span>
+                    {g.personalAck && (
+                      <Badge className="gap-1 border border-primary/30 bg-primary/10 text-[10px] font-normal text-primary"
+                        title="Each member acknowledges the group's tags personally">
+                        <UserCheck className="h-3 w-3" />
+                        Everyone confirms
+                      </Badge>
+                    )}
                     {!g.isActive && (
                       <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">Inactive</Badge>
                     )}
@@ -135,6 +145,7 @@ function GroupEditorDialog({
   const isEdit = !!editing;
   const [name, setName] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [personalAck, setPersonalAck] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const agentsQ = useQuery({ queryKey: ["agents"], queryFn: userApi.listAgents, staleTime: 5 * 60_000 });
 
@@ -145,6 +156,7 @@ function GroupEditorDialog({
     setSyncKey(wantKey);
     setName(editing?.name ?? "");
     setIsActive(editing?.isActive ?? true);
+    setPersonalAck(editing?.personalAck ?? false);
     setMemberIds(editing?.members.map((m) => m.userId) ?? []);
   }
 
@@ -169,7 +181,7 @@ function GroupEditorDialog({
       toast.error("Name is required.");
       return;
     }
-    save.mutate({ name: trimmed, isActive, memberIds });
+    save.mutate({ name: trimmed, isActive, personalAck, memberIds });
   }
 
   return (
@@ -206,6 +218,17 @@ function GroupEditorDialog({
             <AgentPicker value={null} placeholder="Add a member…"
               onChange={(id) => { if (id && !memberIds.includes(id)) setMemberIds((ids) => [...ids, id]); }} />
           </div>
+          <label className="flex items-start justify-between gap-4 rounded-lg border border-glass bg-glass px-3 py-2.5">
+            <span className="min-w-0">
+              <span className="block text-sm text-foreground">Each member acknowledges personally</span>
+              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                Every member must mark each tag as read themselves, e.g. for an “Everyone” group. Off: one
+                acknowledgement clears the tag for the whole group. Changing this only affects new tags; members added
+                later only get tags sent after they joined.
+              </span>
+            </span>
+            <Switch checked={personalAck} onCheckedChange={setPersonalAck} className="mt-0.5" />
+          </label>
           <label className="flex items-center gap-2 text-sm text-foreground">
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)}
               className="h-4 w-4 rounded border-glass-strong accent-primary" />

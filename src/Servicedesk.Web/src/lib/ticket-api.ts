@@ -1574,7 +1574,7 @@ export const mentionApi = {
     }));
     const groupItems: MentionPickerItem[] = groups.map((g) => ({
       id: `group:${g.id}`,
-      email: `${g.memberCount} member${g.memberCount === 1 ? "" : "s"}`,
+      email: `${g.memberCount} member${g.memberCount === 1 ? "" : "s"}${g.personalAck ? " · each member confirms" : ""}`,
       roleName: "Group",
       kind: "group",
       label: g.name,
