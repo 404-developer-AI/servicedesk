@@ -69,13 +69,11 @@ public static class TicketProjectEndpoints
             var access = await CheckAccessAsync(id, http, tickets, queueAccess, ct);
             if (access.Error is not null) return access.Error;
 
-            var target = await tickets.GetCoreAsync(req.ProjectTicketId, ct);
+            // A project in a queue the caller can't see answers exactly like
+            // a missing one, so an id probe learns nothing.
+            var target = await tickets.GetAccessibleCoreAsync(queueAccess, access.UserId, access.Role, req.ProjectTicketId, ct);
             if (target is null)
                 return Results.BadRequest(new { error = "Project ticket not found." });
-            if (!await queueAccess.HasQueueAccessAsync(access.UserId, access.Role, target.QueueId, ct))
-                return Results.Json(
-                    new { error = "You do not have access to the project ticket's queue.", code = "queue_forbidden" },
-                    statusCode: 403);
 
             var result = await projects.LinkToProjectAsync(id, req.ProjectTicketId, access.UserId, ct);
             if (!result.Success) return MapFailure(result.FailureReason);

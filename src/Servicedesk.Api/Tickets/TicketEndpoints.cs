@@ -364,11 +364,11 @@ public static class TicketEndpoints
             {
                 if (parentId == Guid.Empty)
                     return Results.BadRequest(new { error = "parentTicketId is empty." });
-                var parent = await tickets.GetCoreAsync(parentId, ct);
+                // A parent in a queue the caller can't see answers exactly
+                // like a missing one, so an id probe learns nothing.
+                var parent = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, parentId, ct);
                 if (parent is null)
                     return Results.BadRequest(new { error = "Parent ticket not found." });
-                if (!await queueAccess.HasQueueAccessAsync(userId, userRole, parent.QueueId, ct))
-                    return Results.Json(new { error = "You do not have access to the parent ticket's queue." }, statusCode: 403);
                 if (parent.MergedIntoTicketId is not null)
                     return Results.Conflict(new { error = "Parent ticket is merged.", code = "parent_is_merged" });
             }
@@ -1628,13 +1628,11 @@ public static class TicketEndpoints
             var source = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (source is null) return Results.NotFound();
 
-            var target = await tickets.GetCoreAsync(req.TargetTicketId, ct);
+            // A target in a queue the caller can't see answers exactly like a
+            // missing one, so an id probe learns nothing.
+            var target = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, req.TargetTicketId, ct);
             if (target is null)
                 return Results.BadRequest(new { error = "Target ticket not found." });
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, target.QueueId, ct))
-                return Results.Json(
-                    new { error = "You do not have access to the target ticket's queue.", code = "queue_forbidden" },
-                    statusCode: 403);
 
             var result = await tickets.MergeAsync(
                 sourceTicketId: id,
@@ -1739,13 +1737,11 @@ public static class TicketEndpoints
             var source = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (source is null) return Results.NotFound();
 
-            var parent = await tickets.GetCoreAsync(req.ParentTicketId, ct);
+            // A parent in a queue the caller can't see answers exactly like a
+            // missing one, so an id probe learns nothing.
+            var parent = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, req.ParentTicketId, ct);
             if (parent is null)
                 return Results.BadRequest(new { error = "Parent ticket not found." });
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, parent.QueueId, ct))
-                return Results.Json(
-                    new { error = "You do not have access to the parent ticket's queue.", code = "queue_forbidden" },
-                    statusCode: 403);
 
             var result = await tickets.LinkParentAsync(id, req.ParentTicketId, userId, ct);
             if (!result.Success)
