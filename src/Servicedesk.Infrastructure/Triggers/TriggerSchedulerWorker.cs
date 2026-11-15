@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Triggers.Actions;
 
 namespace Servicedesk.Infrastructure.Triggers;
@@ -124,9 +125,10 @@ public sealed class TriggerSchedulerWorker : BackgroundService
         var triggerService = sp.GetRequiredService<ITriggerService>();
         var settings = sp.GetRequiredService<ISettingsService>();
         var mutator = sp.GetRequiredService<SystemFieldMutator>();
+        var sla = sp.GetRequiredService<ISlaEngine>();
 
         await RunRemindersAsync(repo, triggerService, mutator, ct);
-        await RunEscalationsAsync(repo, triggerService, settings, ct);
+        await RunEscalationsAsync(repo, triggerService, settings, sla, ct);
         await SweepSkippedRunsAsync(repo, settings, ct);
     }
 
@@ -202,14 +204,12 @@ public sealed class TriggerSchedulerWorker : BackgroundService
     }
 
     private static async Task RunEscalationsAsync(
-        ITriggerRepository repo, ITriggerService triggerService, ISettingsService settings, CancellationToken ct)
+        ITriggerRepository repo, ITriggerService triggerService, ISettingsService settings,
+        ISlaEngine sla, CancellationToken ct)
     {
         // v0.1.25 — Sla.Enabled off: the stored deadlines are frozen and
         // possibly stale, so SLA escalation / warning triggers never fire.
-        bool slaEnabled;
-        try { slaEnabled = await settings.GetAsync<bool>(SettingKeys.Sla.Enabled, ct); }
-        catch { slaEnabled = true; }
-        if (!slaEnabled) return;
+        if (!await sla.IsEnabledAsync(ct)) return;
 
         // Escalation candidates: SLA deadline elapsed.
         var escalations = await repo.ListEscalationCandidatesAsync(CandidateLimit, ct);
