@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api";
+import { serverNowMs } from "@/hooks/useServerTime";
 import {
   perfApi,
   type ActivityRow,
@@ -369,7 +370,7 @@ function TablesView({ period }: { period: PeriodQuery }) {
       align: "right",
       render: (t) => {
         const last = [t.lastVacuum, t.lastAutovacuum].filter(Boolean).sort().pop() ?? null;
-        return <span className="text-muted-foreground" title={last ? formatDateTime(last, undefined, true) : "never"}>{fmtAgo(last, Date.now())}</span>;
+        return <span className="text-muted-foreground" title={last ? formatDateTime(last, undefined, true) : "never"}>{fmtAgo(last, serverNowMs())}</span>;
       },
       sortValue: (t) => [t.lastVacuum, t.lastAutovacuum].filter(Boolean).sort().pop() ?? "",
     },
