@@ -785,8 +785,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         // v0.0.40 — auto-flip status when a queue change would land the
         // ticket on a status outside the new queue's allowed-list. The
         // status-dropdown filters in the UI prevent the common case at
-        // save-time, but a trigger that only does set_queue or a hand-
-        // rolled API call still needs the runtime safety net. We rebind
+        // save-time, but a hand-rolled API call still needs the runtime
+        // safety net. (Triggers write through SystemFieldMutator, not here:
+        // SetQueueHandler applies the same rule after its queue change.) We rebind
         // `update` (record copy via `with`) so every downstream branch
         // — change-event metadata, state-category side-effects, SQL
         // parameter binding — picks up the auto-flip without further
