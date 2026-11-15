@@ -34,6 +34,7 @@ import {
   formatHHMM,
   formatDuration,
   autoFormatTimeInput,
+  validateEntryDraft,
   type TimesheetEntry,
   type TimesheetTask,
   type TimesheetUser,
@@ -1378,18 +1379,13 @@ function TicketFilterPicker({
 // ---- Validation helpers ----------------------------------------------
 
 function validateLocal(row: EditDraft, requiresTicket: boolean): Record<string, string> {
-  const errs: Record<string, string> = {};
-  if (row.startMinutes === null) errs.startMinutes = "Start required.";
-  if (row.endMinutes === null) errs.endMinutes = "End required.";
-  if (
-    row.startMinutes !== null &&
-    row.endMinutes !== null &&
-    row.endMinutes <= row.startMinutes
-  ) {
-    errs.endMinutes = "End must be after start.";
-  }
-  if (!row.taskId) errs.taskId = "Pick a task.";
-  if (requiresTicket && !row.ticket) errs.ticketId = "This task needs a ticket.";
-  if (row.description.trim().length === 0) errs.description = "Describe what was done.";
-  return errs;
+  // The shared entry rules — never fork them (same as My day and + Log time).
+  return validateEntryDraft({
+    startMinutes: row.startMinutes,
+    endMinutes: row.endMinutes,
+    taskId: row.taskId,
+    hasTicket: !!row.ticket,
+    requiresTicket,
+    description: row.description,
+  });
 }
