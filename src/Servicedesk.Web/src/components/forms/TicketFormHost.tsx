@@ -1,10 +1,14 @@
 import * as React from "react";
+import { toast } from "sonner";
 import {
   FILL_FORM_EVENT,
   OPEN_FORM_EVENT,
+  formApiError,
+  ticketFormsApi,
   type FillFormDetail,
   type TicketFormDetail,
 } from "@/lib/forms-api";
+import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { FormFillDialog, FormViewDialog } from "./FormDialogs";
 
 type FillTarget =
@@ -16,10 +20,11 @@ type FillTarget =
 ///   - `sd:fill-form` from the `::` picker → fill dialog for a template;
 ///   - a click on any rendered `[data-form-id]` (the "Open form" pill in the
 ///     note, the side panel's Forms rows) → view dialog;
-///   - `sd:open-form` (programmatic) and `?form=<id>` (global search deep link).
+///   - `sd:open-form` (programmatic) and `?form=<id>` (global search deep link);
+///   - v0.1.55: a minimised draft restored from the tray (`pendingFormRestore`).
 /// The server resolves each form to its ticket and checks queue access, so a
 /// form id from elsewhere can never be read through this host.
-export function TicketFormHost({ ticketId }: { ticketId: string }) {
+export function TicketFormHost({ ticketId, ticketNumber }: { ticketId: string; ticketNumber?: number | null }) {
   const [fill, setFill] = React.useState<FillTarget | null>(null);
   const [viewId, setViewId] = React.useState<string | null>(null);
 
@@ -28,6 +33,31 @@ export function TicketFormHost({ ticketId }: { ticketId: string }) {
     setViewId(wanted && /^[0-9a-f-]{36}$/i.test(wanted) ? wanted : null);
     setFill(null);
   }, [ticketId]);
+
+  // Restore a minimised draft of this ticket (the tray navigates here first
+  // when it was clicked on another page). An edit draft needs the saved form;
+  // the dialog keeps the draft's own base version for the save.
+  const pendingRestore = useWorkspaceStore((s) => s.pendingFormRestore);
+  React.useEffect(() => {
+    if (!pendingRestore) return;
+    const store = useWorkspaceStore.getState();
+    const entry = store.formDrafts[pendingRestore];
+    if (!entry) {
+      store.clearFormRestore();
+      return;
+    }
+    if (entry.ticketId !== ticketId) return;
+    store.clearFormRestore();
+    setViewId(null);
+    if (entry.mode === "create" && entry.templateId) {
+      setFill({ mode: "create", ticketId, templateId: entry.templateId });
+    } else if (entry.mode === "edit" && entry.formId) {
+      ticketFormsApi.get(entry.formId).then(
+        (form) => setFill({ mode: "edit", ticketId, form }),
+        (err) => toast.error(formApiError(err)?.error ?? "This form can no longer be opened."),
+      );
+    }
+  }, [pendingRestore, ticketId]);
 
   React.useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -71,6 +101,7 @@ export function TicketFormHost({ ticketId }: { ticketId: string }) {
       />
       <FormFillDialog
         target={fill}
+        ticketNumber={ticketNumber}
         onOpenChange={(o) => { if (!o) setFill(null); }}
         onSaved={(saved) => setViewId(fill?.mode === "edit" ? saved.id : null)}
       />

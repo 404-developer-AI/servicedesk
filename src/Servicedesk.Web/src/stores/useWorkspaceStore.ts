@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { preferencesApi } from "@/lib/api";
+import type { FormDraft } from "@/lib/formDraft";
 import type {
   MailRecipientInput,
   OutboundMailKind,
@@ -56,6 +57,37 @@ export type CallDraft = {
   updatedUtc: string;
 };
 
+// v0.1.55 — an in-progress ticket form (fill dialog). Persisted like the
+// composer drafts, so a form survives switching tickets, a reload or a crash
+// and can be minimised to the tray while the agent copies text elsewhere.
+// One slot per ticket + template (fresh fill) or ticket + form (edit).
+export type FormDraftEntry = {
+  key: string;
+  ticketId: string;
+  ticketNumber: number | null;
+  formName: string;
+  mode: "create" | "edit";
+  /** create: the template; edit: the saved form and the version edited. */
+  templateId?: string;
+  formId?: string;
+  version?: number;
+  draft: FormDraft;
+  /** JSON of the answers the dialog started from — tells "changed" apart. */
+  baseline: string;
+  minimized: boolean;
+  updatedUtc: string;
+};
+
+export function formDraftKey(
+  target: { ticketId: string } & ({ mode: "create"; templateId: string } | { mode: "edit"; formId: string }),
+): string {
+  return target.mode === "create"
+    ? `${target.ticketId}:create:${target.templateId}`
+    : `${target.ticketId}:edit:${target.formId}`;
+}
+
+const FORM_DRAFT_PREFIX = "workspace:formdraft:";
+
 // Transient (not persisted) — set when the agent clicks Reply / Reply-all /
 // Forward on a specific MailReceived event so <AddNoteForm> + <SendMailForm>
 // can react by expanding, switching to the mail tab and pre-filling from the
@@ -88,8 +120,11 @@ type WorkspaceState = {
   drafts: Record<string, Draft>;
   mailDrafts: Record<string, MailDraft>;
   callDrafts: Record<string, CallDraft>;
+  formDrafts: Record<string, FormDraftEntry>;
   loaded: boolean;
   pendingMailAction: PendingMailAction | null;
+  /** Transient: the form draft the tray asked the ticket page to reopen. */
+  pendingFormRestore: string | null;
 
   setLastTicket: (ticketId: string) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -109,6 +144,12 @@ type WorkspaceState = {
   setCallDraft: (ticketId: string, draft: Pick<CallDraft, "bodyHtml" | "isInternal">) => void;
   removeCallDraft: (ticketId: string) => void;
   getCallDraft: (ticketId: string) => CallDraft | undefined;
+  setFormDraft: (entry: Omit<FormDraftEntry, "updatedUtc">) => void;
+  setFormDraftMinimized: (key: string, minimized: boolean) => void;
+  /** Drops the draft here and on the server (sent, discarded). */
+  removeFormDraft: (key: string) => void;
+  requestFormRestore: (key: string) => void;
+  clearFormRestore: () => void;
   requestMailAction: (
     intent: Omit<PendingMailAction, "id">,
   ) => void;
@@ -169,6 +210,13 @@ function toEntries(state: WorkspaceState) {
       value: JSON.stringify(callDraft),
     });
   }
+  for (const formDraft of Object.values(state.formDrafts)) {
+    // `minimized` is per window, not state worth a server write: a loaded
+    // draft always comes back minimised (see fromEntries).
+    const stored: Partial<FormDraftEntry> = { ...formDraft };
+    delete stored.minimized;
+    entries.push({ key: FORM_DRAFT_PREFIX + formDraft.key, value: JSON.stringify(stored) });
+  }
   return entries;
 }
 
@@ -180,6 +228,7 @@ function fromEntries(entries: Record<string, string>) {
     drafts: Record<string, Draft>;
     mailDrafts: Record<string, MailDraft>;
     callDrafts: Record<string, CallDraft>;
+    formDrafts: Record<string, FormDraftEntry>;
   } = {
     lastTicketId: null,
     sidebarCollapsed: false,
@@ -187,6 +236,7 @@ function fromEntries(entries: Record<string, string>) {
     drafts: {},
     mailDrafts: {},
     callDrafts: {},
+    formDrafts: {},
   };
 
   for (const [key, value] of Object.entries(entries)) {
@@ -196,6 +246,17 @@ function fromEntries(entries: Record<string, string>) {
       result.sidebarCollapsed = value === "true";
     } else if (key === "workspace:ticketSidePanelPinned") {
       result.ticketSidePanelPinned = value === "true";
+    } else if (key.startsWith(FORM_DRAFT_PREFIX)) {
+      try {
+        const formDraft = JSON.parse(value) as FormDraftEntry;
+        if (formDraft?.key && formDraft.ticketId && formDraft.draft) {
+          // A draft found at load time was open in a window that went away:
+          // it lands in the tray, never as an open dialog.
+          result.formDrafts[formDraft.key] = { ...formDraft, minimized: true };
+        }
+      } catch {
+        // ignore corrupt form-draft entries
+      }
     } else if (key.startsWith("workspace:calldraft:")) {
       try {
         const callDraft = JSON.parse(value) as CallDraft;
@@ -231,8 +292,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   drafts: {},
   mailDrafts: {},
   callDrafts: {},
+  formDrafts: {},
   loaded: false,
   pendingMailAction: null,
+  pendingFormRestore: null,
 
   setLastTicket: (ticketId) => set({ lastTicketId: ticketId }),
 
@@ -308,6 +371,36 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }),
 
   getCallDraft: (ticketId) => get().callDrafts[ticketId],
+
+  setFormDraft: (entry) =>
+    set((s) => ({
+      formDrafts: { ...s.formDrafts, [entry.key]: { ...entry, updatedUtc: new Date().toISOString() } },
+    })),
+
+  setFormDraftMinimized: (key, minimized) =>
+    set((s) => {
+      const cur = s.formDrafts[key];
+      if (!cur || cur.minimized === minimized) return s;
+      return { formDrafts: { ...s.formDrafts, [key]: { ...cur, minimized } } };
+    }),
+
+  removeFormDraft: (key) => {
+    if (!get().formDrafts[key]) return;
+    set((s) => {
+      const rest = { ...s.formDrafts };
+      delete rest[key];
+      return { formDrafts: rest, pendingFormRestore: s.pendingFormRestore === key ? null : s.pendingFormRestore };
+    });
+    const serverKey = FORM_DRAFT_PREFIX + key;
+    lastSaved.delete(serverKey);
+    void preferencesApi.deleteWorkspaceKey(serverKey).catch(() => {
+      // best effort — a leftover key reappears in the tray on next load and
+      // can be discarded there
+    });
+  },
+
+  requestFormRestore: (key) => set({ pendingFormRestore: key }),
+  clearFormRestore: () => set({ pendingFormRestore: null }),
 
   requestMailAction: (intent) =>
     set({
