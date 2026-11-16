@@ -979,10 +979,11 @@ export function splitMentionIds(ids: string[]): {
 /// MentionNodeAttrs widened locally because we pass kind/bodyHtml through
 /// the command props — Tiptap's own type only knows id/label.
 type ComposeMentionProps = MentionNodeAttrs & {
-  kind?: "intake" | "template" | "order" | "kb" | "form";
+  kind?: "intake" | "template" | "order" | "kb" | "form" | "variable";
   bodyHtml?: string;
   href?: string;
   ticketId?: string;
+  text?: string;
 };
 
 /// v0.1.4 — typing pause before the `@@` / `::` pickers query the server.
@@ -1057,6 +1058,21 @@ function buildIntakeSuggestion(
             new CustomEvent(FILL_FORM_EVENT, { detail: { ticketId: props.ticketId, templateId: id } }),
           );
         }
+        return;
+      }
+
+      if (kind === "variable") {
+        // v0.1.55 — a resolved ticket value (form fields): plain text.
+        const text = (props.text as string | undefined) ?? "";
+        if (!text) {
+          editor.chain().focus().deleteRange(range).run();
+          return;
+        }
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(range, [{ type: "text", text }, { type: "text", text: " " }])
+          .run();
         return;
       }
 
@@ -1144,6 +1160,7 @@ function buildIntakeSuggestion(
                   bodyHtml: item.bodyHtml,
                   href: item.href,
                   ticketId: item.ticketId,
+                  text: item.text,
                 } as ComposeMentionProps),
             },
             editor: props.editor,
@@ -1153,7 +1170,10 @@ function buildIntakeSuggestion(
 
           popup = tippy(document.body, {
             getReferenceClientRect: () => props.clientRect!() ?? new DOMRect(),
-            appendTo: () => document.body,
+            // Inside a modal (the form fill dialog) the popup must live in
+            // the dialog: Radix makes everything outside it inert, so a
+            // body-level popup could not be clicked.
+            appendTo: () => props.editor.view.dom.closest<HTMLElement>("[role=dialog]:not([data-vaul-drawer])") ?? document.body,
             content: component.element,
             showOnCreate: true,
             interactive: true,
@@ -1174,6 +1194,7 @@ function buildIntakeSuggestion(
                 bodyHtml: item.bodyHtml,
                 href: item.href,
                 ticketId: item.ticketId,
+                text: item.text,
               } as ComposeMentionProps),
           });
           if (!props.clientRect) return;
@@ -1318,7 +1339,7 @@ function buildMentionSuggestion(
 
           popup = tippy(document.body, {
             getReferenceClientRect: () => props.clientRect!() ?? new DOMRect(),
-            appendTo: () => document.body,
+            appendTo: () => props.editor.view.dom.closest<HTMLElement>("[role=dialog]:not([data-vaul-drawer])") ?? document.body,
             content: component.element,
             showOnCreate: true,
             interactive: true,
