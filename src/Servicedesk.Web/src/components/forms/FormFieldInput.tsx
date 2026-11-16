@@ -7,7 +7,7 @@ import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { useServerOffsetMinutes, useServerTimeZone } from "@/hooks/useServerTime";
 import { userApi } from "@/lib/ticket-api";
 import { ticketFormsApi, type FormField } from "@/lib/forms-api";
-import { newRowKey, plainTextToHtml, type ArticleDraftRow, type DraftValue } from "@/lib/formDraft";
+import { liveOrders, newRowKey, plainTextToHtml, type ArticleDraftRow, type DraftValue } from "@/lib/formDraft";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import type { IntakeMentionItem } from "@/components/intake/IntakeMentionList";
 import { PlainTextPicker } from "./PlainTextPicker";
@@ -83,9 +83,18 @@ function renderControl(
   switch (f.type) {
     case "ShortText":
       if (picker) {
+        // A picked order keeps its id next to the text, so the note renders
+        // it as a clickable order pill (linked to the ticket like a composer
+        // pill); editing its label away drops the link.
+        const orders = value?.kind === "text" ? value.orders : undefined;
         return (
           <PlainTextPicker id={id} type="text" maxLength={500} disabled={disabled} value={text}
-            onValueChange={(v) => onChange({ kind: "text", value: v })}
+            onValueChange={(v, picked) => {
+              const added = picked?.item.kind === "order" && picked.text
+                ? [{ id: picked.item.id, label: picked.text }] : [];
+              const next = liveOrders(v, [...(orders ?? []), ...added]);
+              onChange(next.length > 0 ? { kind: "text", value: v, orders: next } : { kind: "text", value: v });
+            }}
             query={picker} toText={pickerItemAsText}
             className={cn(formInputCn, "h-9", ring)} />
         );

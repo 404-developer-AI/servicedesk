@@ -142,6 +142,8 @@ public static class FormLimits
     public const int OptionIdMax = 40;
     public const int OptionsMax = 100;
     public const int ShortTextMax = 500;
+    /// Order references a short text answer may carry (`::` picks).
+    public const int ShortTextOrdersMax = 10;
     public const int DeleteReasonMax = 1000;
     public const int BackofficeNoteMax = 4000;
     public const int DurationMaxMinutes = 100_000;
@@ -305,6 +307,11 @@ public static class FormTemplateValidator
     }
 }
 
+/// An Adsolut order picked through `::` in a ShortText answer: the id behind
+/// the pill and the label the agent sees in the text. Like a composer pill it
+/// is a pointer only — opening it goes through the gated order endpoint.
+public sealed record FormOrderRef(Guid Id, string Label);
+
 /// A reference an answer points to that the service must resolve against the
 /// database (and reject when it does not exist / is out of scope).
 public sealed record FormReferenceSet(
@@ -349,6 +356,10 @@ public static class FormAnswerValidator
     public sealed record TextValue(string Value) : ParsedValue;
     /// A rich-text LongText answer: sanitized HTML (stored as {"html": …}).
     public sealed record HtmlValue(string Html) : ParsedValue;
+    /// A ShortText answer with Adsolut orders picked through `::` (stored as
+    /// {"text": …, "orders": [{"id", "label"}]}); the note renders each
+    /// order's label in the text as a clickable order pill.
+    public sealed record TextWithOrdersValue(string Text, IReadOnlyList<FormOrderRef> Orders) : ParsedValue;
     public sealed record NumberValue(decimal Value) : ParsedValue;
     public sealed record BoolValue(bool Value) : ParsedValue;
     public sealed record OptionValue(string OptionId) : ParsedValue;
@@ -421,6 +432,32 @@ public static class FormAnswerValidator
                 if (text.Length == 0) return null;
                 if (text.Length > limits.LongTextMaxLength) throw Bad($"at most {limits.LongTextMaxLength} characters.");
                 return new HtmlValue(clean);
+            }
+            case FormFieldType.ShortText when node is JsonObject withOrders:
+            {
+                // {"text": "…", "orders": [{"id": guid, "label": "…"}]}. An
+                // order only counts while its label is still in the text, so
+                // deleting the label drops the link; none left = plain text.
+                if (withOrders.Count != 2 || withOrders["text"] is not { } tn || ReadString(tn) is not { } raw
+                    || withOrders["orders"] is not JsonArray arr)
+                    throw Bad("expected text.");
+                var s = raw.Replace("\r\n", "\n").Replace('\n', ' ').Trim();
+                if (s.Length == 0) return null;
+                if (s.Length > FormLimits.ShortTextMax) throw Bad($"at most {FormLimits.ShortTextMax} characters.");
+                if (arr.Count > FormLimits.ShortTextOrdersMax) throw Bad("too many linked orders.");
+                var orders = new List<FormOrderRef>();
+                foreach (var item in arr)
+                {
+                    if (item is not JsonObject o || o.Count != 2
+                        || o["id"] is not { } idn || ReadString(idn) is not { } ids || !Guid.TryParse(ids, out var oid)
+                        || o["label"] is not { } ln || ReadString(ln) is not { } label)
+                        throw Bad("invalid order reference.");
+                    label = label.Trim();
+                    if (label.Length == 0 || label.Length > FormLimits.ShortTextMax) throw Bad("invalid order reference.");
+                    if (!s.Contains(label, StringComparison.Ordinal) || orders.Any(x => x.Id == oid)) continue;
+                    orders.Add(new FormOrderRef(oid, label));
+                }
+                return orders.Count == 0 ? new TextValue(s) : new TextWithOrdersValue(s, orders);
             }
             case FormFieldType.ShortText:
             case FormFieldType.LongText:
@@ -578,6 +615,15 @@ public static class FormAnswerValidator
             {
                 TextValue t => JsonValue.Create(t.Value),
                 HtmlValue h => new JsonObject { ["html"] = h.Html },
+                TextWithOrdersValue t => new JsonObject
+                {
+                    ["text"] = t.Text,
+                    ["orders"] = new JsonArray(t.Orders.Select(o => (JsonNode?)new JsonObject
+                    {
+                        ["id"] = o.Id.ToString(),
+                        ["label"] = o.Label,
+                    }).ToArray()),
+                },
                 NumberValue n => JsonValue.Create(n.Value),
                 BoolValue b => JsonValue.Create(b.Value),
                 OptionValue ov => JsonValue.Create(ov.OptionId),
@@ -624,6 +670,8 @@ public static class FormRenderer
             {
                 case FormFieldType.LongText when RichHtml(v) is { } html:
                     return KnowledgeBase.KbBodyStripper.HtmlToText(html);
+                case FormFieldType.ShortText when v is JsonObject o:
+                    return o["text"]?.GetValue<string>() ?? string.Empty;
                 case FormFieldType.ShortText:
                 case FormFieldType.LongText:
                     return v.GetValue<string>();
@@ -687,6 +735,59 @@ public static class FormRenderer
         => v is JsonObject o && o["html"] is JsonValue h && h.GetValueKind() == System.Text.Json.JsonValueKind.String
             ? h.GetValue<string>() : null;
 
+    /// The orders linked in a ShortText answer ({"text", "orders"}); empty
+    /// for a plain string answer. Malformed entries are skipped.
+    public static IReadOnlyList<FormOrderRef> ShortTextOrders(JsonNode? v)
+    {
+        if (v is not JsonObject o || o["orders"] is not JsonArray arr) return Array.Empty<FormOrderRef>();
+        var list = new List<FormOrderRef>();
+        foreach (var item in arr)
+        {
+            if (item is JsonObject r && r["id"] is JsonValue idv && idv.GetValueKind() == System.Text.Json.JsonValueKind.String
+                && Guid.TryParse(idv.GetValue<string>(), out var id)
+                && r["label"] is JsonValue lv && lv.GetValueKind() == System.Text.Json.JsonValueKind.String
+                && lv.GetValue<string>() is { Length: > 0 } label)
+                list.Add(new FormOrderRef(id, label));
+        }
+        return list;
+    }
+
+    /// A value as note-cell HTML: rich LongText as its sanitized HTML, a
+    /// ShortText with linked orders with each order's first label occurrence
+    /// as the same order pill the composer inserts (so it is clickable and
+    /// lands in the ticket's linked orders), anything else encoded text.
+    internal static string CellHtml(FormField f, JsonNode? v, string display)
+    {
+        if (display.Length == 0) return "—";
+        if (f.Type == FormFieldType.LongText && RichHtml(v) is { } html) return html;
+        if (f.Type != FormFieldType.ShortText) return Lines(display);
+        var orders = ShortTextOrders(v);
+        if (orders.Count == 0) return E(display);
+
+        // Place each pill at its label's first free occurrence, then emit the
+        // text left to right; an overlapping label keeps the earlier pill.
+        var spans = new List<(int Start, FormOrderRef Order)>();
+        foreach (var o in orders)
+        {
+            var at = display.IndexOf(o.Label, StringComparison.Ordinal);
+            while (at >= 0 && spans.Any(sp => at < sp.Start + sp.Order.Label.Length && sp.Start < at + o.Label.Length))
+                at = display.IndexOf(o.Label, at + 1, StringComparison.Ordinal);
+            if (at >= 0) spans.Add((at, o));
+        }
+        var sb = new StringBuilder();
+        var pos = 0;
+        foreach (var (start, o) in spans.OrderBy(sp => sp.Start))
+        {
+            sb.Append(E(display[pos..start]))
+              .Append("<span data-type=\"orderMention\" class=\"sd-order-mention\" data-order-mention=\"true\" data-order-id=\"")
+              .Append(o.Id.ToString()).Append("\" data-label=\"").Append(E(o.Label)).Append("\">")
+              .Append(E(o.Label)).Append("</span>");
+            pos = start + o.Label.Length;
+        }
+        sb.Append(E(display[pos..]));
+        return sb.ToString();
+    }
+
     public static string FormatQty(decimal q) => q.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string E(string s) => System.Net.WebUtility.HtmlEncode(s);
@@ -719,15 +820,19 @@ public static class FormRenderer
             string cell;
             if (changedFieldIds is not null)
             {
+                // Plain text on the old side (a pill there would re-link an
+                // order the agent removed); a short text's new side keeps its
+                // order pills so an order added on edit is linked too.
                 var before = DisplayValue(f, previous?[key], formatDateTime);
-                cell = $"{Lines(before.Length == 0 ? "—" : before)} → {Lines(now.Length == 0 ? "—" : now)}";
+                var after = f.Type == FormFieldType.ShortText ? CellHtml(f, answers[key], now) : Lines(now.Length == 0 ? "—" : now);
+                cell = $"{Lines(before.Length == 0 ? "—" : before)} → {after}";
             }
             else
             {
                 if (now.Length == 0) continue;
                 // Rich text goes in as its (already sanitized) HTML; the note
                 // as a whole is sanitized again before it is stored.
-                cell = f.Type == FormFieldType.LongText && RichHtml(answers[key]) is { } html ? html : Lines(now);
+                cell = CellHtml(f, answers[key], now);
             }
             if (pendingSection is not null)
             {

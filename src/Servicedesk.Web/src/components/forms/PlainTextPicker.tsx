@@ -13,7 +13,9 @@ const PICKER_DEBOUNCE_MS = 250;
 
 type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & {
   value: string;
-  onValueChange: (v: string) => void;
+  /// `picked` is set when the change comes from a `::` pick: the item and
+  /// the text it became (trimmed to the field limit).
+  onValueChange: (v: string, picked?: { item: IntakeMentionItem; text: string }) => void;
   query: (q: string) => Promise<IntakeMentionItem[]>;
   /// Plain text a picked item becomes.
   toText: (item: IntakeMentionItem) => string;
@@ -67,7 +69,7 @@ export const PlainTextPicker = React.forwardRef<HTMLInputElement, Props>(functio
       insert = insert.slice(0, Math.max(0, room));
     }
     const next = applyPickerInsert(value, trigger.start, caret, insert);
-    onValueChange(next.text);
+    onValueChange(next.text, { item, text: insert });
     setTrigger(null);
     setItems([]);
     requestAnimationFrame(() => {

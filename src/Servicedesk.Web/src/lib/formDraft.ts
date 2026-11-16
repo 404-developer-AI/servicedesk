@@ -4,7 +4,9 @@ import type {
   FormAnswers,
   FormAnswersInput,
   FormField,
+  FormOrderRef,
   RefAnswer,
+  ShortTextOrdersAnswer,
 } from "@/lib/forms-api";
 import { escapeHtml } from "@/lib/format";
 import { htmlToText } from "@/lib/sanitize";
@@ -18,7 +20,8 @@ import { substituteFormDefault } from "@/lib/composeTokens";
 export type ArticleDraftRow = { key: string; articleId: string; code: string; name: string; quantity: string };
 
 export type DraftValue =
-  | { kind: "text"; value: string }
+  /// `orders`: Adsolut orders picked through `::` in a short text field.
+  | { kind: "text"; value: string; orders?: FormOrderRef[] }
   /// Rich-text LongText (v0.1.55). `legacy` keeps a stored plain-text answer
   /// and the HTML it was converted to, so an untouched legacy field is sent
   /// back unchanged instead of reading as an edit.
@@ -49,6 +52,43 @@ export function parseDuration(raw: string): number | null {
   m = /^(\d{1,4}(?:[.,]\d{1,2})?)\s*h?$/.exec(s);
   if (m) return Math.round(Number(m[1].replace(",", ".")) * 60);
   return null;
+}
+
+/// The picked orders whose label is still in the text (first per id) — the
+/// same rule the server applies, so a deleted label drops its link.
+export function liveOrders(text: string, orders: FormOrderRef[] | undefined): FormOrderRef[] {
+  const seen = new Set<string>();
+  return (orders ?? []).filter((o) => {
+    if (seen.has(o.id) || !o.label || !text.includes(o.label)) return false;
+    seen.add(o.id);
+    return true;
+  });
+}
+
+export type ShortTextSegment = { text: string; order?: FormOrderRef };
+
+/// A short text with linked orders split into plain text and order pieces,
+/// mirroring the server's note rendering: each order takes its label's first
+/// occurrence not already taken by an earlier order.
+export function shortTextSegments(text: string, orders: FormOrderRef[] | undefined): ShortTextSegment[] {
+  const spans: { start: number; order: FormOrderRef }[] = [];
+  for (const o of orders ?? []) {
+    if (!o.label) continue;
+    let at = text.indexOf(o.label);
+    while (at >= 0 && spans.some((s) => at < s.start + s.order.label.length && s.start < at + o.label.length))
+      at = text.indexOf(o.label, at + 1);
+    if (at >= 0) spans.push({ start: at, order: o });
+  }
+  spans.sort((a, b) => a.start - b.start);
+  const out: ShortTextSegment[] = [];
+  let pos = 0;
+  for (const s of spans) {
+    if (s.start > pos) out.push({ text: text.slice(pos, s.start) });
+    out.push({ text: s.order.label, order: s.order });
+    pos = s.start + s.order.label.length;
+  }
+  if (pos < text.length) out.push({ text: text.slice(pos) });
+  return out;
 }
 
 /// Plain text → paragraph HTML for the rich-text editor (escaped).
@@ -137,6 +177,14 @@ export function draftFromAnswers(fields: FormField[], answers: FormAnswers): For
           d[f.id] = { kind: "html", value: html, legacy: { text: v, html } };
         } else {
           d[f.id] = { kind: "html", value: (v as { html?: string }).html ?? "" };
+        }
+        break;
+      case "ShortText":
+        if (typeof v === "object" && !Array.isArray(v) && "text" in v) {
+          const a = v as ShortTextOrdersAnswer;
+          d[f.id] = { kind: "text", value: a.text ?? "", orders: a.orders ?? [] };
+        } else {
+          d[f.id] = { kind: "text", value: String(v) };
         }
         break;
       case "Article":
@@ -273,6 +321,9 @@ export function draftToInput(fields: FormField[], draft: FormDraft): FormAnswers
         else if (f.type === "Duration") {
           const m = parseDuration(s);
           if (m !== null) out[f.id] = m;
+        } else if (f.type === "ShortText") {
+          const orders = liveOrders(s, v.orders);
+          out[f.id] = orders.length > 0 ? { text: s, orders } : s;
         } else out[f.id] = f.type === "LongText" ? v.value.replace(/\s+$/, "") : s;
         break;
       }

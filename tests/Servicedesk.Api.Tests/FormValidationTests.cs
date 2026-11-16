@@ -404,4 +404,61 @@ public sealed class FormValidationTests
         var boldRich = BuildRich(def, A((f, Rich("<p><strong>x</strong></p>"))));
         Assert.Single(FormRenderer.ChangedFields(def, plainRich, boldRich));
     }
+
+    // ---- short text with linked orders ---------------------------------------
+
+    private static JsonObject WithOrders(string text, params (Guid Id, string Label)[] orders) => new()
+    {
+        ["text"] = text,
+        ["orders"] = new JsonArray(orders.Select(o => (JsonNode?)new JsonObject
+        {
+            ["id"] = o.Id.ToString(),
+            ["label"] = o.Label,
+        }).ToArray()),
+    };
+
+    [Fact]
+    public void Short_text_keeps_only_orders_whose_label_is_in_the_text()
+    {
+        var f = F(FormFieldType.ShortText, "Order");
+        var def = Def(f);
+        var kept = Guid.NewGuid();
+        var stored = Build(def, A((f, WithOrders("See OR12 · Example Ltd", (kept, "OR12 · Example Ltd"), (Guid.NewGuid(), "OR99 · Gone")))));
+        var orders = FormRenderer.ShortTextOrders(stored[f.Id.ToString()]);
+        Assert.Equal(kept, Assert.Single(orders).Id);
+        Assert.Equal("See OR12 · Example Ltd", FormRenderer.DisplayValue(f, stored[f.Id.ToString()], _ => ""));
+
+        // No label left in the text = stored as a plain string.
+        var plain = Build(def, A((f, WithOrders("nothing linked", (kept, "OR12 · Example Ltd")))));
+        Assert.Equal("nothing linked", plain[f.Id.ToString()]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Short_text_rejects_malformed_order_references()
+    {
+        var f = F(FormFieldType.ShortText, "Order");
+        var def = Def(f);
+        var badId = new JsonObject { ["text"] = "OR1", ["orders"] = new JsonArray(new JsonObject { ["id"] = "not-a-guid", ["label"] = "OR1" }) };
+        Assert.Throws<FormAnswerException>(() => FormAnswerValidator.Parse(def, A((f, badId)), Limits));
+        var extra = new JsonObject { ["text"] = "OR1", ["orders"] = new JsonArray(), ["html"] = "<p>x</p>" };
+        Assert.Throws<FormAnswerException>(() => FormAnswerValidator.Parse(def, A((f, extra)), Limits));
+        var many = WithOrders("OR1", Enumerable.Range(0, FormLimits.ShortTextOrdersMax + 1).Select(_ => (Guid.NewGuid(), "OR1")).ToArray());
+        Assert.Throws<FormAnswerException>(() => FormAnswerValidator.Parse(def, A((f, many)), Limits));
+    }
+
+    [Fact]
+    public void Short_text_orders_render_as_order_pills_that_survive_the_sanitizer()
+    {
+        var f = F(FormFieldType.ShortText, "Order");
+        var def = Def(f);
+        var id = Guid.NewGuid();
+        var stored = Build(def, A((f, WithOrders("Ship <now> OR7 · A&B", (id, "OR7 · A&B")))));
+
+        var html = new TicketHtmlSanitizer().Sanitize(
+            FormRenderer.RenderNoteHtml(Guid.NewGuid(), "Delivery", 1, def, stored, null, null, dt => dt.ToString("u")))!;
+        Assert.Contains($"data-order-id=\"{id}\"", html);
+        Assert.Contains("sd-order-mention", html);
+        Assert.Contains("Ship &lt;now&gt; ", html);
+        Assert.Equal(id.ToString(), Assert.Single(Servicedesk.Infrastructure.Persistence.Tickets.TicketTimelineReader.ExtractTaggedOrders(new[] { html })).Id.ToString());
+    }
 }
