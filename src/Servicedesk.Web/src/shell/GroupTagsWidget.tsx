@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Check, ExternalLink, UserCheck, Users } from "lucide-react";
@@ -9,6 +10,8 @@ import { useServerTimeZone } from "@/hooks/useServerTime";
 import { formatDateTime } from "@/lib/dateFormat";
 import { GROUP_TAGS_KEY, groupTagApi, type GroupTag } from "@/lib/group-tags-api";
 import { PulseDot } from "@/shell/PulseDot";
+import { TaggedNoteHoverCard } from "@/components/TaggedNoteHoverCard";
+import { isTagPreviewable, keepOpenForTagPreview } from "@/lib/tagPreview";
 
 /// v0.1.54 — the Group tags block under the personal Tags block. Every
 /// member of a group sees the same tags; one member acknowledging a tag
@@ -18,6 +21,7 @@ import { PulseDot } from "@/shell/PulseDot";
 /// opens the ticket but does NOT acknowledge it, and there is deliberately
 /// no "Ack all". Hidden for agents who belong to no active group.
 export function GroupTagsWidget({ collapsed, className }: { collapsed: boolean; className?: string }) {
+  const listRef = React.useRef<HTMLDivElement | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: [...GROUP_TAGS_KEY, "pending"],
     queryFn: () => groupTagApi.pending(),
@@ -60,15 +64,20 @@ export function GroupTagsWidget({ collapsed, className }: { collapsed: boolean; 
             </button>
           )}
         </PopoverTrigger>
-        <PopoverContent side="right" align="end" className="w-88 p-0">
-          <GroupTagPanel items={items} loading={isLoading} />
+        <PopoverContent ref={listRef} side="right" align="end" className="w-88 p-0" onInteractOutside={keepOpenForTagPreview}>
+          <GroupTagPanel items={items} loading={isLoading} listRef={listRef} />
         </PopoverContent>
       </Popover>
     </div>
   );
 }
 
-function GroupTagPanel({ items, loading }: { items: GroupTag[]; loading: boolean }) {
+function GroupTagPanel({ items, loading, listRef }: {
+  items: GroupTag[];
+  loading: boolean;
+  /// The popover; the note preview lines its bottom edge up with it.
+  listRef: React.RefObject<HTMLDivElement | null>;
+}) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const zone = useServerTimeZone();
@@ -98,12 +107,22 @@ function GroupTagPanel({ items, loading }: { items: GroupTag[]; loading: boolean
           {items.map((t) => {
             const who = t.sourceUserEmail?.split("@")[0] ?? "agent";
             const Icon = t.personalAck ? UserCheck : Users;
+            // The ticket subject: the note itself is in the hover preview.
+            const subtitle = isTagPreviewable(t.eventType) ? t.ticketSubject : t.previewText || t.ticketSubject;
+            const rowHint = t.personalAck
+              ? "Click to open the ticket. Every member marks this tag as read personally; it stays until you do."
+              : "Click to open the ticket. The tag stays until someone acknowledges it for the group.";
             return (
-              <div key={t.id} className="flex items-start gap-2 px-3 py-2 transition-colors hover:bg-glass-hover">
+              // The whole row (incl. the acknowledge button) is the hover
+              // anchor, so the preview opens beside the list, never over the
+              // check mark.
+              <TaggedNoteHoverCard key={t.id} ticketId={t.ticketId} eventId={t.eventId} eventType={t.eventType}
+                fallbackText={t.previewText} hint={rowHint} alignBottomTo={listRef} dimBackground>
+              <div className="flex items-start gap-2 px-3 py-2 transition-colors hover:bg-glass-hover">
                 <button type="button" onClick={() => open(t)} className="flex min-w-0 flex-1 items-start gap-2 text-left"
-                  title={t.personalAck
-                    ? "Open the ticket (the tag stays until you mark it as read)"
-                    : "Open the ticket (the tag stays until someone acknowledges it)"}>
+                  // With a note preview the hint lives in the card footer;
+                  // a native tooltip would sit on top of the note.
+                  title={isTagPreviewable(t.eventType) ? undefined : rowHint}>
                   <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
                   <div className="min-w-0 flex-auto">
                     <div className="flex items-center gap-1 text-xs">
@@ -111,14 +130,14 @@ function GroupTagPanel({ items, loading }: { items: GroupTag[]; loading: boolean
                       <span className="font-mono text-[11px] text-muted-foreground">#{t.ticketNumber}</span>
                       {t.personalAck ? (
                         <span className="ml-auto shrink-0 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-px text-[10px] font-medium text-primary"
-                          title="Every member marks this tag as read personally">
+                          title={isTagPreviewable(t.eventType) ? undefined : "Every member marks this tag as read personally"}>
                           Everyone confirms
                         </span>
                       ) : null}
                     </div>
-                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground/90">
-                      {t.previewText || t.ticketSubject}
-                    </div>
+                    {subtitle && (
+                      <div className="mt-0.5 truncate text-[11px] text-muted-foreground/90">{subtitle}</div>
+                    )}
                     <div className="mt-0.5 text-[10px] text-muted-foreground/60">
                       @{who} · {formatDateTime(t.createdUtc, zone)}
                     </div>
@@ -133,6 +152,7 @@ function GroupTagPanel({ items, loading }: { items: GroupTag[]; loading: boolean
                   <Check className="h-3.5 w-3.5" />
                 </button>
               </div>
+              </TaggedNoteHoverCard>
             );
           })}
         </div>

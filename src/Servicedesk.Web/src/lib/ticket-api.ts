@@ -167,6 +167,21 @@ export type TicketEvent = {
   editedByUserId: string | null;
 };
 
+/// The note a personal or group tag points to, for the tag hover preview
+/// (GET /api/tickets/{id}/events/{eventId}/preview — queue-gated, 404 when
+/// the agent can't open the ticket).
+export type TicketEventPreview = {
+  ticketNumber: number;
+  ticketSubject: string;
+  eventId: number;
+  eventType: string;
+  isInternal: boolean;
+  authorName: string | null;
+  createdUtc: string;
+  editedUtc: string | null;
+  bodyHtml: string;
+};
+
 export type TicketEventRevision = {
   id: number;
   eventId: number;
@@ -1242,6 +1257,8 @@ export const ticketApi = {
     ),
   updateEvent: (id: string, eventId: number, body: UpdateTicketEventRequest) =>
     request<TicketEvent>("PUT", `/api/tickets/${id}/events/${eventId}`, body),
+  getEventPreview: (id: string, eventId: number) =>
+    request<TicketEventPreview>("GET", `/api/tickets/${id}/events/${eventId}/preview`),
   getEventRevisions: (id: string, eventId: number) =>
     request<TicketEventRevision[]>("GET", `/api/tickets/${id}/events/${eventId}/revisions`),
   pinEvent: (id: string, eventId: number, remark?: string) =>

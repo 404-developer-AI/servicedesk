@@ -1478,6 +1478,41 @@ public static class TicketEndpoints
             return Results.Ok(revisions);
         }).WithName("GetEventRevisions");
 
+        // Hover preview of the note a personal or group tag points to. The tag
+        // lists are scoped by recipient only, so the full body is read here
+        // behind queue access: no access, a deleted ticket, an unknown event
+        // or an event type a tag can't come from all answer 404, and the
+        // client falls back to the stored plain-text preview.
+        group.MapGet("/{id:guid}/events/{eventId:long}/preview", async (
+            Guid id, long eventId, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
+            if (ticket is null) return Results.NotFound();
+
+            var ev = await tickets.GetEventAsync(id, eventId, ct);
+            if (ev is null
+                || !TagPreviewEventTypes.Contains(ev.EventType)
+                || HiddenTimelineEventTypes(role).Contains(ev.EventType))
+                return Results.NotFound();
+
+            return Results.Ok(new
+            {
+                ticketNumber = ticket.Number,
+                ticketSubject = ticket.Subject,
+                eventId = ev.Id,
+                eventType = ev.EventType,
+                isInternal = ev.IsInternal,
+                authorName = ev.AuthorName,
+                createdUtc = ev.CreatedUtc,
+                editedUtc = ev.EditedUtc,
+                bodyHtml = ev.BodyHtml ?? string.Empty,
+            });
+        }).WithName("GetTicketEventPreview");
+
         // ── Pin / Unpin events ──
 
         group.MapPost("/{id:guid}/events/{eventId:long}/pin", async (
@@ -2556,6 +2591,17 @@ public static class TicketEndpoints
     {
         nameof(Servicedesk.Domain.Tickets.TicketEventType.SurveySubmitted),
         nameof(Servicedesk.Domain.Tickets.TicketEventType.SurveyExpired),
+    };
+
+    /// The event types a personal or group tag can point to (the
+    /// MentionNotificationService sources) — the only ones the tag hover
+    /// preview serves.
+    private static readonly HashSet<string> TagPreviewEventTypes = new(StringComparer.Ordinal)
+    {
+        nameof(Servicedesk.Domain.Tickets.TicketEventType.Note),
+        nameof(Servicedesk.Domain.Tickets.TicketEventType.Comment),
+        nameof(Servicedesk.Domain.Tickets.TicketEventType.Call),
+        nameof(Servicedesk.Domain.Tickets.TicketEventType.MailSent),
     };
 
     private static IReadOnlyCollection<string> HiddenTimelineEventTypes(string role) =>

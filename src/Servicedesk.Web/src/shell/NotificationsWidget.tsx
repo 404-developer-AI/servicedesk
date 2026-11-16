@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Bell, X, AtSign, CheckCheck, ExternalLink, ListChecks, MessageSquareReply, ThumbsUp } from "lucide-react";
@@ -10,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { notificationApi, notificationHash, notificationHeadline, type UserNotification } from "@/lib/notification-api";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { PulseDot } from "@/shell/PulseDot";
+import { TaggedNoteHoverCard } from "@/components/TaggedNoteHoverCard";
+import { isTagPreviewable, keepOpenForTagPreview } from "@/lib/tagPreview";
 
 type Props = {
   collapsed: boolean;
@@ -22,6 +25,7 @@ type Props = {
 /// navigates to the exact event; X-button acks without navigating; the
 /// footer lets the agent ack-all and jump to full history.
 export function NotificationsWidget({ collapsed, className }: Props) {
+  const listRef = React.useRef<HTMLDivElement | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ["notifications", "pending"],
     queryFn: () => notificationApi.listPending(),
@@ -81,8 +85,8 @@ export function NotificationsWidget({ collapsed, className }: Props) {
             </button>
           )}
         </PopoverTrigger>
-        <PopoverContent side="right" align="end" className="w-88 p-0">
-          <NotificationPanel items={items} loading={isLoading} />
+        <PopoverContent ref={listRef} side="right" align="end" className="w-88 p-0" onInteractOutside={keepOpenForTagPreview}>
+          <NotificationPanel items={items} loading={isLoading} listRef={listRef} />
         </PopoverContent>
       </Popover>
     </div>
@@ -92,9 +96,12 @@ export function NotificationsWidget({ collapsed, className }: Props) {
 function NotificationPanel({
   items,
   loading,
+  listRef,
 }: {
   items: UserNotification[];
   loading: boolean;
+  /// The popover; the note preview lines its bottom edge up with it.
+  listRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -150,11 +157,15 @@ function NotificationPanel({
           const isTriggerNotice = n.eventType === "TriggerNotice";
           const isReply = n.notificationType === "note_reply";
           const isLike = n.notificationType === "note_like";
+          // The ticket subject: the note itself is in the hover preview.
+          // Checklist / trigger notices keep their message here.
+          const subtitle = isTagPreviewable(n.eventType) ? n.ticketSubject : n.previewText || n.ticketSubject;
           return (
-            <div
-              key={n.id}
-              className="group flex items-start gap-2 px-3 py-2 transition-colors hover:bg-glass-hover"
-            >
+            // The whole row (incl. the dismiss button) is the hover anchor,
+            // so the preview opens beside the list, never over the X.
+            <TaggedNoteHoverCard key={n.id} ticketId={n.ticketId} eventId={n.eventId} eventType={n.eventType}
+              fallbackText={n.previewText} alignBottomTo={listRef} dimBackground>
+            <div className="group flex items-start gap-2 px-3 py-2 transition-colors hover:bg-glass-hover">
               <button
                 type="button"
                 onClick={() => handleJump(n)}
@@ -187,9 +198,9 @@ function NotificationPanel({
                     )}
                     <span className="font-mono text-[11px] text-muted-foreground">#{n.ticketNumber}</span>
                   </div>
-                  <div className="mt-0.5 truncate text-[11px] text-muted-foreground/90">
-                    {n.previewText || n.ticketSubject}
-                  </div>
+                  {subtitle && (
+                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground/90">{subtitle}</div>
+                  )}
                   <div className="mt-0.5 text-[10px] text-muted-foreground/60">
                     {when}
                   </div>
@@ -205,6 +216,7 @@ function NotificationPanel({
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
+            </TaggedNoteHoverCard>
           );
         })}
       </div>

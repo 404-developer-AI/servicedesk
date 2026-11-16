@@ -79,7 +79,10 @@ export function AppShell() {
     <div className="app-background relative flex h-screen overflow-hidden" data-testid="app-shell">
       <Sidebar />
       {secondarySidebar}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        {/* Blurs the content (never the sidebar) while a sidebar tag
+            preview is open — pure CSS on html[data-tag-preview-open]. */}
+        <div className="sd-tag-preview-scrim" aria-hidden />
         <MaintenanceBanner variant="shell" />
         <CriticalBanner />
         <main className="flex-1 min-h-0 px-6 pt-6 pb-3 overflow-y-auto flex flex-col">

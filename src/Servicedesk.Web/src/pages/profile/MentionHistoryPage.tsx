@@ -11,6 +11,7 @@ import {
 } from "@/lib/notification-api";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
+import { TaggedNoteHoverCard } from "@/components/TaggedNoteHoverCard";
 
 /// Full history of tags received by the current user.
 /// Cursor-paginated with "Load more". Status badges distinguish between
@@ -140,7 +141,10 @@ function Row({ n, offsetMinutes }: { n: UserNotification; offsetMinutes: number 
         </div>
       </td>
       <td className="max-w-[24rem] px-3 py-2 text-xs text-muted-foreground/90">
-        <span className="line-clamp-2">{n.previewText}</span>
+        <TaggedNoteHoverCard ticketId={n.ticketId} eventId={n.eventId} eventType={n.eventType}
+          fallbackText={n.previewText}>
+          <span className="line-clamp-2 cursor-default">{n.previewText}</span>
+        </TaggedNoteHoverCard>
       </td>
       <td className="px-3 py-2">
         <span className={cn(

@@ -1,5 +1,4 @@
 import * as React from "react";
-import DOMPurify from "dompurify";
 import { useServerOffsetMinutes, useServerTimeZone, getServerTimeSnapshot, type ServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouterState } from "@tanstack/react-router";
@@ -73,7 +72,7 @@ import { EventRevisionDialog } from "./EventRevisionDialog";
 import { IntakeSubmissionPanel } from "@/components/intake/IntakeSubmissionPanel";
 import { SplitMailDialog } from "@/components/SplitMailDialog";
 import { formatDuration } from "@/lib/timesheet-api";
-import { stripBaseTags } from "@/lib/sanitize";
+import { NoteBodyHtml } from "@/components/NoteBodyHtml";
 import { formatBytes } from "@/lib/format";
 
 type PreviewContextValue = {
@@ -95,53 +94,11 @@ type TicketTimelineProps = {
   pinnedEventIds: Set<number>;
 };
 
-/// DOMPurify config that preserves @@-mention chips. Tiptap's Mention
-/// extension emits `<span data-type="mention" class="sd-mention"
-/// data-id="..." data-label="...">@john</span>`. The default sanitiser
-/// strips `data-*` attributes, which would flatten the chip to plain
-/// text and (more importantly) destroy the agent-id needed for any
-/// future hover / click-through affordance. We allow the three data
-/// attrs *only* on `span` elements and do not enable HTML5-custom-data
-/// on anything else (tightest scope that still lets the chip survive).
-/// The "::" order pills' attrs are whitelisted explicitly too — the
-/// OrderPillHost click-through and the side panel's Orders block both
-/// depend on `data-order-id` surviving, and relying on DOMPurify's
-/// ALLOW_DATA_ATTR default would break silently if this config is ever
-/// tightened.
-const SANITIZE_CONFIG = {
-  ADD_ATTR: ["data-type", "data-id", "data-label", "data-order-id", "data-order-mention"],
-};
-
-// Lazy-load + async-decode every inline image. A content-rich imported mail
-// thread can embed 150+ inline images (repeated signatures/logos across each
-// quoted reply); without this the browser fires every attachment GET at once
-// on open. `loading="lazy"` defers off-screen images until they scroll into
-// view, `decoding="async"` keeps decode off the main thread. Set via an
-// afterSanitizeAttributes hook so the attrs survive the allow-list pass
-// (DOMPurify retains attributes added in this hook). Registered once at module
-// load; it only ever touches <img>, so other sanitiser callers are unaffected.
-DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-  if (node.nodeName === "IMG") {
-    node.setAttribute("loading", "lazy");
-    node.setAttribute("decoding", "async");
-  }
-  // Notes saved before the editor's mention renderHTML fix carry the "@@"
-  // trigger in the chip text ("@@ian"). Normalise to the label on display;
-  // data-label is the source of truth (textContent assignment = no HTML).
-  if (node.nodeName === "SPAN" && node.getAttribute("data-type") === "mention") {
-    const label = node.getAttribute("data-label");
-    if (label) node.textContent = `@${label}`;
-  }
-});
-
 function SafeHtml({ html }: { html: string }) {
   const preview = usePreview();
-  const onClick = React.useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+  const onImageClick = React.useCallback(
+    (img: HTMLImageElement, e: React.MouseEvent<HTMLDivElement>) => {
       if (!preview) return;
-      const target = e.target as HTMLElement;
-      if (target.tagName !== "IMG") return;
-      const img = target as HTMLImageElement;
       const src = img.currentSrc || img.src;
       if (!src) return;
       e.preventDefault();
@@ -156,28 +113,7 @@ function SafeHtml({ html }: { html: string }) {
     },
     [preview],
   );
-  // Memoise both the sanitised output AND the wrapper object. The string
-  // avoids re-running DOMPurify each render (its 3.4.x output can vary
-  // byte-for-byte on identical input). The wrapper object matters even
-  // more: React's reconciler compares `dangerouslySetInnerHTML` with
-  // strict-equality on the prop value — `{__html: s}` as an inline
-  // literal is a fresh object every render, so React calls setProp, and
-  // setProp for dangerouslySetInnerHTML assigns `innerHTML` unconditionally
-  // without re-comparing the string. That nukes every inline <img> from
-  // the DOM each parent re-render (e.g. every second when useServerTime
-  // ticks), which re-fires the GET — a sub-rosa loop that only shows up
-  // without the HTTP cache (incognito, DevTools "Disable cache").
-  const danger = React.useMemo(
-    () => ({ __html: DOMPurify.sanitize(stripBaseTags(html), SANITIZE_CONFIG) as unknown as string }),
-    [html],
-  );
-  return (
-    <div
-      onClick={onClick}
-      className="rich-prose rich-prose-sm [&_img]:cursor-zoom-in"
-      dangerouslySetInnerHTML={danger}
-    />
-  );
+  return <NoteBodyHtml html={html} onImageClick={onImageClick} />;
 }
 
 /// Renders a post body (HTML preferred, plain text fallback) with a

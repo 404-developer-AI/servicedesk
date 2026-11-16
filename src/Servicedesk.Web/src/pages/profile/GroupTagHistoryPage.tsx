@@ -6,6 +6,7 @@ import { useServerTimeZone } from "@/hooks/useServerTime";
 import { formatDateTime } from "@/lib/dateFormat";
 import { cn } from "@/lib/utils";
 import { GROUP_TAGS_KEY, groupTagApi, type GroupTag, type GroupTagCursor } from "@/lib/group-tags-api";
+import { TaggedNoteHoverCard } from "@/components/TaggedNoteHoverCard";
 
 /// v0.1.54 — history of the group tags of every active group the user
 /// belongs to (open and acknowledged, with who acknowledged it; personal
@@ -76,7 +77,12 @@ export function GroupTagHistoryPage() {
                         <span className="truncate">{t.ticketSubject}</span>
                         <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-100" />
                       </Link>
-                      {t.previewText && <div className="mt-0.5 truncate text-[11px] text-muted-foreground/80">{t.previewText}</div>}
+                      {t.previewText && (
+                        <TaggedNoteHoverCard ticketId={t.ticketId} eventId={t.eventId} eventType={t.eventType}
+                          fallbackText={t.previewText}>
+                          <div className="mt-0.5 cursor-default truncate text-[11px] text-muted-foreground/80">{t.previewText}</div>
+                        </TaggedNoteHoverCard>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2">
                       {t.personalAck ? <PersonalStatus tag={t} zone={zone} /> : (

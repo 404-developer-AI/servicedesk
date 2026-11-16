@@ -267,6 +267,8 @@
     --glass-border: 240 25% 25% / 0.10;
     --glass-border-strong: 240 25% 25% / 0.16;
     --overlay: 240 25% 12% / 0.45;
+    /* Content-area scrim behind a sidebar tag preview (blurred). */
+    --preview-scrim: 240 25% 12% / 0.06;
 
     --scrollbar-thumb: 240 14% 50% / 0.30;
     --scrollbar-thumb-hover: 240 14% 40% / 0.50;
@@ -310,6 +312,7 @@
     --glass-border: 0 0% 100% / 0.10;
     --glass-border-strong: 0 0% 100% / 0.15;
     --overlay: 0 0% 0% / 0.60;
+    --preview-scrim: 0 0% 0% / 0.25;
 
     --scrollbar-thumb: 0 0% 100% / 0.10;
     --scrollbar-thumb-hover: 0 0% 100% / 0.20;
@@ -369,6 +372,7 @@
     --glass-border: 20 6% 90% / 1;
     --glass-border-strong: 24 6% 83% / 1;
     --overlay: 24 10% 10% / 0.40;
+    --preview-scrim: 24 10% 10% / 0.06;
 
     --scrollbar-thumb: 24 5% 64% / 0.45;
     --scrollbar-thumb-hover: 25 5% 45% / 0.55;
@@ -1615,3 +1619,67 @@
 }
 
 } /* end @layer utilities (app + Steaan CSS) */
+
+/* ---- Tag hover preview (components/TaggedNoteHoverCard) -------------------
+   A neutral card that clearly floats above the page: glass in Nebula, the
+   flat white card with the large Steaan shadow in Steaan. "Internal" is the
+   amber accent bar + label, never an amber fill — the timeline behind it is
+   amber already, and a same-colour card disappears into it. */
+.sd-tag-note-preview {
+  background-color: hsl(var(--popover) / 0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid hsl(var(--glass-border));
+  box-shadow: 0 18px 50px -16px hsl(240 25% 12% / 0.35);
+}
+.dark .sd-tag-note-preview {
+  background-color: hsl(var(--popover) / 0.88);
+  box-shadow: 0 18px 50px -12px hsl(0 0% 0% / 0.70);
+}
+.theme-steaan .sd-tag-note-preview {
+  background-color: hsl(var(--popover));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: hsl(var(--glass-border-strong));
+  box-shadow: var(--steaan-shadow-lg);
+}
+.sd-tag-note-fade {
+  background: linear-gradient(to bottom, transparent, hsl(var(--popover) / 0.92));
+}
+.theme-steaan .sd-tag-note-fade {
+  background: linear-gradient(to bottom, transparent, hsl(var(--popover)));
+}
+
+/* Content-area scrim while a sidebar tag preview is open. Rendered once in
+   AppShell inside the content column (the sidebar stays sharp, at any zoom);
+   lib/tagPreview.ts toggles html[data-tag-preview-open]. Deliberate, scoped
+   exception to "Steaan stays flat": the blur applies in Steaan too (see
+   CLAUDE.md → Themes). Hidden = no backdrop work when closed. */
+.sd-tag-preview-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  background-color: hsl(var(--preview-scrim));
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  transition: opacity 120ms ease, visibility 0s linear 120ms;
+}
+html[data-tag-preview-open] .sd-tag-preview-scrim {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 120ms ease;
+}
+/* The floating help launcher sits above the content column; blur it with
+   the rest so only the list and the preview stay sharp. */
+html[data-tag-preview-open] .sd-kb-chat-launcher {
+  filter: blur(2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sd-tag-preview-scrim,
+  html[data-tag-preview-open] .sd-tag-preview-scrim {
+    transition: none;
+  }
+}

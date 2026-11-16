@@ -197,7 +197,7 @@ function ChatLauncher() {
         onPointerUp={onPointerUp}
         style={{ left: pos.x, top: pos.y }}
         className={cn(
-          "fixed z-58 flex h-14 w-14 touch-none select-none items-center justify-center rounded-full",
+          "sd-kb-chat-launcher fixed z-58 flex h-14 w-14 touch-none select-none items-center justify-center rounded-full",
           "border border-glass-strong shadow-2xl backdrop-blur-xl",
           "bg-linear-to-br from-violet-500/90 to-indigo-600/90 text-white",
           "transition-transform hover:scale-105 active:scale-95",
