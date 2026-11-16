@@ -50,6 +50,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { FormPreview } from "@/components/forms/FormDialogs";
 import { formInputCn } from "@/components/forms/FormFieldInput";
+import { PlainTextPicker } from "@/components/forms/PlainTextPicker";
+import type { IntakeMentionItem } from "@/components/intake/IntakeMentionList";
+import { composeTemplatesApi } from "@/lib/composeTemplates-api";
+import { unknownTokens } from "@/lib/composeTokens";
 import { settingsApi, taxonomyApi } from "@/lib/api";
 import {
   FORM_FIELD_TYPES,
@@ -598,6 +602,51 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
   );
 }
 
+/// v0.1.55 — default value of a short / long text field. Variables
+/// (`{{company.name}}`, the compose token set) are filled in for the ticket
+/// when the form opens; `::` or the picker inserts them.
+function TextDefaultInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const tokensQ = useQuery({
+    queryKey: ["compose-templates", "tokens"],
+    queryFn: () => composeTemplatesApi.listTokens(),
+    staleTime: Infinity,
+  });
+  const tokens = React.useMemo(() => tokensQ.data?.tokens ?? [], [tokensQ.data]);
+  const query = React.useCallback(async (q: string): Promise<IntakeMentionItem[]> => {
+    const needle = q.trim().toLowerCase();
+    return tokens
+      .filter((t) => !needle || t.label.toLowerCase().includes(needle) || t.token.toLowerCase().includes(needle))
+      .map((t) => ({ id: t.token, name: t.label, description: t.token, kind: "variable" as const, text: t.token }));
+  }, [tokens]);
+  const unknown = unknownTokens(value, tokens.map((t) => t.token));
+  const insert = (token: string) => {
+    if (!token || value.length + token.length > 500) return;
+    onChange(value + token);
+  };
+
+  return (
+    <div className="space-y-1">
+      <span className="block text-[11px] font-medium text-muted-foreground">Default value</span>
+      <div className="flex gap-2">
+        <PlainTextPicker value={value} onValueChange={onChange} maxLength={500} query={query}
+          toText={(i) => i.text ?? ""} className={cn(formInputCn, "h-9 min-w-0 flex-1")} />
+        <select value="" aria-label="Insert variable" onChange={(e) => insert(e.target.value)}
+          disabled={tokens.length === 0} className={cn(formInputCn, "h-9 w-40 shrink-0")}>
+          <option value="">Insert variable…</option>
+          {tokens.map((t) => <option key={t.token} value={t.token}>{t.label}</option>)}
+        </select>
+      </div>
+      {unknown.length > 0 ? (
+        <p className="text-xs font-medium text-rose-600 dark:text-rose-400">Unknown variable: {unknown.join(", ")}</p>
+      ) : (
+        <p className="text-xs text-muted-foreground/70">
+          Type :: to insert a variable such as {"{{company.name}}"}; it is filled in from the ticket when the form opens.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function FieldRow({
   field: f,
   open,
@@ -671,11 +720,14 @@ function FieldRow({
               <NumProp label="Max. articles" value={f.maxRows} onChange={(v) => onChange({ maxRows: v })} />
             </div>
           )}
-          {(f.type === "ShortText" || f.type === "LongText" || f.type === "Number") && (
+          {f.type === "Number" && (
             <label className="block space-y-1">
               <span className="text-[11px] font-medium text-muted-foreground">Default value</span>
               <input value={f.defaultValue} maxLength={500} onChange={(e) => onChange({ defaultValue: e.target.value })} className={cn(formInputCn, "h-9")} />
             </label>
+          )}
+          {(f.type === "ShortText" || f.type === "LongText") && (
+            <TextDefaultInput value={f.defaultValue} onChange={(v) => onChange({ defaultValue: v })} />
           )}
           {f.type === "Dropdown" && (
             <label className="block space-y-1">

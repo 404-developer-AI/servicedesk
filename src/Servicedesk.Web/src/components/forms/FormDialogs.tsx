@@ -136,17 +136,21 @@ export function FormFillDialog({
   const [confirmDiscard, setConfirmDiscard] = React.useState(false);
   const baseline = React.useRef<string>("");
 
-  // (Re)initialise when a new target / template arrives.
+  // (Re)initialise when a new target / template arrives. A fresh form waits
+  // for the ticket's variables so `{{…}}` defaults are filled in (a failed
+  // lookup fills them in empty rather than blocking the form).
+  const tokensSettled = tokens.isSuccess || tokens.isError;
+  const ready = fields !== null && (target?.mode === "edit" || tokensSettled);
   const initKey = target?.mode === "edit" ? `e:${target.form.id}:${target.form.version}` : target ? `c:${target.templateId}:${template.dataUpdatedAt}` : "";
   React.useEffect(() => {
-    if (!fields) return;
-    const d = target?.mode === "edit" ? draftFromAnswers(fields, target.form.answers) : emptyDraft(fields);
+    if (!fields || !ready) return;
+    const d = target?.mode === "edit" ? draftFromAnswers(fields, target.form.answers) : emptyDraft(fields, tokenMap ?? {});
     setDraft(d);
     setErrors({});
     setConfirmDiscard(false);
     baseline.current = JSON.stringify(draftToInput(fields, d));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initKey, fields !== null]);
+  }, [initKey, ready]);
 
   const dirty = fields !== null && JSON.stringify(draftToInput(fields, draft)) !== baseline.current;
 
@@ -223,7 +227,7 @@ export function FormFillDialog({
             <p className="py-6 text-sm text-rose-600 dark:text-rose-400">
               {formApiError(template.error)?.error ?? "This form is not available for this ticket."}
             </p>
-          ) : !fields ? (
+          ) : !fields || !ready ? (
             <div className="space-y-4">
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-9 w-2/3" />

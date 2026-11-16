@@ -291,6 +291,18 @@ public sealed class FormValidationTests
         Assert.Empty(FormRenderer.ChangedFields(def, stored, fresh));
     }
 
+    // ---- template variables -------------------------------------------------
+
+    [Fact]
+    public void Text_default_accepts_known_variables_and_rejects_unknown_ones()
+    {
+        var ok = new FormDefinition { Fields = { new FormField { Type = FormFieldType.ShortText, Label = "Company", DefaultValue = "{{company.name}} / {{ contact.phone }}" } } };
+        Assert.Null(FormTemplateValidator.ValidateAndNormalize(ok, 60));
+
+        var typo = new FormDefinition { Fields = { new FormField { Type = FormFieldType.LongText, Label = "Notes", DefaultValue = "Hi {{contact.firstname}}" } } };
+        Assert.Equal("'Notes': unknown variable {{contact.firstname}}.", FormTemplateValidator.ValidateAndNormalize(typo, 60));
+    }
+
     // ---- rich-text long text ------------------------------------------------
 
     private static readonly Func<string, string?> Sanitize = new TicketHtmlSanitizer().Sanitize;
