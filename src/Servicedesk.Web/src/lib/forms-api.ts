@@ -68,8 +68,12 @@ export interface FormField {
 /// Stored (normalized) answer shapes, keyed by field id.
 export type ArticleRowAnswer = { articleId: string; code?: string; name?: string; quantity: number };
 export type RefAnswer = { id: string; name: string; email?: string };
+/// A rich-text LongText answer (v0.1.55); older answers are plain strings.
+export type RichTextAnswer = { html: string };
+
 export type FormAnswerValue =
   | string
+  | RichTextAnswer
   | number
   | boolean
   | string[]
@@ -221,7 +225,7 @@ export const ticketFormsApi = {
 
 /// What the client sends: ids only for references (the server resolves and
 /// stores names), article rows as {articleId, quantity}.
-export type FormAnswersInput = Record<string, string | number | boolean | string[] | { articleId: string; quantity: number }[]>;
+export type FormAnswersInput = Record<string, string | number | boolean | string[] | RichTextAnswer | { articleId: string; quantity: number }[]>;
 
 /// Query keys under ["ticket", id] so the TicketUpdated realtime push
 /// (useTicketRealtime) refreshes them with no extra wiring.

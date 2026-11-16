@@ -6,6 +6,8 @@ import type {
   FormField,
   RefAnswer,
 } from "@/lib/forms-api";
+import { escapeHtml } from "@/lib/format";
+import { htmlToText } from "@/lib/sanitize";
 
 /// v0.1.52 — the in-dialog editing model for a ticket form, plus conversion
 /// to the API payload and back from stored answers. Validation here is fast
@@ -16,6 +18,10 @@ export type ArticleDraftRow = { key: string; articleId: string; code: string; na
 
 export type DraftValue =
   | { kind: "text"; value: string }
+  /// Rich-text LongText (v0.1.55). `legacy` keeps a stored plain-text answer
+  /// and the HTML it was converted to, so an untouched legacy field is sent
+  /// back unchanged instead of reading as an edit.
+  | { kind: "html"; value: string; legacy?: { text: string; html: string } }
   | { kind: "bool"; value: boolean }
   | { kind: "options"; value: string[] }
   | { kind: "ref"; value: RefAnswer | null }
@@ -44,6 +50,17 @@ export function parseDuration(raw: string): number | null {
   return null;
 }
 
+/// Plain text → paragraph HTML for the rich-text editor (escaped).
+export function plainTextToHtml(text: string): string {
+  if (text === "") return "";
+  return text.split("\n").map((line) => `<p>${escapeHtml(line)}</p>`).join("");
+}
+
+/// Whether a rich-text value holds any visible text.
+export function htmlHasText(html: string): boolean {
+  return htmlToText(html).length > 0;
+}
+
 /// Empty draft for a template, with the admin's defaults applied.
 export function emptyDraft(fields: FormField[]): FormDraft {
   const d: FormDraft = {};
@@ -67,6 +84,9 @@ export function emptyDraft(fields: FormField[]): FormDraft {
         break;
       case "Article":
         d[f.id] = { kind: "articles", value: [] };
+        break;
+      case "LongText":
+        d[f.id] = { kind: "html", value: plainTextToHtml(f.defaultValue ?? "") };
         break;
       default:
         d[f.id] = { kind: "text", value: f.defaultValue ?? "" };
@@ -104,6 +124,14 @@ export function draftFromAnswers(fields: FormField[], answers: FormAnswers): For
       case "Duration":
         d[f.id] = { kind: "text", value: typeof v === "number" ? minutesToDuration(v) : "" };
         break;
+      case "LongText":
+        if (typeof v === "string") {
+          const html = plainTextToHtml(v);
+          d[f.id] = { kind: "html", value: html, legacy: { text: v, html } };
+        } else {
+          d[f.id] = { kind: "html", value: (v as { html?: string }).html ?? "" };
+        }
+        break;
       case "Article":
         d[f.id] = {
           kind: "articles",
@@ -130,6 +158,7 @@ function clearValue(v: DraftValue | undefined): DraftValue {
     case "ref": return { kind: "ref", value: null };
     case "datetime": return { kind: "datetime", value: null };
     case "articles": return { kind: "articles", value: [] };
+    case "html": return { kind: "html", value: "" };
     default: return { kind: "text", value: "" };
   }
 }
@@ -142,10 +171,15 @@ function fieldSchema(f: FormField): z.ZodType<DraftValue> {
   const req = f.required;
   switch (f.type) {
     case "ShortText":
-    case "LongText":
       return z.custom<DraftValue>((v) => !req || (v as { value: string }).value.trim().length > 0, {
         message: "Required.",
       });
+    case "LongText":
+      return z.custom<DraftValue>((v) => {
+        if (!req) return true;
+        const d = v as DraftValue;
+        return d.kind === "html" ? htmlHasText(d.value) : d.kind === "text" && d.value.trim().length > 0;
+      }, { message: "Required." });
     case "Number": {
       const decimals = f.decimals ?? 0;
       return z.custom<DraftValue>((v) => {
@@ -235,6 +269,10 @@ export function draftToInput(fields: FormField[], draft: FormDraft): FormAnswers
         } else out[f.id] = f.type === "LongText" ? v.value.replace(/\s+$/, "") : s;
         break;
       }
+      case "html":
+        if (v.legacy && v.value === v.legacy.html) out[f.id] = v.legacy.text;
+        else if (htmlHasText(v.value)) out[f.id] = { html: v.value };
+        break;
       case "bool":
         out[f.id] = v.value;
         break;

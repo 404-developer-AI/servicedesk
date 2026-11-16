@@ -309,7 +309,7 @@ public sealed class TicketFormService : ITicketFormService
         FormDefinition def, JsonObject? answers, Ticket ticket, FormRuntimeSettings settings, CancellationToken ct)
     {
         FormAnswerValidator.ParsedAnswers parsed;
-        try { parsed = FormAnswerValidator.Parse(def, answers, settings); }
+        try { parsed = FormAnswerValidator.Parse(def, answers, settings, _sanitizer.Sanitize); }
         catch (FormAnswerException ex) { throw new FormRejectedException(FormRejectCode.Invalid, ex.Message, ex.FieldId); }
 
         var agents = await _repo.ResolveAgentsAsync(parsed.References.AgentIds.ToList(), ct);
