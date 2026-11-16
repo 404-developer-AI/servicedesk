@@ -21,6 +21,7 @@ import { settingsApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 import { useTheme } from "@/app/ThemeProvider";
 import { OrderPillHost } from "@/pages/orders/OrderPillHost";
+import { MinimizedFormsTray } from "@/components/forms/MinimizedFormsTray";
 import { startRum } from "@/lib/rum";
 
 export function AppShell() {
@@ -88,6 +89,7 @@ export function AppShell() {
       <Toaster theme={toasterTheme} position="bottom-right" />
       <IncomingCallPopup />
       <KbChatWidget />
+      <MinimizedFormsTray />
       {user?.adsolutOrdersEnabled && <OrderPillHost />}
     </div>
   );

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ClipboardList, History, Loader2, Pencil, Trash2 } from "lucide-react";
+import { ClipboardList, History, Loader2, Minus, Pencil, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,7 @@ import {
   type TicketFormDetail,
 } from "@/lib/forms-api";
 import { SafeHtml } from "@/components/SafeHtml";
+import { formDraftKey, useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { draftFromAnswers, draftToInput, emptyDraft, validateDraft, type FormDraft } from "@/lib/formDraft";
 import { cn } from "@/lib/utils";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
@@ -90,10 +91,13 @@ type FillTarget =
 
 export function FormFillDialog({
   target,
+  ticketNumber,
   onOpenChange,
   onSaved,
 }: {
   target: FillTarget | null;
+  /** Shown on the minimised tray chip. */
+  ticketNumber?: number | null;
   onOpenChange: (open: boolean) => void;
   onSaved?: (form: TicketFormDetail) => void;
 }) {
@@ -131,28 +135,87 @@ export function FormFillDialog({
     [tokenMap, ordersEnabled, kbEnabled],
   );
 
+  // v0.1.55 — the answers live in the workspace store as soon as they
+  // differ from where the dialog started, so they survive minimising,
+  // switching tickets and a reload (see FormDraftEntry).
+  const draftKey = target
+    ? formDraftKey(target.mode === "create"
+      ? { mode: "create", ticketId: target.ticketId, templateId: target.templateId }
+      : { mode: "edit", ticketId: target.ticketId, formId: target.form.id })
+    : null;
+  const setFormDraft = useWorkspaceStore((s) => s.setFormDraft);
+  const setFormDraftMinimized = useWorkspaceStore((s) => s.setFormDraftMinimized);
+  const removeFormDraft = useWorkspaceStore((s) => s.removeFormDraft);
+  const hasStoredDraft = useWorkspaceStore((s) => (draftKey ? !!s.formDrafts[draftKey] : false));
+
   const [draft, setDraft] = React.useState<FormDraft>({});
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [confirmDiscard, setConfirmDiscard] = React.useState(false);
+  const [initialised, setInitialised] = React.useState<string | null>(null);
   const baseline = React.useRef<string>("");
+  // The version an edit started from — a restored draft keeps its own, so a
+  // form changed by someone else in the meantime still 409s on save.
+  const baseVersion = React.useRef<number>(0);
 
   // (Re)initialise when a new target / template arrives. A fresh form waits
   // for the ticket's variables so `{{…}}` defaults are filled in (a failed
-  // lookup fills them in empty rather than blocking the form).
+  // lookup fills them in empty rather than blocking the form). A stored
+  // draft for the same ticket + template / form is resumed.
   const tokensSettled = tokens.isSuccess || tokens.isError;
   const ready = fields !== null && (target?.mode === "edit" || tokensSettled);
   const initKey = target?.mode === "edit" ? `e:${target.form.id}:${target.form.version}` : target ? `c:${target.templateId}:${template.dataUpdatedAt}` : "";
   React.useEffect(() => {
-    if (!fields || !ready) return;
-    const d = target?.mode === "edit" ? draftFromAnswers(fields, target.form.answers) : emptyDraft(fields, tokenMap ?? {});
+    if (!fields || !ready || !target || !draftKey) return;
+    const fresh = target.mode === "edit" ? draftFromAnswers(fields, target.form.answers) : emptyDraft(fields, tokenMap ?? {});
+    const stored = useWorkspaceStore.getState().formDrafts[draftKey];
+    const ids = new Set(fields.map((f) => f.id));
+    const d = stored
+      ? { ...fresh, ...Object.fromEntries(Object.entries(stored.draft).filter(([k]) => ids.has(k))) }
+      : fresh;
     setDraft(d);
     setErrors({});
     setConfirmDiscard(false);
-    baseline.current = JSON.stringify(draftToInput(fields, d));
+    baseline.current = stored?.baseline ?? JSON.stringify(draftToInput(fields, fresh));
+    baseVersion.current = target.mode === "edit" ? stored?.version ?? target.form.version : 0;
+    if (stored) setFormDraftMinimized(draftKey, false);
+    setInitialised(draftKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initKey, ready]);
 
-  const dirty = fields !== null && JSON.stringify(draftToInput(fields, draft)) !== baseline.current;
+  const live = initialised !== null && initialised === draftKey;
+  const dirty = fields !== null && live && JSON.stringify(draftToInput(fields, draft)) !== baseline.current;
+
+  // Mirror a changed draft into the store (flushed to the server by the
+  // workspace auto-save on navigation / tab hide / unload). Back to the
+  // starting answers = nothing to keep.
+  React.useEffect(() => {
+    if (!live || !target || !draftKey || !fields) return;
+    if (!dirty) {
+      removeFormDraft(draftKey);
+      return;
+    }
+    setFormDraft({
+      key: draftKey,
+      ticketId: target.ticketId,
+      ticketNumber: ticketNumber ?? null,
+      formName: title,
+      mode: target.mode,
+      templateId: target.mode === "create" ? target.templateId : undefined,
+      formId: target.mode === "edit" ? target.form.id : undefined,
+      version: target.mode === "edit" ? baseVersion.current : undefined,
+      draft,
+      baseline: baseline.current,
+      minimized: false,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, live]);
+
+  // Leaving while the dialog is open (ticket switch, navigation, unmount)
+  // never loses the answers: a stored draft drops into the tray.
+  React.useEffect(() => {
+    if (!draftKey) return;
+    return () => setFormDraftMinimized(draftKey, true);
+  }, [draftKey, setFormDraftMinimized]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -160,12 +223,14 @@ export function FormFillDialog({
       const answers = draftToInput(fields, draft);
       return target.mode === "create"
         ? ticketFormsApi.create(target.ticketId, target.templateId, answers)
-        : ticketFormsApi.update(target.form.id, target.form.version, answers);
+        : ticketFormsApi.update(target.form.id, baseVersion.current, answers);
     },
     onSuccess: (saved) => {
       qc.setQueryData(ticketFormKeys.detail(saved.ticketId, saved.id), saved);
       void qc.invalidateQueries({ queryKey: ["ticket", saved.ticketId] });
       toast.success(target?.mode === "edit" ? `Form updated (v${saved.version})` : "Form saved as internal note");
+      if (draftKey) removeFormDraft(draftKey);
+      setInitialised(null);
       onSaved?.(saved);
       onOpenChange(false);
     },
@@ -187,20 +252,37 @@ export function FormFillDialog({
     save.mutate();
   };
 
-  const requestClose = (next: boolean) => {
-    if (next) return;
+  const minimize = () => {
     if (save.isPending) return;
-    if (dirty && !confirmDiscard) {
-      setConfirmDiscard(true);
-      return;
-    }
+    if (draftKey) setFormDraftMinimized(draftKey, true);
+    setInitialised(null);
     onOpenChange(false);
+  };
+
+  const discard = () => {
+    if (draftKey) removeFormDraft(draftKey);
+    setInitialised(null);
+    onOpenChange(false);
+  };
+
+  // Esc, a click outside and the ✕ keep a changed form (minimised);
+  // only Cancel → Discard throws the answers away.
+  const onDialogOpenChange = (next: boolean) => {
+    if (next || save.isPending) return;
+    if (dirty) minimize();
+    else discard();
+  };
+
+  const cancel = () => {
+    if (save.isPending) return;
+    if (dirty) setConfirmDiscard(true);
+    else discard();
   };
 
   const notAvailable = target?.mode === "create" && template.isError;
 
   return (
-    <Dialog open={open} onOpenChange={requestClose}>
+    <Dialog open={open} onOpenChange={onDialogOpenChange}>
       <DialogContent
         className="sd-form-dialog flex max-h-[90vh] w-[95vw] max-w-3xl flex-col gap-0 p-0"
         onKeyDown={(e) => {
@@ -210,8 +292,14 @@ export function FormFillDialog({
           }
         }}
       >
+        <button type="button" onClick={minimize} disabled={save.isPending}
+          title="Minimise: keep the answers and continue elsewhere"
+          className="absolute right-11 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+          <Minus className="h-4 w-4" />
+          <span className="sr-only">Minimise</span>
+        </button>
         <DialogHeader className="border-b border-glass px-6 pb-4 pt-5">
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-3 pr-14">
             <span className="sd-form-icon mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
               <ClipboardList className="h-4 w-4" />
             </span>
@@ -224,10 +312,15 @@ export function FormFillDialog({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {notAvailable ? (
-            <p className="py-6 text-sm text-rose-600 dark:text-rose-400">
-              {formApiError(template.error)?.error ?? "This form is not available for this ticket."}
-            </p>
-          ) : !fields || !ready ? (
+            <div className="space-y-3 py-6">
+              <p className="text-sm text-rose-600 dark:text-rose-400">
+                {formApiError(template.error)?.error ?? "This form is not available for this ticket."}
+              </p>
+              {hasStoredDraft && (
+                <Button variant="outline" size="sm" onClick={discard}>Discard draft</Button>
+              )}
+            </div>
+          ) : !fields || !live ? (
             <div className="space-y-4">
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-9 w-2/3" />
@@ -245,7 +338,7 @@ export function FormFillDialog({
               <span className="text-sm text-amber-700 dark:text-amber-300">Discard the answers you entered?</span>
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setConfirmDiscard(false)}>Keep editing</Button>
-                <Button variant="destructive" size="sm" onClick={() => onOpenChange(false)}>Discard</Button>
+                <Button variant="destructive" size="sm" onClick={discard}>Discard</Button>
               </div>
             </>
           ) : (
@@ -254,10 +347,10 @@ export function FormFillDialog({
                 Internal only · :: in a text field inserts a variable, order or article · Ctrl+Enter to save
               </span>
               <div className="ml-auto flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => requestClose(false)} disabled={save.isPending}>
+                <Button variant="ghost" size="sm" onClick={cancel} disabled={save.isPending}>
                   Cancel
                 </Button>
-                <Button size="sm" onClick={submit} disabled={!fields || save.isPending || notAvailable || (target?.mode === "edit" && !dirty)}>
+                <Button size="sm" onClick={submit} disabled={!fields || !live || save.isPending || notAvailable || (target?.mode === "edit" && !dirty)}>
                   {save.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                   {target?.mode === "edit" ? "Save new version" : "Save as internal note"}
                 </Button>

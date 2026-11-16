@@ -1342,7 +1342,7 @@ function TicketDetailBody({
 
   return (
     <div className="flex gap-6 pt-3 h-[calc(100vh-0.75rem)] overflow-hidden">
-      <TicketFormHost ticketId={ticketId} />
+      <TicketFormHost ticketId={ticketId} ticketNumber={ticket?.number ?? null} />
       {/* Left column — header + description static, activity scrolls, reply pinned bottom */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
         <SearchContextBar ticketId={ticketId} />
