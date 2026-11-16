@@ -56,3 +56,25 @@ export function substituteComposeTokensPlain(
     return value ? value : match;
   });
 }
+
+const TOKEN_RE = /\{\{\s*([\w.]+)\s*\}\}/g;
+
+/// v0.1.55 — a form template's default value filled in for a ticket. Unlike
+/// the compose variants an unresolved token becomes empty, not the raw
+/// `{{…}}`: a form field must not carry a placeholder into a saved answer,
+/// and an empty required field is caught by validation.
+export function substituteFormDefault(text: string, tokens: Record<string, string> | undefined): string {
+  if (!text) return text;
+  return text.replace(TOKEN_RE, (_m, name: string) => tokens?.[`{{${name}}}`] ?? "");
+}
+
+/// `{{…}}` placeholders in `text` that are not in the supported list.
+export function unknownTokens(text: string, supported: string[]): string[] {
+  const known = new Set(supported);
+  const out = new Set<string>();
+  for (const m of text.matchAll(TOKEN_RE)) {
+    const canonical = `{{${m[1]}}}`;
+    if (!known.has(canonical)) out.add(canonical);
+  }
+  return [...out];
+}

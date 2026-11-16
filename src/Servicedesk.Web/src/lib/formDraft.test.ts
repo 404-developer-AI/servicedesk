@@ -108,3 +108,21 @@ describe("rich-text long text", () => {
     expect(draftFromAnswers([notes], { notes: { html: "<p>x</p>" } }).notes).toEqual({ kind: "html", value: "<p>x</p>" });
   });
 });
+
+describe("template variables in defaults", () => {
+  const fields: FormField[] = [
+    field({ id: "who", type: "ShortText", defaultValue: "{{contact.firstName}} ({{contact.phone}})" }),
+    field({ id: "notes", type: "LongText", defaultValue: "For {{company.name}}\n<b>" }),
+  ];
+  const tokens = { "{{contact.firstName}}": "Jamie", "{{contact.phone}}": "", "{{company.name}}": "Example & Co" };
+
+  it("fills in resolved variables and empties unresolved ones", () => {
+    const d = emptyDraft(fields, tokens);
+    expect(d.who).toEqual({ kind: "text", value: "Jamie ()" });
+    expect(d.notes).toEqual({ kind: "html", value: "<p>For Example &amp; Co</p><p>&lt;b&gt;</p>" });
+  });
+
+  it("keeps the raw variables in the admin preview", () => {
+    expect(emptyDraft(fields).who).toEqual({ kind: "text", value: "{{contact.firstName}} ({{contact.phone}})" });
+  });
+});

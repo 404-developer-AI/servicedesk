@@ -8,6 +8,7 @@ import type {
 } from "@/lib/forms-api";
 import { escapeHtml } from "@/lib/format";
 import { htmlToText } from "@/lib/sanitize";
+import { substituteFormDefault } from "@/lib/composeTokens";
 
 /// v0.1.52 — the in-dialog editing model for a ticket form, plus conversion
 /// to the API payload and back from stored answers. Validation here is fast
@@ -61,9 +62,12 @@ export function htmlHasText(html: string): boolean {
   return htmlToText(html).length > 0;
 }
 
-/// Empty draft for a template, with the admin's defaults applied.
-export function emptyDraft(fields: FormField[]): FormDraft {
+/// Empty draft for a template, with the admin's defaults applied. With
+/// `tokens` (the ticket's resolved variables) `{{…}}` in a text default is
+/// filled in; without (the admin preview) it stays visible.
+export function emptyDraft(fields: FormField[], tokens?: Record<string, string>): FormDraft {
   const d: FormDraft = {};
+  const text = (v: string | undefined) => (tokens ? substituteFormDefault(v ?? "", tokens) : v ?? "");
   for (const f of fields) {
     switch (f.type) {
       case "SectionHeader":
@@ -86,7 +90,10 @@ export function emptyDraft(fields: FormField[]): FormDraft {
         d[f.id] = { kind: "articles", value: [] };
         break;
       case "LongText":
-        d[f.id] = { kind: "html", value: plainTextToHtml(f.defaultValue ?? "") };
+        d[f.id] = { kind: "html", value: plainTextToHtml(text(f.defaultValue)) };
+        break;
+      case "ShortText":
+        d[f.id] = { kind: "text", value: text(f.defaultValue) };
         break;
       default:
         d[f.id] = { kind: "text", value: f.defaultValue ?? "" };

@@ -268,6 +268,15 @@ public static class FormTemplateValidator
                 f.DefaultValue = string.Empty;
             }
             if (f.DefaultValue.Length > FormLimits.ShortTextMax) return "Default values must be at most 500 characters.";
+            // v0.1.55 — a text default may hold compose variables
+            // ({{company.name}}), filled in for the ticket when the form
+            // opens. Only the supported set; a typo would otherwise surface
+            // as an empty field on every ticket.
+            if (f.Type is FormFieldType.ShortText or FormFieldType.LongText
+                && UnknownToken(f.DefaultValue) is { } unknown)
+            {
+                return $"'{Truncate(f.Label, 40)}': unknown variable {unknown}.";
+            }
             if (f.Type == FormFieldType.Dropdown && f.DefaultValue.Length > 0
                 && f.Options!.All(o => o.Id != f.DefaultValue))
             {
@@ -280,6 +289,20 @@ public static class FormTemplateValidator
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
+
+    private static readonly System.Text.RegularExpressions.Regex TokenPattern =
+        new(@"\{\{\s*([\w.]+)\s*\}\}", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static string? UnknownToken(string text)
+    {
+        foreach (System.Text.RegularExpressions.Match m in TokenPattern.Matches(text))
+        {
+            var canonical = "{{" + m.Groups[1].Value + "}}";
+            if (Domain.ComposeTemplates.ComposeTokens.Supported.All(t => t.Token != canonical))
+                return Truncate(canonical, 40);
+        }
+        return null;
+    }
 }
 
 /// A reference an answer points to that the service must resolve against the

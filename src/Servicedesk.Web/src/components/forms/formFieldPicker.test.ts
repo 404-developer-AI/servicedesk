@@ -44,3 +44,10 @@ describe("form field picker items", () => {
     expect(pickerItemAsText({ id: "o", name: "OR3 · Example Ltd", kind: "order" })).toBe("OR3 · Example Ltd");
   });
 });
+
+describe("unknownTokens", () => {
+  it("lists placeholders outside the supported set", async () => {
+    const { unknownTokens } = await import("@/lib/composeTokens");
+    expect(unknownTokens("{{company.name}} {{ contact.firstname }}", ["{{company.name}}"])).toEqual(["{{contact.firstname}}"]);
+  });
+});
