@@ -56,7 +56,7 @@ public static class TicketMailEndpoints
 
             var fileName = SanitizeFilename(row.MessageId) + ".eml";
             return Results.Stream(stream, contentType: "message/rfc822", fileDownloadName: fileName);
-        }).WithName("GetTicketMailRaw").WithOpenApi();
+        }).WithName("GetTicketMailRaw");
 
         // ── Attachment download ──
         //
@@ -125,7 +125,7 @@ public static class TicketMailEndpoints
             // honoured for inline-safe types (audit v0.1.1 #2) — the sender
             // controls this MIME type, see AttachmentResponse.
             return AttachmentResponse.File(stream, att.MimeType, fileName, inline == true);
-        }).WithName("GetTicketMailAttachment").WithOpenApi();
+        }).WithName("GetTicketMailAttachment");
 
         return app;
     }

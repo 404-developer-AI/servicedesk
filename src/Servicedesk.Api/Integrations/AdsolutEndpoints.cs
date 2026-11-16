@@ -34,24 +34,24 @@ public static class AdsolutEndpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapGet("/status", GetStatus).WithName("GetAdsolutStatus").WithOpenApi();
-        admin.MapPost("/authorize", StartAuthorize).WithName("StartAdsolutAuthorize").WithOpenApi();
-        admin.MapPost("/disconnect", Disconnect).WithName("DisconnectAdsolut").WithOpenApi();
-        admin.MapPost("/refresh", TestRefresh).WithName("RefreshAdsolutToken").WithOpenApi();
+        admin.MapGet("/status", GetStatus).WithName("GetAdsolutStatus");
+        admin.MapPost("/authorize", StartAuthorize).WithName("StartAdsolutAuthorize");
+        admin.MapPost("/disconnect", Disconnect).WithName("DisconnectAdsolut");
+        admin.MapPost("/refresh", TestRefresh).WithName("RefreshAdsolutToken");
 
-        admin.MapGet("/secret", GetSecretStatus).WithName("GetAdsolutSecretStatus").WithOpenApi();
-        admin.MapPut("/secret", SetSecret).WithName("SetAdsolutSecret").WithOpenApi();
-        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteAdsolutSecret").WithOpenApi();
+        admin.MapGet("/secret", GetSecretStatus).WithName("GetAdsolutSecretStatus");
+        admin.MapPut("/secret", SetSecret).WithName("SetAdsolutSecret");
+        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteAdsolutSecret");
 
-        admin.MapGet("/audit", GetAuditLog).WithName("GetAdsolutAuditLog").WithOpenApi();
+        admin.MapGet("/audit", GetAuditLog).WithName("GetAdsolutAuditLog");
 
         // v0.0.26 — Companies pull. The dossier picker (admin chooses
         // which Adsolut administration to sync) and the on-demand
         // "Sync now" + sync-state surface for the UI.
-        admin.MapGet("/administrations", ListAdministrations).WithName("ListAdsolutAdministrations").WithOpenApi();
-        admin.MapPost("/administration", SelectAdministration).WithName("SelectAdsolutAdministration").WithOpenApi();
-        admin.MapGet("/sync", GetSyncState).WithName("GetAdsolutSyncState").WithOpenApi();
-        admin.MapPost("/sync", TriggerSyncNow).WithName("TriggerAdsolutSyncNow").WithOpenApi();
+        admin.MapGet("/administrations", ListAdministrations).WithName("ListAdsolutAdministrations");
+        admin.MapPost("/administration", SelectAdministration).WithName("SelectAdsolutAdministration");
+        admin.MapGet("/sync", GetSyncState).WithName("GetAdsolutSyncState");
+        admin.MapPost("/sync", TriggerSyncNow).WithName("TriggerAdsolutSyncNow");
 
         // v0.0.28 — manual "Resync contacts" admin escape valve. Triggered
         // from the company-detail page when an admin doesn't want to wait
@@ -59,57 +59,56 @@ public static class AdsolutEndpoints
         // pull-toggles — flipping them off then clicking resync is a no-op
         // by design.
         admin.MapPost("/companies/{companyId:guid}/resync-contacts", ResyncCompanyContacts)
-            .WithName("ResyncAdsolutCompanyContacts")
-            .WithOpenApi();
+            .WithName("ResyncAdsolutCompanyContacts");
 
         // v0.0.30 — Sync coverage. The tile + overview page surface the
         // gaps between the SD-side universe and Adsolut. Admin-only;
         // mutates only via the link-by-uuid + force-push flows below.
-        admin.MapGet("/coverage", GetCoverageCounts).WithName("GetAdsolutCoverageCounts").WithOpenApi();
-        admin.MapGet("/coverage/companies", GetCoverageCompanies).WithName("GetAdsolutCoverageCompanies").WithOpenApi();
-        admin.MapGet("/coverage/contacts", GetCoverageContacts).WithName("GetAdsolutCoverageContacts").WithOpenApi();
+        admin.MapGet("/coverage", GetCoverageCounts).WithName("GetAdsolutCoverageCounts");
+        admin.MapGet("/coverage/companies", GetCoverageCompanies).WithName("GetAdsolutCoverageCompanies");
+        admin.MapGet("/coverage/contacts", GetCoverageContacts).WithName("GetAdsolutCoverageContacts");
         admin.MapPost("/coverage/link/company/{companyId:guid}", LinkCoverageCompany)
-            .WithName("LinkAdsolutCoverageCompany").WithOpenApi();
+            .WithName("LinkAdsolutCoverageCompany");
         admin.MapPost("/coverage/link/contact/{linkId:guid}", LinkCoverageContact)
-            .WithName("LinkAdsolutCoverageContact").WithOpenApi();
+            .WithName("LinkAdsolutCoverageContact");
         admin.MapPost("/coverage/force-push/company/{companyId:guid}", ForcePushCoverageCompany)
-            .WithName("ForcePushAdsolutCoverageCompany").WithOpenApi();
+            .WithName("ForcePushAdsolutCoverageCompany");
         admin.MapPost("/coverage/force-push/contact/{linkId:guid}", ForcePushCoverageContact)
-            .WithName("ForcePushAdsolutCoverageContact").WithOpenApi();
+            .WithName("ForcePushAdsolutCoverageContact");
 
-        admin.MapGet("/debug/lookup", DebugLookup).WithName("AdsolutDebugLookup").WithOpenApi();
-        admin.MapGet("/debug/erp-sales-receipts", DebugErpSalesReceipts).WithName("AdsolutDebugErpSalesReceipts").WithOpenApi();
+        admin.MapGet("/debug/lookup", DebugLookup).WithName("AdsolutDebugLookup");
+        admin.MapGet("/debug/erp-sales-receipts", DebugErpSalesReceipts).WithName("AdsolutDebugErpSalesReceipts");
 
         // ERP SalesReceipts (verkoopbonnen) mirror — admin controls on the
         // integration page. The toggle + interval are plain settings (edited
         // via the settings API); these endpoints expose the sync state +
         // discovered statuses, a "sync now" trigger, and the status-filter
         // selection.
-        admin.MapGet("/erp/sales-receipts/state", GetErpSalesReceiptsState).WithName("GetAdsolutErpSalesReceiptsState").WithOpenApi();
-        admin.MapPost("/erp/sales-receipts/sync", TriggerErpSalesReceiptsSync).WithName("TriggerAdsolutErpSalesReceiptsSync").WithOpenApi();
-        admin.MapPut("/erp/sales-receipts/status-filter", SetErpSalesReceiptsStatusFilter).WithName("SetAdsolutErpSalesReceiptsStatusFilter").WithOpenApi();
+        admin.MapGet("/erp/sales-receipts/state", GetErpSalesReceiptsState).WithName("GetAdsolutErpSalesReceiptsState");
+        admin.MapPost("/erp/sales-receipts/sync", TriggerErpSalesReceiptsSync).WithName("TriggerAdsolutErpSalesReceiptsSync");
+        admin.MapPut("/erp/sales-receipts/status-filter", SetErpSalesReceiptsStatusFilter).WithName("SetAdsolutErpSalesReceiptsStatusFilter");
 
         // ERP Orders (bestellingen) mirror — admin controls on the integration
         // page. Same shape as sales-receipts: state surface, "sync now", and
         // the DISPLAY-ONLY status filter (mirror always holds every status).
-        admin.MapGet("/erp/orders/state", GetErpOrdersState).WithName("GetAdsolutErpOrdersState").WithOpenApi();
-        admin.MapPost("/erp/orders/sync", TriggerErpOrdersSync).WithName("TriggerAdsolutErpOrdersSync").WithOpenApi();
-        admin.MapPut("/erp/orders/status-filter", SetErpOrdersStatusFilter).WithName("SetAdsolutErpOrdersStatusFilter").WithOpenApi();
-        admin.MapPut("/erp/orders/supplier-status-colors", SetErpOrdersSupplierStatusColors).WithName("SetAdsolutErpOrdersSupplierStatusColors").WithOpenApi();
+        admin.MapGet("/erp/orders/state", GetErpOrdersState).WithName("GetAdsolutErpOrdersState");
+        admin.MapPost("/erp/orders/sync", TriggerErpOrdersSync).WithName("TriggerAdsolutErpOrdersSync");
+        admin.MapPut("/erp/orders/status-filter", SetErpOrdersStatusFilter).WithName("SetAdsolutErpOrdersStatusFilter");
+        admin.MapPut("/erp/orders/supplier-status-colors", SetErpOrdersSupplierStatusColors).WithName("SetAdsolutErpOrdersSupplierStatusColors");
         // ERP articles (artikels) mirror — feeds the Contract Articles list
         // (Contracts → Contract Articles). State surface + "sync now".
-        admin.MapGet("/erp/articles/state", GetErpArticlesState).WithName("GetAdsolutErpArticlesState").WithOpenApi();
-        admin.MapPost("/erp/articles/sync", TriggerErpArticlesSync).WithName("TriggerAdsolutErpArticlesSync").WithOpenApi();
+        admin.MapGet("/erp/articles/state", GetErpArticlesState).WithName("GetAdsolutErpArticlesState");
+        admin.MapPost("/erp/articles/sync", TriggerErpArticlesSync).WithName("TriggerAdsolutErpArticlesSync");
         // ERP contracts (contracten) mirror — feeds the Contracts overview
         // (Contracts → Contracts overview). State surface + "sync now" + the
         // DISPLAY-ONLY status filter (mirror always holds every status).
-        admin.MapGet("/erp/contracts/state", GetErpContractsState).WithName("GetAdsolutErpContractsState").WithOpenApi();
-        admin.MapPost("/erp/contracts/sync", TriggerErpContractsSync).WithName("TriggerAdsolutErpContractsSync").WithOpenApi();
-        admin.MapPut("/erp/contracts/status-filter", SetErpContractsStatusFilter).WithName("SetAdsolutErpContractsStatusFilter").WithOpenApi();
-        admin.MapPut("/erp/contracts/status-colors", SetErpContractsStatusColors).WithName("SetAdsolutErpContractsStatusColors").WithOpenApi();
-        admin.MapGet("/debug/put-preview", DebugPutPreview).WithName("AdsolutDebugPutPreview").WithOpenApi();
-        admin.MapPost("/debug/put", DebugPutCustomer).WithName("AdsolutDebugPutCustomer").WithOpenApi();
-        admin.MapGet("/debug/access-token", DebugAccessToken).WithName("AdsolutDebugAccessToken").WithOpenApi()
+        admin.MapGet("/erp/contracts/state", GetErpContractsState).WithName("GetAdsolutErpContractsState");
+        admin.MapPost("/erp/contracts/sync", TriggerErpContractsSync).WithName("TriggerAdsolutErpContractsSync");
+        admin.MapPut("/erp/contracts/status-filter", SetErpContractsStatusFilter).WithName("SetAdsolutErpContractsStatusFilter");
+        admin.MapPut("/erp/contracts/status-colors", SetErpContractsStatusColors).WithName("SetAdsolutErpContractsStatusColors");
+        admin.MapGet("/debug/put-preview", DebugPutPreview).WithName("AdsolutDebugPutPreview");
+        admin.MapPost("/debug/put", DebugPutCustomer).WithName("AdsolutDebugPutCustomer");
+        admin.MapGet("/debug/access-token", DebugAccessToken).WithName("AdsolutDebugAccessToken")
             .RequireRateLimiting("auth");
 
         // Anonymous — see header comment. Validation happens via the
@@ -118,8 +117,7 @@ public static class AdsolutEndpoints
             .WithName("AdsolutCallback")
             .WithTags("Integrations")
             .AllowAnonymous()
-            .RequireRateLimiting("auth")
-            .WithOpenApi();
+            .RequireRateLimiting("auth");
 
         return app;
     }

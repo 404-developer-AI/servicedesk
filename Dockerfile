@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# Multi-stage build for Servicedesk (ASP.NET Core 8 + React 19 bundled into one
+# Multi-stage build for Servicedesk (ASP.NET Core 10 + React 19 bundled into one
 # image). The React SPA is built in a Node stage and copied into the .NET
 # publish output's wwwroot, where Program.cs serves it via UseStaticFiles +
 # MapFallbackToFile. Backend-only devs never touch Node — the frontend bundle
@@ -29,7 +29,7 @@ RUN APP_VERSION="${APP_VERSION}" npm run build
 # -----------------------------------------------------------------------------
 # Stage 2 — restore + publish the .NET app.
 # -----------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dotnet-build
 WORKDIR /src
 
 # Restore first with just csproj files so dependency restore is cacheable.
@@ -60,7 +60,7 @@ COPY --from=node-build /web/dist/ /app/publish/wwwroot/
 # -----------------------------------------------------------------------------
 # Stage 3 — slim runtime.
 # -----------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
 
 # Non-root runtime user. uid 10001 avoids colliding with host uids < 1000.
 # icu-libs is required because Servicedesk.Api.csproj sets

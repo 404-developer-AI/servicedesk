@@ -47,14 +47,14 @@ public static class TicketTemplateEndpoints
         {
             var templates = await repo.ListAsync(includeInactive ?? true, ct);
             return Results.Ok(templates.Select(MapDto));
-        }).WithName("ListTicketTemplates").WithOpenApi();
+        }).WithName("ListTicketTemplates");
 
         group.MapGet("/{id:guid}", async (
             Guid id, ITicketTemplateRepository repo, CancellationToken ct) =>
         {
             var template = await repo.GetAsync(id, ct);
             return template is null ? Results.NotFound() : Results.Ok(MapDto(template));
-        }).WithName("GetTicketTemplate").WithOpenApi();
+        }).WithName("GetTicketTemplate");
 
         group.MapPost("/", async (
             [FromBody] UpsertRequest req, HttpContext http,
@@ -92,7 +92,7 @@ public static class TicketTemplateEndpoints
 
             var created = await repo.GetAsync(id, ct);
             return Results.Created($"/api/settings/ticket-templates/{id}", MapDto(created!));
-        }).WithName("CreateTicketTemplate").WithOpenApi();
+        }).WithName("CreateTicketTemplate");
 
         group.MapPut("/{id:guid}", async (
             Guid id, [FromBody] UpsertRequest req, HttpContext http,
@@ -131,7 +131,7 @@ public static class TicketTemplateEndpoints
 
             var updated = await repo.GetAsync(id, ct);
             return Results.Ok(MapDto(updated!));
-        }).WithName("UpdateTicketTemplate").WithOpenApi();
+        }).WithName("UpdateTicketTemplate");
 
         group.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, ITicketTemplateRepository repo,
@@ -150,7 +150,7 @@ public static class TicketTemplateEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString()));
 
             return Results.NoContent();
-        }).WithName("DeleteTicketTemplate").WithOpenApi();
+        }).WithName("DeleteTicketTemplate");
     }
 
     private static void MapAgentEndpoints(IEndpointRouteBuilder app)
@@ -167,8 +167,7 @@ public static class TicketTemplateEndpoints
         })
         .WithTags("TicketTemplatesAgent")
         .WithName("ListUsableTicketTemplates")
-        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithOpenApi();
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent);
     }
 
     public sealed record UpsertRequest(

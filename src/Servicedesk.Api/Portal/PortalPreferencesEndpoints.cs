@@ -17,8 +17,8 @@ public static class PortalPreferencesEndpoints
             .WithTags("PortalPreferences")
             .RequireAuthorization(AuthorizationPolicies.RequireCustomer);
 
-        group.MapGet("/conversation-order", GetConversationOrder).WithName("PortalGetConversationOrder").WithOpenApi();
-        group.MapPut("/conversation-order", SetConversationOrder).WithName("PortalSetConversationOrder").WithOpenApi();
+        group.MapGet("/conversation-order", GetConversationOrder).WithName("PortalGetConversationOrder");
+        group.MapPut("/conversation-order", SetConversationOrder).WithName("PortalSetConversationOrder");
         return app;
     }
 

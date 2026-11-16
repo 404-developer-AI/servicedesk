@@ -70,7 +70,7 @@ A self-hosted helpdesk for IT service teams. One install per organisation, on a 
 
 ## Built with
 
-ASP.NET Core 8 (C#) · PostgreSQL · React 19 + TypeScript · Tailwind CSS · SignalR · Docker Compose + Nginx
+ASP.NET Core 10 (C#) · PostgreSQL · React 19 + TypeScript · Tailwind CSS · SignalR · Docker Compose + Nginx
 
 ## Requirements
 

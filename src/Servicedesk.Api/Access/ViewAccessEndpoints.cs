@@ -19,7 +19,7 @@ public static class ViewAccessEndpoints
         {
             var viewIds = await svc.GetDirectViewIdsAsync(userId, ct);
             return Results.Ok(new { viewIds });
-        }).WithName("GetDirectViewAccess").WithOpenApi();
+        }).WithName("GetDirectViewAccess");
 
         group.MapPut("/{userId:guid}", async (
             Guid userId, [FromBody] SetDirectViewAccessRequest req,
@@ -38,7 +38,7 @@ public static class ViewAccessEndpoints
                 Payload: new { viewIds = req.ViewIds }));
 
             return Results.NoContent();
-        }).WithName("SetDirectViewAccess").WithOpenApi();
+        }).WithName("SetDirectViewAccess");
 
         return app;
     }

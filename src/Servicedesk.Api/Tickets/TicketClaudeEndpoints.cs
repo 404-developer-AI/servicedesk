@@ -28,23 +28,23 @@ public static class TicketClaudeEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         group.MapPost("/{id:guid}/ai-proposal", CreateProposal)
-            .WithName("CreateTicketAiProposal").WithOpenApi();
+            .WithName("CreateTicketAiProposal");
 
         // v0.1.20 — one-click summary that fills the admin template. Same
         // queue scoping, per-queue switch, budget and usage log as above.
         group.MapPost("/{id:guid}/ai-summary", CreateSummary)
-            .WithName("CreateTicketAiSummary").WithOpenApi();
+            .WithName("CreateTicketAiSummary");
 
         // v0.1.46 — internal status brief, posted straight onto the ticket as
         // an internal note (no draft step). Same gates as above; the note
         // goes through the shared mutation path like a manual note.
         group.MapPost("/{id:guid}/ai-status", CreateStatus)
-            .WithName("CreateTicketAiStatus").WithOpenApi();
+            .WithName("CreateTicketAiStatus");
 
         // Lists the ticket's image attachments so the agent can tick which
         // screenshots to send. Same queue-scoping as the proposal call.
         group.MapGet("/{id:guid}/ai-proposal/images", ListImages)
-            .WithName("ListTicketAiProposalImages").WithOpenApi();
+            .WithName("ListTicketAiProposalImages");
 
         return app;
     }

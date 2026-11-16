@@ -20,40 +20,40 @@ public static class ZammadKbImportEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         admin.MapGet("/knowledge-bases", ListKnowledgeBases)
-            .WithName("ListZammadKnowledgeBases").WithOpenApi();
+            .WithName("ListZammadKnowledgeBases");
 
         admin.MapPost("/runs", StartRun)
-            .WithName("StartZammadKbImportRun").WithOpenApi();
+            .WithName("StartZammadKbImportRun");
 
         admin.MapGet("/runs", ListRuns)
-            .WithName("ListZammadKbImportRuns").WithOpenApi();
+            .WithName("ListZammadKbImportRuns");
 
         admin.MapGet("/runs/{runId:guid}", GetRun)
-            .WithName("GetZammadKbImportRun").WithOpenApi();
+            .WithName("GetZammadKbImportRun");
 
         admin.MapPost("/runs/{runId:guid}/proposal", BuildProposal)
-            .WithName("BuildZammadKbImportProposal").WithOpenApi();
+            .WithName("BuildZammadKbImportProposal");
 
         admin.MapGet("/runs/{runId:guid}/proposal", GetProposal)
-            .WithName("GetZammadKbImportProposal").WithOpenApi();
+            .WithName("GetZammadKbImportProposal");
 
         admin.MapPost("/runs/{runId:guid}/proposal/decisions", SaveDecisions)
-            .WithName("SaveZammadKbImportDecisions").WithOpenApi();
+            .WithName("SaveZammadKbImportDecisions");
 
         admin.MapPost("/runs/{runId:guid}/proposal/apply", ApplyProposal)
-            .WithName("ApplyZammadKbImportProposal").WithOpenApi();
+            .WithName("ApplyZammadKbImportProposal");
 
         admin.MapGet("/runs/{runId:guid}/picker", PickerList)
-            .WithName("ListZammadKbImportPicker").WithOpenApi();
+            .WithName("ListZammadKbImportPicker");
 
         admin.MapPost("/runs/{runId:guid}/import", StartArticleImport)
-            .WithName("StartZammadKbArticleImport").WithOpenApi();
+            .WithName("StartZammadKbArticleImport");
 
         admin.MapGet("/runs/{runId:guid}/records", ListRecords)
-            .WithName("ListZammadKbImportRecords").WithOpenApi();
+            .WithName("ListZammadKbImportRecords");
 
         admin.MapPost("/runs/{runId:guid}/cancel", CancelRun)
-            .WithName("CancelZammadKbImportRun").WithOpenApi();
+            .WithName("CancelZammadKbImportRun");
 
         return app;
     }

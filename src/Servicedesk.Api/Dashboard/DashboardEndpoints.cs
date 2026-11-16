@@ -40,7 +40,7 @@ public static class DashboardEndpoints
             // tile (the ticket-detail endpoint already enforces this).
             var masked = snapshot.Select(a => AgentActivityMasking.ForViewer(a, scope));
             return Results.Ok(new { agents = masked });
-        }).WithName("DashboardAgentActivity").WithOpenApi();
+        }).WithName("DashboardAgentActivity");
 
         return app;
     }

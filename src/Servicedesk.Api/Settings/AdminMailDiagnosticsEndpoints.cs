@@ -22,7 +22,7 @@ public static class AdminMailDiagnosticsEndpoints
             var rows = await diagnostics.ListRecentAsync(
                 limit ?? 25, onlyIssues ?? false, ct);
             return Results.Ok(rows);
-        }).WithName("ListMailAttachmentDiagnostics").WithOpenApi();
+        }).WithName("ListMailAttachmentDiagnostics");
 
         group.MapGet("/{mailMessageId:guid}", async (
             Guid mailMessageId, HttpContext http,
@@ -43,7 +43,7 @@ public static class AdminMailDiagnosticsEndpoints
                 Payload: new { ticketId = result.TicketId, attachmentCount = result.Attachments.Count }));
 
             return Results.Ok(result);
-        }).WithName("GetMailAttachmentDiagnostics").WithOpenApi();
+        }).WithName("GetMailAttachmentDiagnostics");
 
         return app;
     }

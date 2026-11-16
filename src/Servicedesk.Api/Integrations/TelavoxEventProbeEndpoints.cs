@@ -55,13 +55,13 @@ public static class TelavoxEventProbeEndpoints
                     agentMatchesUser = e.AgentMatchesUser,
                 }),
             });
-        }).WithName("GetTelavoxEventProbe").WithOpenApi();
+        }).WithName("GetTelavoxEventProbe");
 
         admin.MapDelete("/events", (TelavoxEventProbeBuffer buffer) =>
         {
             buffer.Clear();
             return Results.NoContent();
-        }).WithName("ClearTelavoxEventProbe").WithOpenApi();
+        }).WithName("ClearTelavoxEventProbe");
 
         admin.MapPost("/token", async (
             HttpContext http, IProtectedSecretStore secrets, IAuditLogger audit, CancellationToken ct) =>
@@ -71,7 +71,7 @@ public static class TelavoxEventProbeEndpoints
             await secrets.SetAsync(ProtectedSecretKeys.TelavoxEventProbeToken, token, ct);
             await WriteAdminAuditAsync(audit, http, TelavoxEventTypes.EventProbeTokenGenerated, new { configured = true }, ct);
             return Results.Ok(new { token });
-        }).WithName("GenerateTelavoxEventProbeToken").WithOpenApi();
+        }).WithName("GenerateTelavoxEventProbeToken");
 
         admin.MapDelete("/token", async (
             HttpContext http, IProtectedSecretStore secrets, IAuditLogger audit, CancellationToken ct) =>
@@ -79,7 +79,7 @@ public static class TelavoxEventProbeEndpoints
             await secrets.DeleteAsync(ProtectedSecretKeys.TelavoxEventProbeToken, ct);
             await WriteAdminAuditAsync(audit, http, TelavoxEventTypes.EventProbeTokenDeleted, new { configured = false }, ct);
             return Results.NoContent();
-        }).WithName("DeleteTelavoxEventProbeToken").WithOpenApi();
+        }).WithName("DeleteTelavoxEventProbeToken");
 
         // ---- Public receiver (token-gated, log-only) ----------------------
         // GET too: Telavox lets the admin pick the method per webhook, and
@@ -87,13 +87,11 @@ public static class TelavoxEventProbeEndpoints
         app.MapPost(PublicPath, Receive)
             .WithTags("TelavoxPublic")
             .RequireRateLimiting("telavox-events")
-            .WithName("TelavoxCallEventProbe")
-            .WithOpenApi();
+            .WithName("TelavoxCallEventProbe");
         app.MapGet(PublicPath, Receive)
             .WithTags("TelavoxPublic")
             .RequireRateLimiting("telavox-events")
-            .WithName("TelavoxCallEventProbeGet")
-            .WithOpenApi();
+            .WithName("TelavoxCallEventProbeGet");
 
         return app;
     }

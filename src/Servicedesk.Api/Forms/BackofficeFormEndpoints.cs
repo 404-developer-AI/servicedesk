@@ -33,13 +33,13 @@ public static class BackofficeFormEndpoints
                 st, templateId, companyId, submittedBy, q,
                 Math.Max(0, offset ?? 0), Math.Clamp(limit ?? PageSize, 1, 200)), ct);
             return Results.Ok(new { items = page.Items.Select(MapItem), total = page.Total });
-        }).WithName("ListBackofficeForms").WithOpenApi();
+        }).WithName("ListBackofficeForms");
 
         group.MapGet("/counts", async (IBackofficeFormService svc, CancellationToken ct) =>
         {
             var c = await svc.CountsAsync(ct);
             return Results.Ok(new { open = c.Open, inProgress = c.InProgress });
-        }).WithName("CountBackofficeForms").WithOpenApi();
+        }).WithName("CountBackofficeForms");
 
         // Template filter for the list: the marked templates (name only —
         // the template editor itself stays admin-only).
@@ -51,7 +51,7 @@ public static class BackofficeFormEndpoints
                 items = list.Where(t => t.SendToBackoffice)
                     .Select(t => new { id = t.Id, name = t.Name, isActive = t.IsActive }),
             });
-        }).WithName("ListBackofficeFormTemplates").WithOpenApi();
+        }).WithName("ListBackofficeFormTemplates");
 
         group.MapGet("/{formId:guid}", async (Guid formId, IBackofficeFormService svc, CancellationToken ct) =>
             await Run(async () =>
@@ -72,31 +72,31 @@ public static class BackofficeFormEndpoints
                         fieldId = c.FieldId, label = c.Label, before = c.Before, after = c.After,
                     }),
                 });
-            })).WithName("GetBackofficeForm").WithOpenApi();
+            })).WithName("GetBackofficeForm");
 
         group.MapPost("/{formId:guid}/claim", async (
             Guid formId, [FromBody] ClaimRequest? req, HttpContext http, IBackofficeFormService svc, CancellationToken ct) =>
             await Run(async () => Results.Ok(MapItem(
                 await svc.ClaimAsync(TicketEndpoints.ResolveMutationActor(http), formId, req?.TakeOver ?? false, ct))))
-        ).WithName("ClaimBackofficeForm").WithOpenApi();
+        ).WithName("ClaimBackofficeForm");
 
         group.MapPost("/{formId:guid}/release", async (
             Guid formId, HttpContext http, IBackofficeFormService svc, CancellationToken ct) =>
             await Run(async () => Results.Ok(MapItem(
                 await svc.ReleaseAsync(TicketEndpoints.ResolveMutationActor(http), formId, ct))))
-        ).WithName("ReleaseBackofficeForm").WithOpenApi();
+        ).WithName("ReleaseBackofficeForm");
 
         group.MapPost("/{formId:guid}/handle", async (
             Guid formId, [FromBody] HandleRequest? req, HttpContext http, IBackofficeFormService svc, CancellationToken ct) =>
             await Run(async () => Results.Ok(MapItem(
                 await svc.HandleAsync(TicketEndpoints.ResolveMutationActor(http), formId, req?.Note, req?.ExpectedVersion ?? 0, ct))))
-        ).WithName("HandleBackofficeForm").WithOpenApi();
+        ).WithName("HandleBackofficeForm");
 
         group.MapPost("/{formId:guid}/reopen", async (
             Guid formId, [FromBody] NoteRequest? req, HttpContext http, IBackofficeFormService svc, CancellationToken ct) =>
             await Run(async () => Results.Ok(MapItem(
                 await svc.ReopenAsync(TicketEndpoints.ResolveMutationActor(http), formId, req?.Note, ct))))
-        ).WithName("ReopenBackofficeForm").WithOpenApi();
+        ).WithName("ReopenBackofficeForm");
 
         return app;
     }

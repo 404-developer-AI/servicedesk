@@ -26,15 +26,15 @@ public static class ClaudeEndpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapGet("/status", GetStatus).WithName("GetClaudeStatus").WithOpenApi();
+        admin.MapGet("/status", GetStatus).WithName("GetClaudeStatus");
 
-        admin.MapGet("/secret", GetSecretStatus).WithName("GetClaudeSecretStatus").WithOpenApi();
-        admin.MapPut("/secret", SetSecret).WithName("SetClaudeSecret").WithOpenApi();
-        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteClaudeSecret").WithOpenApi();
+        admin.MapGet("/secret", GetSecretStatus).WithName("GetClaudeSecretStatus");
+        admin.MapPut("/secret", SetSecret).WithName("SetClaudeSecret");
+        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteClaudeSecret");
 
-        admin.MapGet("/usage", GetUsage).WithName("GetClaudeUsage").WithOpenApi();
+        admin.MapGet("/usage", GetUsage).WithName("GetClaudeUsage");
         admin.MapPut("/agents/{userId:guid}/budget", SetAgentBudget)
-            .WithName("SetClaudeAgentBudget").WithOpenApi();
+            .WithName("SetClaudeAgentBudget");
 
         return app;
     }

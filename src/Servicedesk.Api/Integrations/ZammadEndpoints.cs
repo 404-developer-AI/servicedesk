@@ -21,13 +21,13 @@ public static class ZammadEndpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapGet("/status", GetStatus).WithName("GetZammadStatus").WithOpenApi();
+        admin.MapGet("/status", GetStatus).WithName("GetZammadStatus");
 
         // Token CRUD — mirrors the Telavox /secret surface. Value never
         // returned on read; only existence is exposed.
-        admin.MapGet("/secret", GetSecretStatus).WithName("GetZammadSecretStatus").WithOpenApi();
-        admin.MapPut("/secret", SetSecret).WithName("SetZammadSecret").WithOpenApi();
-        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteZammadSecret").WithOpenApi();
+        admin.MapGet("/secret", GetSecretStatus).WithName("GetZammadSecretStatus");
+        admin.MapPut("/secret", SetSecret).WithName("SetZammadSecret");
+        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteZammadSecret");
 
         // Base URL setter. Separate route so the audit-log can distinguish
         // a token change (security event) from a base-URL change (config
@@ -35,13 +35,13 @@ public static class ZammadEndpoints
         // and is also editable via /api/settings/list?category=Zammad, but
         // surfacing a dedicated PUT lets us validate http(s) + host shape
         // before letting a typo land.
-        admin.MapPut("/base-url", SetBaseUrl).WithName("SetZammadBaseUrl").WithOpenApi();
+        admin.MapPut("/base-url", SetBaseUrl).WithName("SetZammadBaseUrl");
 
         // Test connection — fires /users/me + /version against the source
         // Zammad install. Returns the resolved agent + version + latency
         // so the SPA can render a "Connected as X (Zammad Y.Z.A) — XX ms"
         // status card.
-        admin.MapPost("/test-connection", TestConnection).WithName("TestZammadConnection").WithOpenApi();
+        admin.MapPost("/test-connection", TestConnection).WithName("TestZammadConnection");
 
         // Picker support (fase 2). Groups + states are cached per admin
         // session on the SPA side; the search proxy composes Zammad's
@@ -49,16 +49,16 @@ public static class ZammadEndpoints
         // ignorant of the on-wire syntax. All three are gated on
         // Zammad.Enabled — flipping the master switch off freezes the
         // picker without needing to also clear the token.
-        admin.MapGet("/groups", ListGroups).WithName("ListZammadGroups").WithOpenApi();
-        admin.MapGet("/states", ListStates).WithName("ListZammadStates").WithOpenApi();
-        admin.MapGet("/tickets/search", SearchTickets).WithName("SearchZammadTickets").WithOpenApi();
-        admin.MapGet("/users/{userId:long}", GetUser).WithName("GetZammadUser").WithOpenApi();
+        admin.MapGet("/groups", ListGroups).WithName("ListZammadGroups");
+        admin.MapGet("/states", ListStates).WithName("ListZammadStates");
+        admin.MapGet("/tickets/search", SearchTickets).WithName("SearchZammadTickets");
+        admin.MapGet("/users/{userId:long}", GetUser).WithName("GetZammadUser");
 
         // integration_audit reader — reuses the shared IntegrationAuditLog
         // component on the SPA-side. Every Zammad API call writes one row;
         // first place to look when a Test connection fails or a future
         // import goes sideways.
-        admin.MapGet("/audit", GetAuditLog).WithName("GetZammadAuditLog").WithOpenApi();
+        admin.MapGet("/audit", GetAuditLog).WithName("GetZammadAuditLog");
 
         return app;
     }

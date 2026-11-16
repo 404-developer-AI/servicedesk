@@ -21,8 +21,7 @@ public static class TimesheetTaskEndpoints
                 CancellationToken ct) =>
                 Results.Ok(await svc.ListAsync(includeArchived ?? false, ct)))
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-            .WithName("ListTimesheetTasks")
-            .WithOpenApi();
+            .WithName("ListTimesheetTasks");
 
         // Admin-only management surface lives under /api/admin/timesheet
         // alongside the existing /api/admin/users-style routes.
@@ -50,7 +49,7 @@ public static class TimesheetTaskEndpoints
                     Results.Conflict(new { error = "Another active task already uses that name." }),
                 _ => Results.Problem("Unhandled create-task result."),
             };
-        }).WithName("CreateTimesheetTask").WithOpenApi();
+        }).WithName("CreateTimesheetTask");
 
         admin.MapPut("/{id:guid}", async (
             Guid id,
@@ -75,7 +74,7 @@ public static class TimesheetTaskEndpoints
                     Results.Conflict(new { error = "Another active task already uses that name." }),
                 _ => Results.Problem("Unhandled update-task result."),
             };
-        }).WithName("UpdateTimesheetTask").WithOpenApi();
+        }).WithName("UpdateTimesheetTask");
 
         return app;
     }

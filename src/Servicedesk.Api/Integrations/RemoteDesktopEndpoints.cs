@@ -33,12 +33,12 @@ public static class RemoteDesktopEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireFeature(UserFeature.Assets);
 
-        group.MapGet("/", GetOverview).WithName("GetRemoteDesktopOverview").WithOpenApi();
-        group.MapGet("/export.csv", ExportCsv).WithName("ExportRemoteDesktopCsv").WithOpenApi();
-        group.MapGet("/clients/{trmmClientId:long}/notes", ListNotes).WithName("ListRemoteDesktopClientNotes").WithOpenApi();
-        group.MapPost("/clients/{trmmClientId:long}/notes", AddNote).WithName("AddRemoteDesktopClientNote").WithOpenApi();
-        group.MapPut("/notes/{noteId:guid}", UpdateNote).WithName("UpdateRemoteDesktopClientNote").WithOpenApi();
-        group.MapDelete("/notes/{noteId:guid}", DeleteNote).WithName("DeleteRemoteDesktopClientNote").WithOpenApi();
+        group.MapGet("/", GetOverview).WithName("GetRemoteDesktopOverview");
+        group.MapGet("/export.csv", ExportCsv).WithName("ExportRemoteDesktopCsv");
+        group.MapGet("/clients/{trmmClientId:long}/notes", ListNotes).WithName("ListRemoteDesktopClientNotes");
+        group.MapPost("/clients/{trmmClientId:long}/notes", AddNote).WithName("AddRemoteDesktopClientNote");
+        group.MapPut("/notes/{noteId:guid}", UpdateNote).WithName("UpdateRemoteDesktopClientNote");
+        group.MapDelete("/notes/{noteId:guid}", DeleteNote).WithName("DeleteRemoteDesktopClientNote");
 
         return app;
     }

@@ -39,7 +39,7 @@ public static class StatisticsEndpoints
 
             var rows = await tiles.GetAssignedForViewerAsync(userId.Value, ct);
             return Results.Ok(rows.Select(ToTileDto).ToList());
-        }).WithName("StatisticsListAssigned").WithOpenApi();
+        }).WithName("StatisticsListAssigned");
 
         group.MapGet("/tiles/{id:guid}/data", async (
             Guid id, int? offset, HttpContext http, IUserService users,
@@ -67,7 +67,7 @@ public static class StatisticsEndpoints
             var clamped = Math.Clamp(offset ?? 0, -120, 0);
             var data = await engine.ComputeAsync(tile, userId.Value, clamped, ct);
             return Results.Ok(ToDataDto(data));
-        }).WithName("StatisticsTileData").WithOpenApi();
+        }).WithName("StatisticsTileData");
 
         group.MapPut("/layout", async (
             [FromBody] SaveLayoutRequest request, HttpContext http,
@@ -82,7 +82,7 @@ public static class StatisticsEndpoints
                 .ToList();
             await tiles.SaveLayoutForViewerAsync(userId.Value, layout, ct);
             return Results.Ok();
-        }).WithName("StatisticsSaveLayout").WithOpenApi();
+        }).WithName("StatisticsSaveLayout");
 
         // ---- write surface (builder) --------------------------------------
 
@@ -102,7 +102,7 @@ public static class StatisticsEndpoints
                 groupings = m.Groupings,
                 supportsScope = m.SupportsScope,
             }).ToList());
-        }).WithName("StatisticsCatalogue").WithOpenApi();
+        }).WithName("StatisticsCatalogue");
 
         group.MapGet("/manage/tiles", async (
             HttpContext http, IUserService users, IStatisticTileService tiles, CancellationToken ct) =>
@@ -113,7 +113,7 @@ public static class StatisticsEndpoints
 
             var rows = await tiles.ListAllAsync(ct);
             return Results.Ok(rows.Select(ToSummaryDto).ToList());
-        }).WithName("StatisticsManageList").WithOpenApi();
+        }).WithName("StatisticsManageList");
 
         group.MapGet("/manage/tiles/{id:guid}", async (
             Guid id, HttpContext http, IUserService users, IStatisticTileService tiles, CancellationToken ct) =>
@@ -130,7 +130,7 @@ public static class StatisticsEndpoints
                 tile = ToBareTileDto(tile),
                 assignedUserIds = assignments,
             });
-        }).WithName("StatisticsManageGet").WithOpenApi();
+        }).WithName("StatisticsManageGet");
 
         group.MapPost("/manage/tiles", async (
             [FromBody] TileInputRequest request, HttpContext http,
@@ -149,7 +149,7 @@ public static class StatisticsEndpoints
                     Results.UnprocessableEntity(new { errors = v.Errors }),
                 _ => Results.Problem("Unhandled create result."),
             };
-        }).WithName("StatisticsManageCreate").WithOpenApi();
+        }).WithName("StatisticsManageCreate");
 
         group.MapPut("/manage/tiles/{id:guid}", async (
             Guid id, [FromBody] TileInputRequest request, HttpContext http,
@@ -169,7 +169,7 @@ public static class StatisticsEndpoints
                     Results.UnprocessableEntity(new { errors = v.Errors }),
                 _ => Results.Problem("Unhandled update result."),
             };
-        }).WithName("StatisticsManageUpdate").WithOpenApi();
+        }).WithName("StatisticsManageUpdate");
 
         group.MapDelete("/manage/tiles/{id:guid}", async (
             Guid id, HttpContext http, IUserService users,
@@ -189,7 +189,7 @@ public static class StatisticsEndpoints
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
             return Results.NoContent();
-        }).WithName("StatisticsManageDelete").WithOpenApi();
+        }).WithName("StatisticsManageDelete");
 
         group.MapPut("/manage/tiles/{id:guid}/assignments", async (
             Guid id, [FromBody] AssignmentsRequest request, HttpContext http,
@@ -212,7 +212,7 @@ public static class StatisticsEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
                 Payload: new { assigned_user_ids = assignments }), ct);
             return Results.Ok(new { assignedUserIds = assignments });
-        }).WithName("StatisticsManageAssign").WithOpenApi();
+        }).WithName("StatisticsManageAssign");
 
         return app;
     }

@@ -47,7 +47,7 @@ public static class PerformanceEndpoints
                 pgAccess = pg.Access,
                 appVersion = PerfAppInfo.Version,
             });
-        }).WithName("GetPerformanceStatus").WithOpenApi();
+        }).WithName("GetPerformanceStatus");
 
         admin.MapGet("/overview", async (DateTimeOffset? from, DateTimeOffset? to, IPerfSettings perf, PerfDatasetBuilder builder,
             IMemoryCache cache, CancellationToken ct) =>
@@ -113,7 +113,7 @@ public static class PerformanceEndpoints
             };
             cache.Set(key, (object)result, OverviewCache);
             return Results.Ok(result);
-        }).WithName("GetPerformanceOverview").WithOpenApi();
+        }).WithName("GetPerformanceOverview");
 
         admin.MapGet("/http", async (DateTimeOffset? from, DateTimeOffset? to, IPerfSettings perf, PerfQueries q, CancellationToken ct) =>
         {
@@ -127,7 +127,7 @@ public static class PerformanceEndpoints
                 total = total is null ? null : RouteDto(total),
                 routes = routes.Select(RouteDto),
             });
-        }).WithName("GetPerformanceHttp").WithOpenApi();
+        }).WithName("GetPerformanceHttp");
 
         admin.MapGet("/http/route", async (string method, string route, DateTimeOffset? from, DateTimeOffset? to,
             IPerfSettings perf, PerfQueries q, CancellationToken ct) =>
@@ -151,7 +151,7 @@ public static class PerformanceEndpoints
                 nPlusOne = nPlusOne.Select(NPlusOneDto),
                 slow = slow.Select(SlowDto),
             });
-        }).WithName("GetPerformanceRoute").WithOpenApi();
+        }).WithName("GetPerformanceRoute");
 
         admin.MapGet("/db/queries", async (DateTimeOffset? from, DateTimeOffset? to, IPerfSettings perf, PerfQueries q,
             PgInspector pg, CancellationToken ct) =>
@@ -193,7 +193,7 @@ public static class PerformanceEndpoints
                 nPlusOne = nPlusOne.Select(NPlusOneDto),
                 bySource,
             });
-        }).WithName("GetPerformanceQueries").WithOpenApi();
+        }).WithName("GetPerformanceQueries");
 
         admin.MapGet("/db/tables", async (DateTimeOffset? from, DateTimeOffset? to, IPerfSettings perf, PerfQueries q,
             PgInspector pg, CancellationToken ct) =>
@@ -250,7 +250,7 @@ public static class PerformanceEndpoints
                     points = g.OrderBy(p => p.T).Select(p => new { t = p.T, bytes = p.TotalBytes, rows = p.Rows }),
                 }),
             });
-        }).WithName("GetPerformanceTables").WithOpenApi();
+        }).WithName("GetPerformanceTables");
 
         admin.MapGet("/db/live", async (PgInspector pg, CancellationToken ct) =>
         {
@@ -258,7 +258,7 @@ public static class PerformanceEndpoints
             var locks = await pg.ReadLocksAsync(ct);
             var stats = await pg.ReadDatabaseStatsAsync(ct);
             return Results.Ok(new { summary = Clean(stats), activity, locks });
-        }).WithName("GetPerformanceDbLive").WithOpenApi();
+        }).WithName("GetPerformanceDbLive");
 
         admin.MapGet("/db/config", async (DateTimeOffset? from, DateTimeOffset? to, IPerfSettings perf, PerfQueries q,
             PgInspector pg, CancellationToken ct) =>
@@ -289,7 +289,7 @@ public static class PerformanceEndpoints
                     connTotalMax = period.ConnTotalMax,
                 },
             });
-        }).WithName("GetPerformanceDbConfig").WithOpenApi();
+        }).WithName("GetPerformanceDbConfig");
 
         admin.MapPost("/db/plan", async (PlanRequest body, HttpContext http, IPerfSettings perf, PerfToolbox toolbox,
             IAuditLogger audit, CancellationToken ct) =>
@@ -299,14 +299,14 @@ public static class PerformanceEndpoints
             var result = await toolbox.ExplainAsync(body.Source, body.Id, ct);
             await Audit(audit, http, "perf.plan", body.Source + ":" + body.Id, new { body.Source, body.Id, result.Ok }, ct);
             return Results.Ok(new { result.Ok, plan = result.PlanJson is null ? (JsonElement?)null : JsonDocument.Parse(result.PlanJson).RootElement, result.Error, result.Sql });
-        }).WithName("PostPerformancePlan").WithOpenApi();
+        }).WithName("PostPerformancePlan");
 
         admin.MapPost("/db/analyze", async (AnalyzeRequest body, HttpContext http, PerfToolbox toolbox, IAuditLogger audit, CancellationToken ct) =>
         {
             var result = await toolbox.AnalyzeAsync(body.Table ?? "", ct);
             await Audit(audit, http, "perf.analyze", body.Table, new { body.Table, result.Ok }, ct);
             return result.Ok ? Results.NoContent() : Results.BadRequest(new { error = result.Error });
-        }).WithName("PostPerformanceAnalyze").WithOpenApi();
+        }).WithName("PostPerformanceAnalyze");
 
         admin.MapGet("/host", async (DateTimeOffset? from, DateTimeOffset? to, IPerfSettings perf, PerfQueries q,
             PerfToolbox toolbox, ISettingsService settings, CancellationToken ct) =>
@@ -381,7 +381,7 @@ public static class PerformanceEndpoints
                 series,
                 benchmarks = benchmarks.Select(b => new { b.Id, t = b.TsUtc, b.CreatedBy, result = JsonDocument.Parse(b.Payload).RootElement }),
             });
-        }).WithName("GetPerformanceHost").WithOpenApi();
+        }).WithName("GetPerformanceHost");
 
         admin.MapPost("/benchmark", async (HttpContext http, PerfToolbox toolbox, IAuditLogger audit, CancellationToken ct) =>
         {
@@ -389,14 +389,14 @@ public static class PerformanceEndpoints
             var result = await toolbox.BenchmarkAsync(actor, ct);
             await Audit(audit, http, "perf.benchmark", "server", result, ct);
             return Results.Ok(result);
-        }).WithName("PostPerformanceBenchmark").WithOpenApi();
+        }).WithName("PostPerformanceBenchmark");
 
         admin.MapPost("/edge-check", async (HttpContext http, PerfToolbox toolbox, IAuditLogger audit, CancellationToken ct) =>
         {
             var items = await toolbox.EdgeCheckAsync(ct);
             await Audit(audit, http, "perf.edge-check", "nginx", null, ct);
             return Results.Ok(new { items });
-        }).WithName("PostPerformanceEdgeCheck").WithOpenApi();
+        }).WithName("PostPerformanceEdgeCheck");
 
         admin.MapGet("/frontend", async (DateTimeOffset? from, DateTimeOffset? to, IPerfSettings perf, PerfQueries q, CancellationToken ct) =>
         {
@@ -471,7 +471,7 @@ public static class PerformanceEndpoints
                 reconnects = rum.Where(r => r.Metric == "signalr_reconnect").Sum(r => r.Count),
                 bundle = PerfDatasetBuilder.ReadBundle(),
             });
-        }).WithName("GetPerformanceFrontend").WithOpenApi();
+        }).WithName("GetPerformanceFrontend");
 
         admin.MapGet("/background", async (DateTimeOffset? from, DateTimeOffset? to, IPerfSettings perf, PerfQueries q, CancellationToken ct) =>
         {
@@ -516,7 +516,7 @@ public static class PerformanceEndpoints
                 search = spans.Where(s => s.Kind == "search").Select(SpanDto),
                 connectionSeries = connections.Select(c => new { t = c.T, signalr = c.SignalR, kestrel = c.KestrelActive }),
             });
-        }).WithName("GetPerformanceBackground").WithOpenApi();
+        }).WithName("GetPerformanceBackground");
 
         // ------------------------------------------------------- markers
 
@@ -528,14 +528,14 @@ public static class PerformanceEndpoints
             var id = await q.AddMarkerAsync("manual", label, actor, ct);
             await Audit(audit, http, "perf.marker.add", id.ToString(CultureInfo.InvariantCulture), new { label }, ct);
             return Results.Ok(new { id });
-        }).WithName("PostPerformanceMarker").WithOpenApi();
+        }).WithName("PostPerformanceMarker");
 
         admin.MapDelete("/markers/{id:long}", async (long id, HttpContext http, PerfQueries q, IAuditLogger audit, CancellationToken ct) =>
         {
             var deleted = await q.DeleteMarkerAsync(id, ct);
             if (deleted) await Audit(audit, http, "perf.marker.delete", id.ToString(CultureInfo.InvariantCulture), null, ct);
             return deleted ? Results.NoContent() : Results.NotFound();
-        }).WithName("DeletePerformanceMarker").WithOpenApi();
+        }).WithName("DeletePerformanceMarker");
 
         // ------------------------------------------------- settings / mode
 
@@ -548,7 +548,7 @@ public static class PerformanceEndpoints
                     .Where(e => e.Key != SettingKeys.Performance.DiagnoseUntilUtc)
                     .Select(e => new { e.Key, e.Value, e.ValueType, e.Description, e.DefaultValue }),
             });
-        }).WithName("GetPerformanceSettings").WithOpenApi();
+        }).WithName("GetPerformanceSettings");
 
         admin.MapPut("/settings", async (Dictionary<string, string> body, HttpContext http, ISettingsService settings,
             IPerfSettings perf, CancellationToken ct) =>
@@ -579,7 +579,7 @@ public static class PerformanceEndpoints
             }
             await perf.RefreshAsync(ct);
             return Results.NoContent();
-        }).WithName("PutPerformanceSettings").WithOpenApi();
+        }).WithName("PutPerformanceSettings");
 
         admin.MapPost("/diagnose", async (DiagnoseRequest body, HttpContext http, ISettingsService settings, IPerfSettings perf,
             PerfQueries q, IAuditLogger audit, CancellationToken ct) =>
@@ -596,7 +596,7 @@ public static class PerformanceEndpoints
             await q.AddMarkerAsync("diagnose", $"Diagnose started ({minutes} min)", actor, ct);
             await Audit(audit, http, "perf.diagnose.start", "performance", new { minutes, until }, ct);
             return Results.Ok(new { diagnoseUntilUtc = until });
-        }).WithName("PostPerformanceDiagnose").WithOpenApi();
+        }).WithName("PostPerformanceDiagnose");
 
         admin.MapDelete("/diagnose", async (HttpContext http, ISettingsService settings, IPerfSettings perf, PerfQueries q,
             IAuditLogger audit, CancellationToken ct) =>
@@ -607,14 +607,14 @@ public static class PerformanceEndpoints
             await q.AddMarkerAsync("diagnose", "Diagnose stopped", actor, ct);
             await Audit(audit, http, "perf.diagnose.stop", "performance", null, ct);
             return Results.NoContent();
-        }).WithName("DeletePerformanceDiagnose").WithOpenApi();
+        }).WithName("DeletePerformanceDiagnose");
 
         admin.MapDelete("/data", async (HttpContext http, PerfToolbox toolbox, IAuditLogger audit, CancellationToken ct) =>
         {
             await toolbox.ClearAsync(ct);
             await Audit(audit, http, "perf.data.clear", "performance", null, ct);
             return Results.NoContent();
-        }).WithName("DeletePerformanceData").WithOpenApi();
+        }).WithName("DeletePerformanceData");
 
         // ----------------------------------------------------------- export
 
@@ -660,7 +660,7 @@ public static class PerformanceEndpoints
                     var zip = reports.BuildZip(markdown, reports.BuildJson(d, findings, scores), planMap);
                     return Results.File(zip, "application/zip", $"servicedesk-performance-{stamp}.zip");
             }
-        }).WithName("GetPerformanceExport").WithOpenApi();
+        }).WithName("GetPerformanceExport");
 
         return app;
     }

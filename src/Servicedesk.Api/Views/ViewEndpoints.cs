@@ -29,7 +29,7 @@ public static class ViewEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
             return Results.Ok(await viewAccess.GetAccessibleViewsAsync(userId, role, ct));
-        }).WithName("ListViews").WithOpenApi()
+        }).WithName("ListViews")
           .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         // Admin-only: every view in the system, used by management surfaces
@@ -37,7 +37,7 @@ public static class ViewEndpoints
         // and assign views regardless of personal access.
         group.MapGet("/all", async (IViewRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListAllAsync(ct)))
-          .WithName("ListAllViews").WithOpenApi()
+          .WithName("ListAllViews")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Get: validate view access. Returns 404 if no access (prevents enumeration).
@@ -53,7 +53,7 @@ public static class ViewEndpoints
                 return Results.NotFound();
 
             return Results.Ok(view);
-        }).WithName("GetView").WithOpenApi()
+        }).WithName("GetView")
           .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         // CUD operations are admin-only. Views are managed centrally and
@@ -71,7 +71,7 @@ public static class ViewEndpoints
             viewAccess.InvalidateAllViewCaches();
             if (created.RewindTracked) await AuditRewindAsync(audit, http, created, ct);
             return Results.Created($"/api/views/{created.Id}", created);
-        }).WithName("CreateView").WithOpenApi()
+        }).WithName("CreateView")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPut("/{id:guid}", async (
@@ -96,7 +96,7 @@ public static class ViewEndpoints
                 if (updated.RewindTracked != existing.RewindTracked) await AuditRewindAsync(audit, http, updated, ct);
             }
             return updated is null ? Results.NotFound() : Results.Ok(updated);
-        }).WithName("UpdateView").WithOpenApi()
+        }).WithName("UpdateView")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapDelete("/{id:guid}", async (Guid id, IViewRepository repo, IViewAccessService viewAccess, CancellationToken ct) =>
@@ -104,7 +104,7 @@ public static class ViewEndpoints
             var deleted = await repo.DeleteAsync(id, ct);
             if (deleted) viewAccess.InvalidateAllViewCaches();
             return deleted ? Results.NoContent() : Results.NotFound();
-        }).WithName("DeleteView").WithOpenApi()
+        }).WithName("DeleteView")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         return app;

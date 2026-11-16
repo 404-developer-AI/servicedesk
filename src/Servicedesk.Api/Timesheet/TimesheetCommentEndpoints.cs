@@ -19,12 +19,12 @@ public static class TimesheetCommentEndpoints
             .WithTags("Timesheet")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        group.MapGet("/inbox", GetInbox).WithName("ListTimesheetCommentInbox").WithOpenApi();
-        group.MapGet("/unread-count", GetUnreadCount).WithName("GetTimesheetCommentUnreadCount").WithOpenApi();
-        group.MapGet("/recipients", GetRecipients).WithName("ListTimesheetCommentRecipients").WithOpenApi();
-        group.MapGet("/threads/{threadId:guid}", GetThread).WithName("GetTimesheetCommentThread").WithOpenApi();
-        group.MapPost("/threads/{threadId:guid}/read", MarkRead).WithName("MarkTimesheetCommentThreadRead").WithOpenApi();
-        group.MapPost("/messages", PostMessage).WithName("PostTimesheetComment").WithOpenApi();
+        group.MapGet("/inbox", GetInbox).WithName("ListTimesheetCommentInbox");
+        group.MapGet("/unread-count", GetUnreadCount).WithName("GetTimesheetCommentUnreadCount");
+        group.MapGet("/recipients", GetRecipients).WithName("ListTimesheetCommentRecipients");
+        group.MapGet("/threads/{threadId:guid}", GetThread).WithName("GetTimesheetCommentThread");
+        group.MapPost("/threads/{threadId:guid}/read", MarkRead).WithName("MarkTimesheetCommentThreadRead");
+        group.MapPost("/messages", PostMessage).WithName("PostTimesheetComment");
 
         return group;
     }

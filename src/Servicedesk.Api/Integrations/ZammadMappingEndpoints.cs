@@ -22,16 +22,16 @@ public static class ZammadMappingEndpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapGet("/overview", GetOverview).WithName("GetZammadMappingOverview").WithOpenApi();
+        admin.MapGet("/overview", GetOverview).WithName("GetZammadMappingOverview");
 
-        admin.MapPut("/groups/{zammadGroupId:long}", PutGroup).WithName("PutZammadGroupMapping").WithOpenApi();
-        admin.MapDelete("/groups/{zammadGroupId:long}", DeleteGroup).WithName("DeleteZammadGroupMapping").WithOpenApi();
+        admin.MapPut("/groups/{zammadGroupId:long}", PutGroup).WithName("PutZammadGroupMapping");
+        admin.MapDelete("/groups/{zammadGroupId:long}", DeleteGroup).WithName("DeleteZammadGroupMapping");
 
-        admin.MapPut("/states/{zammadStateId:long}", PutState).WithName("PutZammadStateMapping").WithOpenApi();
-        admin.MapDelete("/states/{zammadStateId:long}", DeleteState).WithName("DeleteZammadStateMapping").WithOpenApi();
+        admin.MapPut("/states/{zammadStateId:long}", PutState).WithName("PutZammadStateMapping");
+        admin.MapDelete("/states/{zammadStateId:long}", DeleteState).WithName("DeleteZammadStateMapping");
 
-        admin.MapPut("/priorities/{zammadPriorityId:long}", PutPriority).WithName("PutZammadPriorityMapping").WithOpenApi();
-        admin.MapDelete("/priorities/{zammadPriorityId:long}", DeletePriority).WithName("DeleteZammadPriorityMapping").WithOpenApi();
+        admin.MapPut("/priorities/{zammadPriorityId:long}", PutPriority).WithName("PutZammadPriorityMapping");
+        admin.MapDelete("/priorities/{zammadPriorityId:long}", DeletePriority).WithName("DeleteZammadPriorityMapping");
 
         return app;
     }

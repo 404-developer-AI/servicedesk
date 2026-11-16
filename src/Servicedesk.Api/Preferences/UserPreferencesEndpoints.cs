@@ -53,7 +53,7 @@ public static class UserPreferencesEndpoints
 
             return Results.Ok(ColumnPreferenceResolver.Resolve(
                 perView, view?.Columns, view?.AllowUserColumns ?? true, userDefault, adminDefault));
-        }).WithName("GetColumnPreference").WithOpenApi();
+        }).WithName("GetColumnPreference");
 
         // PUT /api/preferences/columns — save a column layout.
         // If viewId is provided, saves as a per-view user override; otherwise saves as the general default.
@@ -89,7 +89,7 @@ public static class UserPreferencesEndpoints
                 new { userId, key, columns = req.Columns }, cancellationToken: ct));
 
             return Results.NoContent();
-        }).WithName("UpdateColumnPreference").WithOpenApi();
+        }).WithName("UpdateColumnPreference");
 
         // DELETE /api/preferences/columns — reset to next level in the cascade.
         // If viewId is provided, removes only the per-view override; otherwise removes the general default.
@@ -106,7 +106,7 @@ public static class UserPreferencesEndpoints
                 new { userId, key }, cancellationToken: ct));
 
             return Results.NoContent();
-        }).WithName("ResetColumnPreference").WithOpenApi();
+        }).WithName("ResetColumnPreference");
 
         // ── Workspace snapshot (generic key-value for workspace:* keys) ──
 
@@ -124,7 +124,7 @@ public static class UserPreferencesEndpoints
 
             var dict = rows.ToDictionary(r => r.pref_key, r => r.pref_value);
             return Results.Ok(dict);
-        }).WithName("GetWorkspacePreferences").WithOpenApi();
+        }).WithName("GetWorkspacePreferences");
 
         // PUT /api/preferences/workspace — batch upsert workspace keys.
         group.MapPut("/workspace", async (
@@ -159,7 +159,7 @@ public static class UserPreferencesEndpoints
                 new { userId, keys = latest.Keys.ToArray(), values = latest.Values.ToArray() },
                 cancellationToken: ct));
             return Results.NoContent();
-        }).WithName("SaveWorkspacePreferences").WithOpenApi();
+        }).WithName("SaveWorkspacePreferences");
 
         // DELETE /api/preferences/workspace/{key} — remove one workspace key.
         group.MapDelete("/workspace/{key}", async (
@@ -177,7 +177,7 @@ public static class UserPreferencesEndpoints
                 new { userId, key }, cancellationToken: ct));
 
             return Results.NoContent();
-        }).WithName("DeleteWorkspacePreference").WithOpenApi();
+        }).WithName("DeleteWorkspacePreference");
 
         // ── UI theme preference (v0.0.44) ──
         //
@@ -205,7 +205,7 @@ public static class UserPreferencesEndpoints
 
             var adminDefault = UiThemes.NormalizeOrFactory(await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct));
             return Results.Ok(new ThemePreference(adminDefault, "default"));
-        }).WithName("GetUiThemePreference").WithOpenApi();
+        }).WithName("GetUiThemePreference");
 
         group.MapPut("/ui-theme", async (
             [FromBody] UpdateUiThemeRequest req,
@@ -227,7 +227,7 @@ public static class UserPreferencesEndpoints
                 new { userId, value = normalized }, cancellationToken: ct));
 
             return Results.NoContent();
-        }).WithName("UpdateUiThemePreference").WithOpenApi();
+        }).WithName("UpdateUiThemePreference");
 
         group.MapDelete("/ui-theme", async (
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
@@ -238,7 +238,7 @@ public static class UserPreferencesEndpoints
                 "DELETE FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
                 new { userId }, cancellationToken: ct));
             return Results.NoContent();
-        }).WithName("ResetUiThemePreference").WithOpenApi();
+        }).WithName("ResetUiThemePreference");
 
         // ── Pinned nav features (v0.0.60) ──
         //
@@ -258,7 +258,7 @@ public static class UserPreferencesEndpoints
                 "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:pinned-features'",
                 new { userId }, cancellationToken: ct));
             return Results.Ok(new PinnedFeaturesPreference(ParsePinnedPaths(raw)));
-        }).WithName("GetPinnedFeatures").WithOpenApi();
+        }).WithName("GetPinnedFeatures");
 
         group.MapPut("/pinned-features", async (
             [FromBody] UpdatePinnedFeaturesRequest req,
@@ -281,7 +281,7 @@ public static class UserPreferencesEndpoints
                 new { userId, value }, cancellationToken: ct));
 
             return Results.Ok(new PinnedFeaturesPreference(clean));
-        }).WithName("UpdatePinnedFeatures").WithOpenApi();
+        }).WithName("UpdatePinnedFeatures");
 
         // ── Pinned views (v0.0.65) ──
         //
@@ -301,7 +301,7 @@ public static class UserPreferencesEndpoints
                 "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:pinned-views'",
                 new { userId }, cancellationToken: ct));
             return Results.Ok(new PinnedViewsPreference(ParsePinnedViewIds(raw)));
-        }).WithName("GetPinnedViews").WithOpenApi();
+        }).WithName("GetPinnedViews");
 
         group.MapPut("/pinned-views", async (
             [FromBody] UpdatePinnedViewsRequest req,
@@ -324,7 +324,7 @@ public static class UserPreferencesEndpoints
                 new { userId, value }, cancellationToken: ct));
 
             return Results.Ok(new PinnedViewsPreference(clean));
-        }).WithName("UpdatePinnedViews").WithOpenApi();
+        }).WithName("UpdatePinnedViews");
 
         // ── Post-close redirect (v0.0.78) ──
         //
@@ -348,7 +348,7 @@ public static class UserPreferencesEndpoints
                 "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:post-close-redirect'",
                 new { userId }, cancellationToken: ct));
             return Results.Ok(new PostCloseRedirectPreference(NormalizePostCloseRedirect(raw) ?? "dashboard"));
-        }).WithName("GetPostCloseRedirect").WithOpenApi();
+        }).WithName("GetPostCloseRedirect");
 
         group.MapPut("/post-close-redirect", async (
             [FromBody] UpdatePostCloseRedirectRequest req,
@@ -370,7 +370,7 @@ public static class UserPreferencesEndpoints
                 new { userId, value = normalized }, cancellationToken: ct));
 
             return Results.Ok(new PostCloseRedirectPreference(normalized));
-        }).WithName("UpdatePostCloseRedirect").WithOpenApi();
+        }).WithName("UpdatePostCloseRedirect");
 
         // v0.1.54 — which notifications also arrive by mail (Profile → Tag
         // notifications). Stored per user in user_preferences; a missing row
@@ -391,7 +391,7 @@ public static class UserPreferencesEndpoints
                 Read(NotificationPreferenceKeys.MentionEmailPreference),
                 Read(NotificationPreferenceKeys.ReplyEmailPreference),
                 Read(NotificationPreferenceKeys.LikeEmailPreference)));
-        }).WithName("GetNotificationMailPreferences").WithOpenApi();
+        }).WithName("GetNotificationMailPreferences");
 
         group.MapPut("/notification-mail", async (
             [FromBody] UpdateNotificationMailPreferences req,
@@ -416,7 +416,7 @@ public static class UserPreferencesEndpoints
                     new { userId, key, value = on ? "true" : "false" }, cancellationToken: ct));
             }
             return Results.NoContent();
-        }).WithName("UpdateNotificationMailPreferences").WithOpenApi();
+        }).WithName("UpdateNotificationMailPreferences");
 
         return app;
     }

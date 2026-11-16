@@ -19,7 +19,7 @@ public static class SettingEndpoints
         {
             var entries = await svc.ListAsync(category, ct);
             return Results.Ok(entries);
-        }).WithName("ListSettings").WithOpenApi();
+        }).WithName("ListSettings");
 
         admin.MapPut("/{key}", async (
             string key,
@@ -44,7 +44,7 @@ public static class SettingEndpoints
                 // v0.1.3 — write-side validation (type + per-key format).
                 return Results.BadRequest(new { error = ex.Message });
             }
-        }).WithName("UpdateSetting").WithOpenApi();
+        }).WithName("UpdateSetting");
 
         // ---- Navigation settings (any authenticated agent/admin) ----
         app.MapGet("/api/settings/navigation", async (ISettingsService svc, CancellationToken ct) =>
@@ -54,8 +54,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetNavigationSettings")
-        .WithOpenApi();
+        .WithName("GetNavigationSettings");
 
         // ---- Mobile web settings (agent-readable) ----
         // The client decides at route time whether a touch device goes to the
@@ -67,8 +66,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetMobileSettings")
-        .WithOpenApi();
+        .WithName("GetMobileSettings");
 
         // ---- Notification settings (v0.0.12 stap 4, agent-readable) ----
         // The notification raamwerk needs the toast duration on the client.
@@ -82,8 +80,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetNotificationsSettings")
-        .WithOpenApi();
+        .WithName("GetNotificationsSettings");
 
         // ---- Mail compose settings (v0.0.85, agent-readable) ----
         // The composer's "forgotten attachment" warning needs the enable flag
@@ -97,8 +94,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetMailComposeSettings")
-        .WithOpenApi();
+        .WithName("GetMailComposeSettings");
 
         // ---- Ticket grouping settings (v0.0.85, agent-readable) ----
         // The grouped ticket list applies a per-state sort inside status groups.
@@ -117,8 +113,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetTicketGroupingSettings")
-        .WithOpenApi();
+        .WithName("GetTicketGroupingSettings");
 
         // ---- Bulk actions settings (v0.0.102, agent-readable) ----
         // The ticket list needs the enable flag (show row checkboxes at all)
@@ -139,8 +134,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetBulkActionsSettings")
-        .WithOpenApi();
+        .WithName("GetBulkActionsSettings");
 
         // ---- Checklist settings (v0.0.103, agent-readable) ----
         // The ticket page needs the enable flag (render the bar/header/panel
@@ -157,8 +151,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetChecklistSettings")
-        .WithOpenApi();
+        .WithName("GetChecklistSettings");
 
         // ---- Project ticket settings (v0.0.105, agent-readable) ----
         // The ticket surfaces need the enable flag (render the project
@@ -183,8 +176,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetProjectSettings")
-        .WithOpenApi();
+        .WithName("GetProjectSettings");
 
         // ---- Ticket flag settings (v0.1.17, agent-readable) ----
         // Colours for the Call-back / Research float groups, row accents and
@@ -211,8 +203,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetTicketFlagSettings")
-        .WithOpenApi();
+        .WithName("GetTicketFlagSettings");
 
         // ---- Ticket warnings (v0.1.27, agent-readable) ----
         // The side panel read Tickets.ShowContactNotLinkedWarning through the
@@ -226,8 +217,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetTicketWarningsSettings")
-        .WithOpenApi();
+        .WithName("GetTicketWarningsSettings");
 
         // ---- Per-view search settings (v0.1.18, agent-readable) ----
         // The list's search box needs the minimum term length and the typing
@@ -243,8 +233,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetViewSearchSettings")
-        .WithOpenApi();
+        .WithName("GetViewSearchSettings");
 
         // ---- Copilot launcher settings (v0.0.89, agent-readable) ----
         // The nav button needs the enable flag, URL, label and open-mode on the
@@ -271,8 +260,7 @@ public static class SettingEndpoints
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetCopilotSettings")
-        .WithOpenApi();
+        .WithName("GetCopilotSettings");
 
         return app;
     }

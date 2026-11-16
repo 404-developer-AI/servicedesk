@@ -23,28 +23,25 @@ public static class AuthEndpoints
     {
         var group = app.MapGroup("/api/auth").WithTags("Auth");
 
-        group.MapGet("/setup/status", GetSetupStatus).WithName("AuthSetupStatus").WithOpenApi();
+        group.MapGet("/setup/status", GetSetupStatus).WithName("AuthSetupStatus");
 
-        group.MapGet("/config", GetAuthConfig).WithName("AuthConfig").WithOpenApi();
+        group.MapGet("/config", GetAuthConfig).WithName("AuthConfig");
 
         group.MapPost("/setup/create-admin", CreateFirstAdmin)
             .WithName("AuthSetupCreateAdmin")
-            .WithOpenApi()
             .RequireRateLimiting("auth");
 
         group.MapPost("/login", Login)
             .WithName("AuthLogin")
-            .WithOpenApi()
             .RequireRateLimiting("auth");
 
         group.MapPost("/2fa/verify", VerifyTwoFactor)
             .WithName("AuthTwoFactorVerify")
-            .WithOpenApi()
             .RequireRateLimiting("auth");
 
-        group.MapPost("/logout", Logout).WithName("AuthLogout").WithOpenApi();
+        group.MapPost("/logout", Logout).WithName("AuthLogout");
 
-        group.MapGet("/me", Me).WithName("AuthMe").WithOpenApi();
+        group.MapGet("/me", Me).WithName("AuthMe");
 
         // Deliberately WITHOUT the RequireAgent policy (v0.1.3): when
         // Security.TwoFactor.Required is on, an un-enrolled staff login mints
@@ -54,17 +51,14 @@ public static class AuthEndpoints
         // staff role), mirroring the portal's forced-enrollment endpoints.
         group.MapPost("/2fa/enroll/begin", BeginTotpEnroll)
             .WithName("AuthTotpBegin")
-            .WithOpenApi()
             .RequireRateLimiting("auth");
 
         group.MapPost("/2fa/enroll/confirm", ConfirmTotpEnroll)
             .WithName("AuthTotpConfirm")
-            .WithOpenApi()
             .RequireRateLimiting("auth");
 
         group.MapPost("/2fa/disable", DisableTotp)
             .WithName("AuthTotpDisable")
-            .WithOpenApi()
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireRateLimiting("auth");
 
@@ -73,7 +67,6 @@ public static class AuthEndpoints
         // minimum length, revokes every OTHER session and is audited.
         group.MapPost("/change-password", ChangePassword)
             .WithName("AuthChangePassword")
-            .WithOpenApi()
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireRateLimiting("auth");
 
@@ -84,18 +77,15 @@ public static class AuthEndpoints
         // multi-device surface); revokes are audited.
         group.MapGet("/sessions", ListMySessions)
             .WithName("AuthListSessions")
-            .WithOpenApi()
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         group.MapDelete("/sessions/{publicId:guid}", RevokeMySession)
             .WithName("AuthRevokeSession")
-            .WithOpenApi()
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireRateLimiting("auth");
 
         group.MapPost("/sessions/revoke-others", RevokeMyOtherSessions)
             .WithName("AuthRevokeOtherSessions")
-            .WithOpenApi()
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireRateLimiting("auth");
 

@@ -22,13 +22,13 @@ public static class BackofficeTimesheetEndpoints
             .WithTags("Timesheet")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        group.MapGet("/resolved", GetResolved).WithName("ListBackofficeResolved").WithOpenApi()
+        group.MapGet("/resolved", GetResolved).WithName("ListBackofficeResolved")
             .RequireFeature(UserFeature.TimesheetBackoffice);
-        group.MapGet("/cwi", GetCwi).WithName("ListBackofficeCwi").WithOpenApi()
+        group.MapGet("/cwi", GetCwi).WithName("ListBackofficeCwi")
             .RequireFeature(UserFeature.TimesheetBackoffice);
-        group.MapGet("/tickets/{ticketId:guid}/hours", GetTicketHours).WithName("GetBackofficeTicketHours").WithOpenApi()
+        group.MapGet("/tickets/{ticketId:guid}/hours", GetTicketHours).WithName("GetBackofficeTicketHours")
             .RequireFeature(UserFeature.TimesheetBackoffice);
-        group.MapPost("/checks", SetChecks).WithName("SetBackofficeChecks").WithOpenApi();
+        group.MapPost("/checks", SetChecks).WithName("SetBackofficeChecks");
 
         return group;
     }

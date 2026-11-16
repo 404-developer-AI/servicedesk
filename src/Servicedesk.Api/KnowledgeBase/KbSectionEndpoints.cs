@@ -33,7 +33,7 @@ public static class KbSectionEndpoints
 
             var tree = BuildTree(allSections, translationsBySection, config.DefaultLocaleCode);
             return Results.Ok(new { config, tree });
-        }).WithName("ListKbSections").WithOpenApi();
+        }).WithName("ListKbSections");
 
         readGroup.MapGet("/sections/{id:guid}", async (
             Guid id, IKbConfigRepository configs, IKbSectionRepository sections, CancellationToken ct) =>
@@ -42,7 +42,7 @@ public static class KbSectionEndpoints
             if (section is null) return Results.NotFound();
             var translations = await sections.ListTranslationsAsync(id, ct);
             return Results.Ok(new { section, translations });
-        }).WithName("GetKbSection").WithOpenApi();
+        }).WithName("GetKbSection");
 
         // ---- Admin-only: section lifecycle ----
         var adminGroup = app.MapGroup("/api/kb")
@@ -81,7 +81,7 @@ public static class KbSectionEndpoints
             await KbAudit.WriteAsync(audit, http, "kb.section.created", created.Id.ToString(),
                 new { created.Id, created.Slug, created.ParentSectionId, locale });
             return Results.Created($"/api/kb/sections/{created.Id}", new { section = created, translation });
-        }).WithName("CreateKbSection").WithOpenApi();
+        }).WithName("CreateKbSection");
 
         adminGroup.MapPut("/sections/{id:guid}", async (
             Guid id, [FromBody] KbSectionRequest req, HttpContext http,
@@ -128,7 +128,7 @@ public static class KbSectionEndpoints
 
             await KbAudit.WriteAsync(audit, http, "kb.section.updated", id.ToString(), new { id, slug });
             return Results.Ok(updated);
-        }).WithName("UpdateKbSection").WithOpenApi();
+        }).WithName("UpdateKbSection");
 
         adminGroup.MapDelete("/sections/{id:guid}", async (
             Guid id, HttpContext http,
@@ -144,7 +144,7 @@ public static class KbSectionEndpoints
                 }),
                 _ => await DeletedOk(http, audit, id),
             };
-        }).WithName("DeleteKbSection").WithOpenApi();
+        }).WithName("DeleteKbSection");
 
         adminGroup.MapPost("/sections/{id:guid}/move", async (
             Guid id, [FromBody] KbSectionMoveRequest req, HttpContext http,
@@ -167,7 +167,7 @@ public static class KbSectionEndpoints
             {
                 return Results.BadRequest(new { error = ex.Message });
             }
-        }).WithName("MoveKbSection").WithOpenApi();
+        }).WithName("MoveKbSection");
 
         return app;
     }

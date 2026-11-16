@@ -40,7 +40,7 @@ public sealed class PerfGauges
 /// the HTTP call it observes.
 public sealed class PerfInstrumentation : IHostedService, IDisposable
 {
-    private enum Instrument
+    internal enum Instrument
     {
         DbCommandDuration,
         DbCommandFailed,
@@ -134,16 +134,20 @@ public sealed class PerfInstrumentation : IHostedService, IDisposable
         Volatile.Write(ref Gauges.PoolMax, Interlocked.Read(ref _pollMax));
     }
 
-    private static Instrument? Classify(System.Diagnostics.Metrics.Instrument instrument)
+    internal static Instrument? Classify(System.Diagnostics.Metrics.Instrument instrument)
     {
         return (instrument.Meter.Name, instrument.Name) switch
         {
-            ("Npgsql", "db.client.commands.duration") => Instrument.DbCommandDuration,
-            ("Npgsql", "db.client.commands.failed") => Instrument.DbCommandFailed,
-            ("Npgsql", "db.client.connections.usage") => Instrument.DbConnectionUsage,
-            ("Npgsql", "db.client.connections.max") => Instrument.DbConnectionMax,
-            ("Npgsql", "db.client.connections.pending_requests") => Instrument.DbPendingRequests,
-            ("Npgsql", "db.client.connections.timeouts") => Instrument.DbConnectionTimeouts,
+            // Npgsql 10 names (OpenTelemetry semantic conventions); Npgsql
+            // 8 used db.client.commands.* / db.client.connections.*. A rename
+            // here fails silently (no data, no error) — PerfInstrumentationTests
+            // pins these names against the real Npgsql meter.
+            ("Npgsql", "db.client.operation.duration") => Instrument.DbCommandDuration,
+            ("Npgsql", "db.client.operation.failed") => Instrument.DbCommandFailed,
+            ("Npgsql", "db.client.connection.count") => Instrument.DbConnectionUsage,
+            ("Npgsql", "db.client.connection.max") => Instrument.DbConnectionMax,
+            ("Npgsql", "db.client.connection.npgsql.pending_requests") => Instrument.DbPendingRequests,
+            ("Npgsql", "db.client.connection.npgsql.timeouts") => Instrument.DbConnectionTimeouts,
             ("System.Net.Http", "http.client.request.duration") => Instrument.HttpClientDuration,
             ("Microsoft.AspNetCore.Server.Kestrel", "kestrel.active_connections") => Instrument.KestrelActive,
             ("Microsoft.AspNetCore.Server.Kestrel", "kestrel.queued_connections") => Instrument.KestrelQueued,
@@ -192,7 +196,7 @@ public sealed class PerfInstrumentation : IHostedService, IDisposable
                     var used = false;
                     foreach (var tag in tags)
                     {
-                        if (tag.Key == "state" && tag.Value is string st) used = st == "used";
+                        if (tag.Key == "db.client.connection.state" && tag.Value is string st) used = st == "used";
                     }
                     if (used) Interlocked.Add(ref _pollUsed, value);
                     else Interlocked.Add(ref _pollIdle, value);
@@ -297,11 +301,10 @@ public sealed class PerfInstrumentation : IHostedService, IDisposable
         var start = Stopwatch.GetTimestamp();
         try
         {
-            if (activity.GetTagItem("db.statement") is not string statement || statement.Length == 0) return;
+            if (activity.GetTagItem("db.query.text") is not string statement || statement.Length == 0) return;
             var (fingerprint, normalized) = SqlFingerprint.Get(statement);
             var ms = activity.Duration.TotalMilliseconds;
-            var error = activity.Status == ActivityStatusCode.Error
-                        || activity.GetTagItem("otel.status_code") as string == "ERROR";
+            var error = activity.Status == ActivityStatusCode.Error;
             var window = _recorder.Current;
             window.DbFor(new DbKey(fingerprint, PerfContext.CurrentSource())).Record(ms, error);
 

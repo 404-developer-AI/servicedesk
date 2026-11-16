@@ -4,7 +4,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HostFiltering;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Serilog;
 using Servicedesk.Api.Audit;
 using Servicedesk.Api.Auth;
@@ -93,13 +93,22 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
 {
     o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    o.KnownNetworks.Clear();
+    o.KnownIPNetworks.Clear();
     o.KnownProxies.Clear();
 
     var trustedCidr = builder.Configuration["ForwardedHeaders:TrustedNetwork"] ?? "172.28.0.0/16";
     if (TryParseCidr(trustedCidr, out var address, out var prefix))
     {
-        o.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(address, prefix));
+        // System.Net.IPNetwork rejects host bits past the prefix
+        // ("172.28.0.1/16"), which the old HttpOverrides.IPNetwork accepted;
+        // mask them off so an existing install's value keeps working.
+        var bytes = address.GetAddressBytes();
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            var keep = Math.Clamp(prefix - i * 8, 0, 8);
+            bytes[i] &= (byte)(0xFF << (8 - keep));
+        }
+        o.KnownIPNetworks.Add(new System.Net.IPNetwork(new System.Net.IPAddress(bytes), prefix));
     }
 
     // Allow up to 2 hops in the XFF chain so a future inline-CDN
@@ -663,8 +672,7 @@ app.MapGet("/api/system/version", async (ISettingsService settings, Cancellation
         updateCheckOnFocus = checkOnFocus
     });
 })
-.WithName("GetSystemVersion")
-.WithOpenApi();
+.WithName("GetSystemVersion");
 
 // Display-timezone resolution order:
 //   1. `App.TimeZone` setting (IANA id). Admin can override from Settings → General.
@@ -705,8 +713,7 @@ app.MapGet("/api/system/time", async (ISettingsService settings, CancellationTok
         return TimeZoneInfo.Local;
     }
 })
-.WithName("GetSystemTime")
-.WithOpenApi();
+.WithName("GetSystemTime");
 
 // Maintenance-window read endpoint. Public: the login page (no auth) needs
 // the same banner the authenticated app shows. Server is the single source
@@ -754,8 +761,7 @@ app.MapGet("/api/system/maintenance", async (ISettingsService settings, Cancella
         return null;
     }
 })
-.WithName("GetSystemMaintenance")
-.WithOpenApi();
+.WithName("GetSystemMaintenance");
 
 // Login banner read endpoint. Public — every anonymous auth page (local
 // login, M365 callback, future customer-portal login) reads this without
@@ -795,8 +801,7 @@ app.MapGet("/api/system/login-banner", async (ISettingsService settings, Cancell
         message = trimmedMessage,
     });
 })
-.WithName("GetLoginBanner")
-.WithOpenApi();
+.WithName("GetLoginBanner");
 
 // Default theme — public derived-settings endpoint. The login page reads
 // this before authentication so anonymous users land on the admin-configured
@@ -818,8 +823,7 @@ app.MapGet("/api/system/default-theme", async (ISettingsService settings, Cancel
     }
     return Results.Ok(new { theme = UiThemes.NormalizeOrFactory(raw) });
 })
-.WithName("GetSystemDefaultTheme")
-.WithOpenApi();
+.WithName("GetSystemDefaultTheme");
 
 // Ticket reference prefix — public derived-settings endpoint (v0.0.57). The
 // app reads this once at bootstrap so the copy-to-clipboard button produces
@@ -840,8 +844,7 @@ app.MapGet("/api/system/ticket-reference-prefix", async (ISettingsService settin
     }
     return Results.Ok(new { prefix });
 })
-.WithName("GetTicketReferencePrefix")
-.WithOpenApi();
+.WithName("GetTicketReferencePrefix");
 
 app.MapCspReportEndpoint();
 app.MapAuditEndpoints();

@@ -34,7 +34,7 @@ public static class KbArticleEndpoints
             var result = await repo.ListArticlesAsync(
                 sectionId, status, search, page ?? 1, pageSize ?? 50, ct);
             return Results.Ok(result);
-        }).WithName("ListKbArticles").WithOpenApi();
+        }).WithName("ListKbArticles");
 
         agentGroup.MapGet("/articles/{id:guid}", async (
             Guid id, string? include,
@@ -50,7 +50,7 @@ public static class KbArticleEndpoints
                 translation = await repo.GetTranslationAsync(article.Id, config.DefaultLocaleCode, ct);
             }
             return Results.Ok(new { article, translation });
-        }).WithName("GetKbArticle").WithOpenApi();
+        }).WithName("GetKbArticle");
 
         agentGroup.MapGet("/articles/by-slug/{sectionSlug}/{articleSlug}", async (
             string sectionSlug, string articleSlug,
@@ -58,12 +58,12 @@ public static class KbArticleEndpoints
         {
             var hit = await repo.GetArticleBySlugAsync(sectionSlug, articleSlug, ct);
             return hit is null ? Results.NotFound() : Results.Ok(hit);
-        }).WithName("GetKbArticleBySlug").WithOpenApi();
+        }).WithName("GetKbArticleBySlug");
 
         agentGroup.MapGet("/featured", async (
             int? limit, IKbArticleRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListFeaturedAsync(limit ?? 6, ct)))
-            .WithName("ListKbFeatured").WithOpenApi();
+            .WithName("ListKbFeatured");
 
         // v0.0.75 — tells the `::` picker whether public article links are
         // switched on and which base URL to build them with. Agent-side
@@ -75,7 +75,7 @@ public static class KbArticleEndpoints
             var enabled = await settings.GetAsync<bool>(SettingKeys.KnowledgeBase.PublicLinksEnabled, ct);
             var baseUrl = (await settings.GetAsync<string>(SettingKeys.App.PublicBaseUrl, ct))?.TrimEnd('/') ?? string.Empty;
             return Results.Ok(new { enabled, publicBaseUrl = baseUrl });
-        }).WithName("GetKbPublicLinkConfig").WithOpenApi();
+        }).WithName("GetKbPublicLinkConfig");
 
         // ---- Writes (Agent+Admin per status-rules below) ----
 
@@ -115,7 +115,7 @@ public static class KbArticleEndpoints
             await KbAudit.WriteAsync(audit, http, "kb.article.created", created.Id.ToString(),
                 new { created.Id, created.SectionId, created.Slug, locale });
             return Results.Created($"/api/kb/articles/{created.Id}", new { article = created, translation });
-        }).WithName("CreateKbArticle").WithOpenApi();
+        }).WithName("CreateKbArticle");
 
         agentGroup.MapPut("/articles/{id:guid}", async (
             Guid id, [FromBody] KbArticleUpdateRequest req, HttpContext http,
@@ -171,7 +171,7 @@ public static class KbArticleEndpoints
             await KbAudit.WriteAsync(audit, http, "kb.article.updated", id.ToString(),
                 new { id, updated.SectionId, updated.Slug });
             return Results.Ok(updated);
-        }).WithName("UpdateKbArticle").WithOpenApi();
+        }).WithName("UpdateKbArticle");
 
         agentGroup.MapPost("/articles/{id:guid}/status", async (
             Guid id, [FromBody] KbArticleStatusRequest req, HttpContext http,
@@ -207,7 +207,7 @@ public static class KbArticleEndpoints
             await KbAudit.WriteAsync(audit, http, "kb.article.status.changed", id.ToString(),
                 new { id, from = existing.Status, to = req.Status });
             return Results.Ok(flipped);
-        }).WithName("ChangeKbArticleStatus").WithOpenApi();
+        }).WithName("ChangeKbArticleStatus");
 
         // ---- Admin-only writes ----
 
@@ -227,7 +227,7 @@ public static class KbArticleEndpoints
                 req.IsFeatured == true ? "kb.article.featured.set" : "kb.article.featured.unset",
                 id.ToString(), new { id });
             return Results.Ok(updated);
-        }).WithName("SetKbArticleFeatured").WithOpenApi();
+        }).WithName("SetKbArticleFeatured");
 
         adminGroup.MapPost("/articles/{id:guid}/move", async (
             Guid id, [FromBody] KbArticleMoveRequest req, HttpContext http,
@@ -250,7 +250,7 @@ public static class KbArticleEndpoints
             await KbAudit.WriteAsync(audit, http, "kb.article.moved", id.ToString(),
                 new { id, from = existing.SectionId, to = req.SectionId, position = req.Position });
             return Results.Ok(moved);
-        }).WithName("MoveKbArticle").WithOpenApi();
+        }).WithName("MoveKbArticle");
 
         adminGroup.MapDelete("/articles/{id:guid}", async (
             Guid id, bool? hard, HttpContext http,
@@ -284,7 +284,7 @@ public static class KbArticleEndpoints
             await KbAudit.WriteAsync(audit, http, "kb.article.deleted", id.ToString(),
                 new { id, mode = "soft", from = existing.Status });
             return Results.NoContent();
-        }).WithName("DeleteKbArticle").WithOpenApi();
+        }).WithName("DeleteKbArticle");
 
         return app;
     }

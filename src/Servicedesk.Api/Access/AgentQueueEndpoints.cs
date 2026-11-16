@@ -31,7 +31,6 @@ public static class AgentQueueEndpoints
         })
         .WithTags("Queues")
         .WithName("ListAccessibleQueues")
-        .WithOpenApi()
         .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         return app;

@@ -21,13 +21,13 @@ public static class FormTemplateEndpoints
         {
             var list = await repo.ListAsync(ct);
             return Results.Ok(new { items = list.Select(MapSummary) });
-        }).WithName("ListFormTemplates").WithOpenApi();
+        }).WithName("ListFormTemplates");
 
         group.MapGet("/{id:guid}", async (Guid id, IFormTemplateRepository repo, CancellationToken ct) =>
         {
             var t = await repo.GetAsync(id, ct);
             return t is null ? Results.NotFound() : Results.Ok(MapDetail(t));
-        }).WithName("GetFormTemplate").WithOpenApi();
+        }).WithName("GetFormTemplate");
 
         group.MapPost("/", async (
             [FromBody] FormTemplateRequest req, HttpContext http,
@@ -44,7 +44,7 @@ public static class FormTemplateEndpoints
                 new { input.Name, fieldCount = input.Definition.Fields.Count, queueCount = input.QueueIds.Count, input.SendToBackoffice });
             var created = await repo.GetAsync(id, ct);
             return Results.Created($"/api/settings/form-templates/{id}", MapDetail(created!));
-        }).WithName("CreateFormTemplate").WithOpenApi();
+        }).WithName("CreateFormTemplate");
 
         group.MapPut("/{id:guid}", async (
             Guid id, [FromBody] FormTemplateRequest req, HttpContext http,
@@ -61,7 +61,7 @@ public static class FormTemplateEndpoints
                 new { input.Name, fieldCount = input.Definition.Fields.Count, input.IsActive, queueCount = input.QueueIds.Count, input.SendToBackoffice });
             var updated = await repo.GetAsync(id, ct);
             return Results.Ok(MapDetail(updated!));
-        }).WithName("UpdateFormTemplate").WithOpenApi();
+        }).WithName("UpdateFormTemplate");
 
         group.MapPost("/{id:guid}/duplicate", async (
             Guid id, HttpContext http, IFormTemplateRepository repo, IAuditLogger audit, CancellationToken ct) =>
@@ -80,7 +80,7 @@ public static class FormTemplateEndpoints
             await Audit(audit, http, "form_template.duplicated", copyId, new { sourceId = id, name });
             var created = await repo.GetAsync(copyId, ct);
             return Results.Created($"/api/settings/form-templates/{copyId}", MapDetail(created!));
-        }).WithName("DuplicateFormTemplate").WithOpenApi();
+        }).WithName("DuplicateFormTemplate");
 
         group.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, IFormTemplateRepository repo, IAuditLogger audit, CancellationToken ct) =>
@@ -90,7 +90,7 @@ public static class FormTemplateEndpoints
             await repo.DeleteAsync(id, ct);
             await Audit(audit, http, "form_template.deleted", id, new { existing.Name });
             return Results.NoContent();
-        }).WithName("DeleteFormTemplate").WithOpenApi();
+        }).WithName("DeleteFormTemplate");
 
         return app;
     }

@@ -56,14 +56,14 @@ public static class ComposeTemplateEndpoints
         {
             var templates = await repo.ListAsync(includeInactive ?? true, ct);
             return Results.Ok(templates.Select(MapDto));
-        }).WithName("ListComposeTemplates").WithOpenApi();
+        }).WithName("ListComposeTemplates");
 
         group.MapGet("/{id:guid}", async (
             Guid id, IComposeTemplateRepository repo, CancellationToken ct) =>
         {
             var template = await repo.GetAsync(id, ct);
             return template is null ? Results.NotFound() : Results.Ok(MapDto(template));
-        }).WithName("GetComposeTemplate").WithOpenApi();
+        }).WithName("GetComposeTemplate");
 
         group.MapPost("/", async (
             [FromBody] UpsertRequest req, HttpContext http,
@@ -130,7 +130,7 @@ public static class ComposeTemplateEndpoints
 
             var created = await repo.GetAsync(id, ct);
             return Results.Created($"/api/settings/compose-templates/{id}", MapDto(created!));
-        }).WithName("CreateComposeTemplate").WithOpenApi();
+        }).WithName("CreateComposeTemplate");
 
         group.MapPut("/{id:guid}", async (
             Guid id, [FromBody] UpsertRequest req, HttpContext http,
@@ -202,7 +202,7 @@ public static class ComposeTemplateEndpoints
 
             var updated = await repo.GetAsync(id, ct);
             return Results.Ok(MapDto(updated!));
-        }).WithName("UpdateComposeTemplate").WithOpenApi();
+        }).WithName("UpdateComposeTemplate");
 
         group.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, IComposeTemplateRepository repo,
@@ -224,7 +224,7 @@ public static class ComposeTemplateEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString()));
 
             return Results.NoContent();
-        }).WithName("DeleteComposeTemplate").WithOpenApi();
+        }).WithName("DeleteComposeTemplate");
     }
 
     private static void MapAgentEndpoints(IEndpointRouteBuilder app)
@@ -255,7 +255,7 @@ public static class ComposeTemplateEndpoints
             }
             var templates = await repo.ListForQueueAsync(queueId, statusId, parsedKind, ct);
             return Results.Ok(templates.Select(MapUsableDto));
-        }).WithName("ListUsableComposeTemplates").WithOpenApi();
+        }).WithName("ListUsableComposeTemplates");
 
         // v0.0.42 — Auto-insert lookup for the "Write an internal note"
         // composer. Returns the single best-matching template (if any) for
@@ -267,7 +267,7 @@ public static class ComposeTemplateEndpoints
         {
             var template = await repo.FindAutoInsertAsync(queueId, statusId, ComposeTemplateKind.Note, ct);
             return Results.Ok(new { template = template is null ? null : MapUsableDto(template) });
-        }).WithName("GetDefaultComposeTemplateForNote").WithOpenApi();
+        }).WithName("GetDefaultComposeTemplateForNote");
 
         // v0.1.17 — same lookup for the Call composer (auto_insert_on_call).
         group.MapGet("/default-for-call", async (
@@ -275,7 +275,7 @@ public static class ComposeTemplateEndpoints
         {
             var template = await repo.FindAutoInsertAsync(queueId, statusId, ComposeTemplateKind.Call, ct);
             return Results.Ok(new { template = template is null ? null : MapUsableDto(template) });
-        }).WithName("GetDefaultComposeTemplateForCall").WithOpenApi();
+        }).WithName("GetDefaultComposeTemplateForCall");
 
         // Token resolution for the :: insert flow. Either ticketId or
         // contactId (or both) must be supplied — empty calls just return
@@ -308,7 +308,7 @@ public static class ComposeTemplateEndpoints
             }
 
             return Results.Ok(new { tokens });
-        }).WithName("ResolveComposeTokens").WithOpenApi();
+        }).WithName("ResolveComposeTokens");
 
         // Static picker metadata for the template-editor dropdown so the
         // admin sees the same labels the server knows about. Admin-only
@@ -318,8 +318,7 @@ public static class ComposeTemplateEndpoints
             () => Results.Ok(new { tokens = ComposeTokens.Supported.Select(t => new { token = t.Token, label = t.Label }) }))
             .WithTags("ComposeTemplates")
             .WithName("ListComposeTokens")
-            .RequireAuthorization(AuthorizationPolicies.RequireAdmin)
-            .WithOpenApi();
+            .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 
     public sealed record UpsertRequest(

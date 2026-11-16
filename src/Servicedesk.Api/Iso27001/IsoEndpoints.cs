@@ -39,9 +39,9 @@ public static class IsoEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         group.MapPost("/{id:guid}/iso/classify-event", ClassifyEvent)
-            .WithName("IsoClassifyEvent").WithOpenApi();
+            .WithName("IsoClassifyEvent");
         group.MapPost("/{id:guid}/iso/classify-incident", ClassifyIncident)
-            .WithName("IsoClassifyIncident").WithOpenApi();
+            .WithName("IsoClassifyIncident");
 
         // v0.1.27 — the classification buttons need the bound queue id. They
         // used to read it through the admin-only GET /api/settings, which
@@ -51,7 +51,7 @@ public static class IsoEndpoints
         app.MapGet("/api/iso/config", GetConfig)
             .WithTags("ISO 27001")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-            .WithName("IsoGetConfig").WithOpenApi();
+            .WithName("IsoGetConfig");
 
         return app;
     }

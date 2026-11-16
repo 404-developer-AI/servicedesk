@@ -53,7 +53,7 @@ public static class TelavoxContactLookupEndpoints
                 denied,
                 lastLookupUtc = last,
             });
-        }).WithName("GetTelavoxContactLookupStatus").WithOpenApi();
+        }).WithName("GetTelavoxContactLookupStatus");
 
         // The on/off switch is the regular `Telavox.ContactLookup.Enabled`
         // setting (settings API, audited as setting_changed).
@@ -68,7 +68,7 @@ public static class TelavoxContactLookupEndpoints
             await WriteAdminAuditAsync(audit, http, TelavoxEventTypes.ContactLookupTokenGenerated,
                 new { configured = true }, ct);
             return Results.Ok(new { token });
-        }).WithName("GenerateTelavoxContactLookupToken").WithOpenApi();
+        }).WithName("GenerateTelavoxContactLookupToken");
 
         admin.MapDelete("/token", async (
             HttpContext http, IProtectedSecretStore secrets, IAuditLogger audit, CancellationToken ct) =>
@@ -77,7 +77,7 @@ public static class TelavoxContactLookupEndpoints
             await WriteAdminAuditAsync(audit, http, TelavoxEventTypes.ContactLookupTokenDeleted,
                 new { configured = false }, ct);
             return Results.NoContent();
-        }).WithName("DeleteTelavoxContactLookupToken").WithOpenApi();
+        }).WithName("DeleteTelavoxContactLookupToken");
 
         // ---- Public lookup (token-gated, read-only) ------------------------
         app.MapGet(PublicPath, async (
@@ -133,8 +133,7 @@ public static class TelavoxContactLookupEndpoints
         })
         .WithTags("TelavoxPublic")
         .RequireRateLimiting("telavox-lookup")
-        .WithName("TelavoxContactLookup")
-        .WithOpenApi();
+        .WithName("TelavoxContactLookup");
 
         return app;
     }

@@ -76,7 +76,7 @@ public static partial class PerfRumEndpoints
                 diagnose,
                 flushSeconds = 30,
             });
-        }).WithName("GetPerfConfig").WithOpenApi();
+        }).WithName("GetPerfConfig");
 
         group.MapPost("/rum", ([FromBody] RumPayload payload, IPerfSettings perf, PerfRecorder recorder) =>
         {
@@ -89,7 +89,7 @@ public static partial class PerfRumEndpoints
         })
         .WithMetadata(new RequestSizeLimitAttribute(MaxBodyBytes))
         .RequireRateLimiting("perf-rum")
-        .WithName("PostPerfRum").WithOpenApi();
+        .WithName("PostPerfRum");
 
         return app;
     }

@@ -27,16 +27,16 @@ public static class ContractM365Endpoints
             .WithTags("Contracts")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        group.MapGet("/selection", GetSelection).WithName("GetM365ArticleSelection").WithOpenApi();
-        group.MapPut("/selection", SaveSelection).WithName("SaveM365ArticleSelection").WithOpenApi();
-        group.MapGet("/companies", ListCompanies).WithName("ListM365MatchingCompanies").WithOpenApi();
+        group.MapGet("/selection", GetSelection).WithName("GetM365ArticleSelection");
+        group.MapPut("/selection", SaveSelection).WithName("SaveM365ArticleSelection");
+        group.MapGet("/companies", ListCompanies).WithName("ListM365MatchingCompanies");
 
         // Per-company connect lifecycle + the synced mailbox view.
-        group.MapGet("/companies/connections", ListConnections).WithName("ListM365Connections").WithOpenApi();
-        group.MapPost("/companies/{companyId:guid}/connect", Connect).WithName("ConnectM365Company").WithOpenApi();
-        group.MapPost("/companies/{companyId:guid}/sync", SyncNow).WithName("SyncM365Company").WithOpenApi();
-        group.MapPost("/companies/{companyId:guid}/disconnect", Disconnect).WithName("DisconnectM365Company").WithOpenApi();
-        group.MapGet("/companies/{companyId:guid}/mailboxes", GetMailboxes).WithName("GetM365CompanyMailboxes").WithOpenApi();
+        group.MapGet("/companies/connections", ListConnections).WithName("ListM365Connections");
+        group.MapPost("/companies/{companyId:guid}/connect", Connect).WithName("ConnectM365Company");
+        group.MapPost("/companies/{companyId:guid}/sync", SyncNow).WithName("SyncM365Company");
+        group.MapPost("/companies/{companyId:guid}/disconnect", Disconnect).WithName("DisconnectM365Company");
+        group.MapGet("/companies/{companyId:guid}/mailboxes", GetMailboxes).WithName("GetM365CompanyMailboxes");
 
         return group;
     }

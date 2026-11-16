@@ -18,13 +18,13 @@ public static class ZammadDryRunEndpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapPost("/dry-run", StartDryRun).WithName("StartZammadDryRun").WithOpenApi();
-        admin.MapPost("/import", StartImport).WithName("StartZammadImport").WithOpenApi();
-        admin.MapGet("/runs", ListRuns).WithName("ListZammadImportRuns").WithOpenApi();
-        admin.MapGet("/runs/{runId:guid}", GetRun).WithName("GetZammadImportRun").WithOpenApi();
-        admin.MapGet("/runs/{runId:guid}/records", GetRecords).WithName("GetZammadImportRecords").WithOpenApi();
-        admin.MapPost("/runs/{runId:guid}/cancel", CancelRun).WithName("CancelZammadImportRun").WithOpenApi();
-        admin.MapPost("/runs/{runId:guid}/recheck", RecheckRecords).WithName("RecheckZammadImportRecords").WithOpenApi();
+        admin.MapPost("/dry-run", StartDryRun).WithName("StartZammadDryRun");
+        admin.MapPost("/import", StartImport).WithName("StartZammadImport");
+        admin.MapGet("/runs", ListRuns).WithName("ListZammadImportRuns");
+        admin.MapGet("/runs/{runId:guid}", GetRun).WithName("GetZammadImportRun");
+        admin.MapGet("/runs/{runId:guid}/records", GetRecords).WithName("GetZammadImportRecords");
+        admin.MapPost("/runs/{runId:guid}/cancel", CancelRun).WithName("CancelZammadImportRun");
+        admin.MapPost("/runs/{runId:guid}/recheck", RecheckRecords).WithName("RecheckZammadImportRecords");
 
         return app;
     }

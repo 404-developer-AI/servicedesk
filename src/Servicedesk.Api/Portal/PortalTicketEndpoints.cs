@@ -36,14 +36,14 @@ public static class PortalTicketEndpoints
             .WithTags("PortalTickets")
             .RequireAuthorization(AuthorizationPolicies.RequireCustomer);
 
-        group.MapGet("/", List).WithName("PortalListTickets").WithOpenApi();
-        group.MapPost("/", Create).WithName("PortalCreateTicket").WithOpenApi();
-        group.MapGet("/{id:guid}", Detail).WithName("PortalTicketDetail").WithOpenApi();
-        group.MapGet("/{id:guid}/messages", OlderMessages).WithName("PortalOlderMessages").WithOpenApi();
-        group.MapPost("/{id:guid}/messages", Reply).WithName("PortalReply").WithOpenApi();
-        group.MapPost("/{id:guid}/attachments", Upload).WithName("PortalUploadAttachment").WithOpenApi();
-        group.MapGet("/{id:guid}/attachments/{attachmentId:guid}", DownloadEventAttachment).WithName("PortalGetAttachment").WithOpenApi();
-        group.MapGet("/{id:guid}/mail/{mailMessageId:guid}/attachments/{attachmentId:guid}", DownloadMailAttachment).WithName("PortalGetMailAttachment").WithOpenApi();
+        group.MapGet("/", List).WithName("PortalListTickets");
+        group.MapPost("/", Create).WithName("PortalCreateTicket");
+        group.MapGet("/{id:guid}", Detail).WithName("PortalTicketDetail");
+        group.MapGet("/{id:guid}/messages", OlderMessages).WithName("PortalOlderMessages");
+        group.MapPost("/{id:guid}/messages", Reply).WithName("PortalReply");
+        group.MapPost("/{id:guid}/attachments", Upload).WithName("PortalUploadAttachment");
+        group.MapGet("/{id:guid}/attachments/{attachmentId:guid}", DownloadEventAttachment).WithName("PortalGetAttachment");
+        group.MapGet("/{id:guid}/mail/{mailMessageId:guid}/attachments/{attachmentId:guid}", DownloadMailAttachment).WithName("PortalGetMailAttachment");
         return app;
     }
 

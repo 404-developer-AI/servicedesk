@@ -26,7 +26,7 @@ public static class NoteThreadEndpoints
                     replies = data.Replies.Select(MapReply),
                     likes = data.Likes.Select(l => new { eventId = l.EventId, replyId = l.ReplyId, userId = l.UserId, email = l.Email }),
                 });
-            })).WithName("GetNoteThreads").WithOpenApi();
+            })).WithName("GetNoteThreads");
 
         group.MapPost("/events/{eventId:long}/replies", async (
             Guid ticketId, long eventId, [FromBody] ReplyRequest req, HttpContext http, INoteThreadService svc, CancellationToken ct) =>
@@ -35,13 +35,13 @@ public static class NoteThreadEndpoints
                 var reply = await svc.AddReplyAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, eventId,
                     new NoteReplyInput(req?.ParentReplyId, req?.BodyHtml, req?.MentionedUserIds, req?.MentionedGroupIds), ct);
                 return Results.Created($"/api/tickets/{ticketId}/replies/{reply.Id}", MapReply(reply));
-            })).WithName("AddNoteReply").WithOpenApi();
+            })).WithName("AddNoteReply");
 
         group.MapPut("/replies/{replyId:long}", async (
             Guid ticketId, long replyId, [FromBody] EditRequest req, HttpContext http, INoteThreadService svc, CancellationToken ct) =>
             await Run(async () => Results.Ok(MapReply(
                 await svc.EditReplyAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, replyId, req?.BodyHtml, ct))))
-        ).WithName("EditNoteReply").WithOpenApi();
+        ).WithName("EditNoteReply");
 
         group.MapDelete("/replies/{replyId:long}", async (
             Guid ticketId, long replyId, HttpContext http, INoteThreadService svc, CancellationToken ct) =>
@@ -49,16 +49,16 @@ public static class NoteThreadEndpoints
             {
                 await svc.DeleteReplyAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, replyId, ct);
                 return Results.NoContent();
-            })).WithName("DeleteNoteReply").WithOpenApi();
+            })).WithName("DeleteNoteReply");
 
         group.MapPut("/events/{eventId:long}/like", (Guid ticketId, long eventId, HttpContext http, INoteThreadService svc, CancellationToken ct)
-            => Like(svc, http, ticketId, eventId, null, true, ct)).WithName("LikeNote").WithOpenApi();
+            => Like(svc, http, ticketId, eventId, null, true, ct)).WithName("LikeNote");
         group.MapDelete("/events/{eventId:long}/like", (Guid ticketId, long eventId, HttpContext http, INoteThreadService svc, CancellationToken ct)
-            => Like(svc, http, ticketId, eventId, null, false, ct)).WithName("UnlikeNote").WithOpenApi();
+            => Like(svc, http, ticketId, eventId, null, false, ct)).WithName("UnlikeNote");
         group.MapPut("/replies/{replyId:long}/like", (Guid ticketId, long replyId, HttpContext http, INoteThreadService svc, CancellationToken ct)
-            => Like(svc, http, ticketId, null, replyId, true, ct)).WithName("LikeNoteReply").WithOpenApi();
+            => Like(svc, http, ticketId, null, replyId, true, ct)).WithName("LikeNoteReply");
         group.MapDelete("/replies/{replyId:long}/like", (Guid ticketId, long replyId, HttpContext http, INoteThreadService svc, CancellationToken ct)
-            => Like(svc, http, ticketId, null, replyId, false, ct)).WithName("UnlikeNoteReply").WithOpenApi();
+            => Like(svc, http, ticketId, null, replyId, false, ct)).WithName("UnlikeNoteReply");
 
         return app;
     }

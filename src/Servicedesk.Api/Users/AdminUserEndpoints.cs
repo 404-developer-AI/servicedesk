@@ -19,76 +19,60 @@ public static class AdminUserEndpoints
             .WithTags("AdminUsers")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        group.MapGet("/", List).WithName("AdminUsersList").WithOpenApi();
+        group.MapGet("/", List).WithName("AdminUsersList");
 
         group.MapGet("/m365/search", SearchM365)
-            .WithName("AdminUsersSearchM365")
-            .WithOpenApi();
+            .WithName("AdminUsersSearchM365");
 
         group.MapPost("/m365", AddFromM365)
-            .WithName("AdminUsersAddFromM365")
-            .WithOpenApi();
+            .WithName("AdminUsersAddFromM365");
 
         group.MapPost("/local", AddLocal)
             .WithName("AdminUsersAddLocal")
-            .WithOpenApi()
             .RequireRateLimiting("auth");
 
         group.MapPost("/{id:guid}/upgrade-to-m365", UpgradeToM365)
-            .WithName("AdminUsersUpgradeToM365")
-            .WithOpenApi();
+            .WithName("AdminUsersUpgradeToM365");
 
         group.MapPut("/{id:guid}/role", UpdateRole)
-            .WithName("AdminUsersUpdateRole")
-            .WithOpenApi();
+            .WithName("AdminUsersUpdateRole");
 
         group.MapPost("/{id:guid}/activate", Activate)
-            .WithName("AdminUsersActivate")
-            .WithOpenApi();
+            .WithName("AdminUsersActivate");
 
         group.MapPost("/{id:guid}/deactivate", Deactivate)
-            .WithName("AdminUsersDeactivate")
-            .WithOpenApi();
+            .WithName("AdminUsersDeactivate");
 
         group.MapDelete("/{id:guid}", Delete)
-            .WithName("AdminUsersDelete")
-            .WithOpenApi();
+            .WithName("AdminUsersDelete");
 
         // v0.1.3 (audit v0.1.1 #8) — admin-initiated password reset for
         // Local staff accounts. Rate-limited like the other credential
         // writes; every open session of the target is revoked.
         group.MapPost("/{id:guid}/reset-password", ResetPassword)
             .WithName("AdminUsersResetPassword")
-            .WithOpenApi()
             .RequireRateLimiting("auth");
 
         group.MapPut("/{id:guid}/timesheet-flags", UpdateTimesheetFlags)
-            .WithName("AdminUsersUpdateTimesheetFlags")
-            .WithOpenApi();
+            .WithName("AdminUsersUpdateTimesheetFlags");
 
         group.MapPut("/{id:guid}/iso-flags", UpdateIsoFlags)
-            .WithName("AdminUsersUpdateIsoFlags")
-            .WithOpenApi();
+            .WithName("AdminUsersUpdateIsoFlags");
 
         group.MapPut("/{id:guid}/kb-flag", UpdateKbFlag)
-            .WithName("AdminUsersUpdateKbFlag")
-            .WithOpenApi();
+            .WithName("AdminUsersUpdateKbFlag");
 
         group.MapPut("/{id:guid}/feature-flags", UpdateFeatureFlags)
-            .WithName("AdminUsersUpdateFeatureFlags")
-            .WithOpenApi();
+            .WithName("AdminUsersUpdateFeatureFlags");
 
         group.MapPut("/{id:guid}/dashboard-tiles", UpdateDashboardTiles)
-            .WithName("AdminUsersUpdateDashboardTiles")
-            .WithOpenApi();
+            .WithName("AdminUsersUpdateDashboardTiles");
 
         group.MapGet("/{id:guid}/timesheet-preferences", GetTimesheetPreferences)
-            .WithName("AdminUsersGetTimesheetPreferences")
-            .WithOpenApi();
+            .WithName("AdminUsersGetTimesheetPreferences");
 
         group.MapPut("/{id:guid}/timesheet-preferences", UpdateTimesheetPreferences)
-            .WithName("AdminUsersUpdateTimesheetPreferences")
-            .WithOpenApi();
+            .WithName("AdminUsersUpdateTimesheetPreferences");
 
         return app;
     }

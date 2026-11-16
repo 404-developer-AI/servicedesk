@@ -38,16 +38,14 @@ public static class AuditEndpoints
                 nextCursor = page.NextCursor,
             });
         })
-        .WithName("ListAuditEntries")
-        .WithOpenApi();
+        .WithName("ListAuditEntries");
 
         group.MapGet("/{id:long}", async (long id, IAuditQuery query, CancellationToken ct) =>
         {
             var entry = await query.GetAsync(id, ct);
             return entry is null ? Results.NotFound() : Results.Ok(Project(entry));
         })
-        .WithName("GetAuditEntry")
-        .WithOpenApi();
+        .WithName("GetAuditEntry");
 
         return app;
     }

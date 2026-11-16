@@ -34,12 +34,10 @@ public static class MicrosoftAuthEndpoints
 
         group.MapGet("/challenge", StartChallenge)
             .WithName("AuthMicrosoftChallenge")
-            .WithOpenApi()
             .RequireRateLimiting("auth");
 
         group.MapGet("/callback", HandleCallback)
             .WithName("AuthMicrosoftCallback")
-            .WithOpenApi()
             .RequireRateLimiting("auth");
 
         return app;

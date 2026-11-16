@@ -24,8 +24,8 @@ public static class KbChatEndpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        group.MapGet("/status", GetStatus).WithName("GetKbChatStatus").WithOpenApi();
-        group.MapPost("", SendTurn).WithName("SendKbChatTurn").WithOpenApi();
+        group.MapGet("/status", GetStatus).WithName("GetKbChatStatus");
+        group.MapPost("", SendTurn).WithName("SendKbChatTurn");
 
         return app;
     }

@@ -25,11 +25,11 @@ public static class OrdersEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireFeature(UserFeature.AdsolutOrders);
 
-        group.MapGet("", ListOrders).WithName("ListAdsolutOrders").WithOpenApi();
-        group.MapGet("/picker", PickOrders).WithName("PickAdsolutOrders").WithOpenApi();
-        group.MapGet("/{id:guid}", GetOrderDetail).WithName("GetAdsolutOrderDetail").WithOpenApi();
-        group.MapPost("/sync", TriggerSync).WithName("TriggerAdsolutOrdersSync").WithOpenApi();
-        group.MapPost("/{id:guid}/resync", ResyncOrder).WithName("ResyncAdsolutOrder").WithOpenApi();
+        group.MapGet("", ListOrders).WithName("ListAdsolutOrders");
+        group.MapGet("/picker", PickOrders).WithName("PickAdsolutOrders");
+        group.MapGet("/{id:guid}", GetOrderDetail).WithName("GetAdsolutOrderDetail");
+        group.MapPost("/sync", TriggerSync).WithName("TriggerAdsolutOrdersSync");
+        group.MapPost("/{id:guid}/resync", ResyncOrder).WithName("ResyncAdsolutOrder");
 
         // Ticket ↔ order links. Separate group so it sits under the tickets
         // namespace but reuses the same RequireAgent + feature gate.
@@ -38,9 +38,9 @@ public static class OrdersEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireFeature(UserFeature.AdsolutOrders);
 
-        ticketGroup.MapGet("", ListTicketOrders).WithName("ListTicketOrders").WithOpenApi();
-        ticketGroup.MapPost("/{orderId:guid}", LinkTicketOrder).WithName("LinkTicketOrder").WithOpenApi();
-        ticketGroup.MapDelete("/{orderId:guid}", UnlinkTicketOrder).WithName("UnlinkTicketOrder").WithOpenApi();
+        ticketGroup.MapGet("", ListTicketOrders).WithName("ListTicketOrders");
+        ticketGroup.MapPost("/{orderId:guid}", LinkTicketOrder).WithName("LinkTicketOrder");
+        ticketGroup.MapDelete("/{orderId:guid}", UnlinkTicketOrder).WithName("UnlinkTicketOrder");
 
         return group;
     }

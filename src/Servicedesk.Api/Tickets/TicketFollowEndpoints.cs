@@ -36,7 +36,7 @@ public static class TicketFollowEndpoints
             });
         })
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithTags("Following").WithName("ListFollowedTickets").WithOpenApi();
+        .WithTags("Following").WithName("ListFollowedTickets");
 
         var group = app.MapGroup("/api/tickets/{ticketId:guid}/follow")
             .WithTags("Following")
@@ -58,7 +58,7 @@ public static class TicketFollowEndpoints
             }
             await PushChangedAsync(hub, actor.UserId, ct);
             return Results.NoContent();
-        }).WithName("FollowTicket").WithOpenApi();
+        }).WithName("FollowTicket");
 
         group.MapDelete("", async (Guid ticketId, HttpContext http, ITicketFollowService svc,
             IHubContext<UserNotificationHub> hub, CancellationToken ct) =>
@@ -67,13 +67,13 @@ public static class TicketFollowEndpoints
             if (await svc.UnfollowAsync(actor, ticketId, ct))
                 await PushChangedAsync(hub, actor.UserId, ct);
             return Results.NoContent();
-        }).WithName("UnfollowTicket").WithOpenApi();
+        }).WithName("UnfollowTicket");
 
         group.MapPost("/seen", async (Guid ticketId, HttpContext http, ITicketFollowService svc, CancellationToken ct) =>
         {
             await svc.MarkSeenAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, ct);
             return Results.NoContent();
-        }).WithName("MarkFollowedTicketSeen").WithOpenApi();
+        }).WithName("MarkFollowedTicketSeen");
 
         return app;
     }

@@ -75,7 +75,7 @@ public static class KbTransferEndpoints
                 new { id, article.Slug, assets = export.Attachments.Count - skipped.Count, skipped = skipped.Count });
 
             return Results.File(temp, "application/zip", $"{article.Slug}.zip");
-        }).WithName("ExportKbArticle").WithOpenApi();
+        }).WithName("ExportKbArticle");
 
         // POST /api/kb/articles/import — multipart: `file` (the .zip) and
         // `sectionId`. Creates a new Draft in that section.
@@ -195,7 +195,7 @@ public static class KbTransferEndpoints
                 .ToList();
             return Results.Created($"/api/kb/articles/{created.Id}",
                 new { article = created, translation, assets = content.Assets.Count, warnings });
-        }).WithName("ImportKbArticle").WithOpenApi();
+        }).WithName("ImportKbArticle");
 
         return app;
     }

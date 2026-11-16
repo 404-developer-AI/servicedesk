@@ -38,7 +38,7 @@ public static class ActivityEndpoints
             var clampedLimit = Math.Clamp(limit ?? 25, 1, 100);
             var rows = await query.ListRecentAsync(scope, clampedLimit, ct);
             return Results.Ok(new { items = rows });
-        }).WithName("ActivityRecent").WithOpenApi();
+        }).WithName("ActivityRecent");
 
         group.MapGet("/", async (
             HttpContext httpContext,
@@ -77,7 +77,7 @@ public static class ActivityEndpoints
                 items = page.Items,
                 nextCursor = page.NextCursor,
             });
-        }).WithName("ActivityList").WithOpenApi();
+        }).WithName("ActivityList");
 
         return app;
     }

@@ -30,13 +30,13 @@ public static class TriggerEndpoints
             var summaries = await repo.GetRunSummariesAsync(since, ct);
             var items = triggers.Select(t => ProjectListItem(t, summaries)).ToArray();
             return Results.Ok(new { items, runSummaryWindowHours = RunSummaryWindowHours });
-        }).WithName("ListTriggers").WithOpenApi();
+        }).WithName("ListTriggers");
 
         admin.MapGet("/{id:guid}", async (Guid id, ITriggerRepository repo, CancellationToken ct) =>
         {
             var row = await repo.GetByIdAsync(id, ct);
             return row is null ? Results.NotFound() : Results.Ok(ProjectDetail(row));
-        }).WithName("GetTrigger").WithOpenApi();
+        }).WithName("GetTrigger");
 
         admin.MapPost("/", async (
             [FromBody] TriggerInput req, HttpContext http, ITriggerRepository repo, IAuditLogger audit, CancellationToken ct) =>
@@ -73,7 +73,7 @@ public static class TriggerEndpoints
             });
 
             return Results.Created($"/api/admin/triggers/{row.Id}", ProjectDetail(row));
-        }).WithName("CreateTrigger").WithOpenApi();
+        }).WithName("CreateTrigger");
 
         admin.MapPut("/{id:guid}", async (
             Guid id, [FromBody] TriggerInput req, HttpContext http, ITriggerRepository repo, IAuditLogger audit, CancellationToken ct) =>
@@ -109,7 +109,7 @@ public static class TriggerEndpoints
             });
 
             return Results.Ok(ProjectDetail(row));
-        }).WithName("UpdateTrigger").WithOpenApi();
+        }).WithName("UpdateTrigger");
 
         // Toggle is its own endpoint so the list-row switch can flip
         // active state without re-submitting the full payload (avoids
@@ -125,7 +125,7 @@ public static class TriggerEndpoints
                 isActive = req.IsActive,
             });
             return Results.NoContent();
-        }).WithName("SetTriggerActive").WithOpenApi();
+        }).WithName("SetTriggerActive");
 
         admin.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, ITriggerRepository repo, IAuditLogger audit, CancellationToken ct) =>
@@ -134,7 +134,7 @@ public static class TriggerEndpoints
             if (!ok) return Results.NotFound();
             await LogAsync(audit, http, TriggerAuditEventTypes.Deleted, id.ToString(), null);
             return Results.NoContent();
-        }).WithName("DeleteTrigger").WithOpenApi();
+        }).WithName("DeleteTrigger");
 
         // Static metadata for the UI: lists every condition-field key,
         // operator, and action-kind the server understands. Lets the
@@ -147,7 +147,7 @@ public static class TriggerEndpoints
             activatorPairs = TriggerValidator.ActivatorPairs.OrderBy(p => p, StringComparer.Ordinal).ToArray(),
             templateVariables = TriggerTemplateVariableCatalog.All,
             maxConditionDepth = TriggerValidator.MaxConditionDepth,
-        })).WithName("GetTriggerMetadata").WithOpenApi();
+        })).WithName("GetTriggerMetadata");
 
         // Blok 7 — admin test-runner. Evaluates the trigger against a
         // real ticket without committing anything. Per-action results
@@ -174,7 +174,7 @@ public static class TriggerEndpoints
                     failure = a.FailureReason,
                 }),
             });
-        }).WithName("DryRunTrigger").WithOpenApi();
+        }).WithName("DryRunTrigger");
 
         // Bulk placement update — the drag-and-drop UI posts the whole
         // affected slice (typically two groups: the source and the dest)
@@ -195,7 +195,7 @@ public static class TriggerEndpoints
             await repo.ReorderAsync(placements, ct);
             await LogAsync(audit, http, TriggerAuditEventTypes.Reordered, null, new { count = placements.Count });
             return Results.NoContent();
-        }).WithName("ReorderTriggers").WithOpenApi();
+        }).WithName("ReorderTriggers");
 
         admin.MapGet("/{id:guid}/runs", async (
             Guid id, int? limit, DateTime? cursorUtc, ITriggerRepository repo, CancellationToken ct) =>
@@ -222,7 +222,7 @@ public static class TriggerEndpoints
                 }),
                 nextCursor = next,
             });
-        }).WithName("ListTriggerRuns").WithOpenApi();
+        }).WithName("ListTriggerRuns");
 
         return app;
     }

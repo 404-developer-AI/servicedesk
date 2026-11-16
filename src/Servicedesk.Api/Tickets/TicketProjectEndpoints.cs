@@ -51,7 +51,7 @@ public static class TicketProjectEndpoints
             await AuditAsync(audit, http, "ticket.project_reverted", id, new { });
             await PushTicketAsync(hub, id, ct);
             return Results.Ok(new { isProject = false });
-        }).WithName("RevertTicketProject").WithOpenApi();
+        }).WithName("RevertTicketProject");
 
         // Link this (normal) ticket to a project ticket. Both sides need
         // queue access; 404 on the target so a forbidden project's
@@ -89,7 +89,7 @@ public static class TicketProjectEndpoints
             if (result.PreviousProjectTicketId is Guid prev && prev != req.ProjectTicketId)
                 await PushTicketAsync(hub, prev, ct);
             return Results.Ok(new { projectTicketId = req.ProjectTicketId, projectNumber = result.ProjectNumber });
-        }).WithName("LinkTicketToProject").WithOpenApi();
+        }).WithName("LinkTicketToProject");
 
         group.MapDelete("/{id:guid}/project/link", async (
             Guid id, HttpContext http,
@@ -111,7 +111,7 @@ public static class TicketProjectEndpoints
             if (result.PreviousProjectTicketId is Guid prev)
                 await PushTicketAsync(hub, prev, ct);
             return Results.NoContent();
-        }).WithName("UnlinkTicketFromProject").WithOpenApi();
+        }).WithName("UnlinkTicketFromProject");
 
         // Manual priority order inside the project panel (drag & drop).
         group.MapPost("/{id:guid}/project/reorder", async (
@@ -134,7 +134,7 @@ public static class TicketProjectEndpoints
             await projects.ReorderAsync(id, req.OrderedTicketIds, ct);
             await PushTicketAsync(hub, id, ct);
             return Results.NoContent();
-        }).WithName("ReorderProjectTickets").WithOpenApi();
+        }).WithName("ReorderProjectTickets");
 
         // The project panel: linked tickets + per-ticket/per-task time
         // rollup. Non-admins only see linked tickets in queues they can
@@ -161,7 +161,7 @@ public static class TicketProjectEndpoints
                 timeRows = overview.TimeRows,
                 hiddenTicketCount = overview.HiddenTicketCount,
             });
-        }).WithName("GetProjectOverview").WithOpenApi();
+        }).WithName("GetProjectOverview");
 
         // First-open link prompt probe: open projects on this ticket's
         // company, empty when the prompt does not apply. The detail page
@@ -189,7 +189,7 @@ public static class TicketProjectEndpoints
             {
                 projects = candidates.Select(c => new { id = c.Id, number = c.Number.ToString(), subject = c.Subject }),
             });
-        }).WithName("GetProjectLinkPrompt").WithOpenApi();
+        }).WithName("GetProjectLinkPrompt");
 
         // "No" on the prompt — remembered per ticket so it never re-asks.
         group.MapPost("/{id:guid}/project/prompt/dismiss", async (
@@ -202,7 +202,7 @@ public static class TicketProjectEndpoints
 
             await projects.DismissPromptAsync(id, ct);
             return Results.NoContent();
-        }).WithName("DismissProjectLinkPrompt").WithOpenApi();
+        }).WithName("DismissProjectLinkPrompt");
 
         return app;
     }

@@ -61,7 +61,7 @@ public static class KbPublicEndpoints
                 bodyHtml,
                 updatedUtc = article.UpdatedUtc,
             });
-        }).WithName("GetPublicKbArticle").WithOpenApi();
+        }).WithName("GetPublicKbArticle");
 
         // Public twin of GetKbAttachment, with the same cross-article guess
         // refusal plus the Published + toggle gates of the article route —
@@ -105,7 +105,7 @@ public static class KbPublicEndpoints
             // route is anonymous, so the guard matters double here.
             return Servicedesk.Api.Tickets.AttachmentResponse.File(
                 stream, att.MimeType, att.OriginalFilename, inline == true);
-        }).WithName("GetPublicKbAttachment").WithOpenApi();
+        }).WithName("GetPublicKbAttachment");
 
         return app;
     }

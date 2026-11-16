@@ -23,10 +23,10 @@ public static class AdsolutCatalogueProductsEndpoints
             .WithTags("Timesheet")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        group.MapGet("", ListProducts).WithName("ListAdsolutCatalogueProducts").WithOpenApi();
-        group.MapGet("/state", GetState).WithName("GetAdsolutCatalogueProductsState").WithOpenApi();
-        group.MapPost("/{id:guid}/work-hours", SetWorkHours).WithName("SetAdsolutCatalogueProductWorkHours").WithOpenApi();
-        group.MapPost("/sync", TriggerSync).WithName("TriggerAdsolutCatalogueProductsSync").WithOpenApi();
+        group.MapGet("", ListProducts).WithName("ListAdsolutCatalogueProducts");
+        group.MapGet("/state", GetState).WithName("GetAdsolutCatalogueProductsState");
+        group.MapPost("/{id:guid}/work-hours", SetWorkHours).WithName("SetAdsolutCatalogueProductWorkHours");
+        group.MapPost("/sync", TriggerSync).WithName("TriggerAdsolutCatalogueProductsSync");
 
         return group;
     }

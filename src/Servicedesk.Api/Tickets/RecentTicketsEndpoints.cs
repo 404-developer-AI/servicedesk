@@ -28,7 +28,7 @@ public static class RecentTicketsEndpoints
             if (userId is null) return Results.Unauthorized();
             var items = await service.ListForUserAsync(userId.Value, ct);
             return Results.Ok(new { items });
-        }).WithName("RecentTicketsList").WithOpenApi();
+        }).WithName("RecentTicketsList");
 
         group.MapPost("/{ticketId:guid}", async (
             Guid ticketId,
@@ -45,7 +45,7 @@ public static class RecentTicketsEndpoints
                 await BroadcastAsync(hub, userId.Value, ct);
             }
             return Results.NoContent();
-        }).WithName("RecentTicketsAdd").WithOpenApi();
+        }).WithName("RecentTicketsAdd");
 
         group.MapDelete("/{ticketId:guid}", async (
             Guid ticketId,
@@ -62,7 +62,7 @@ public static class RecentTicketsEndpoints
                 await BroadcastAsync(hub, userId.Value, ct);
             }
             return Results.NoContent();
-        }).WithName("RecentTicketsRemove").WithOpenApi();
+        }).WithName("RecentTicketsRemove");
 
         // v0.1.4 — "Clear recents" in one call (was one DELETE per ticket
         // from the client, each with its own SignalR rehydrate).
@@ -80,7 +80,7 @@ public static class RecentTicketsEndpoints
                 await BroadcastAsync(hub, userId.Value, ct);
             }
             return Results.NoContent();
-        }).WithName("RecentTicketsClear").WithOpenApi();
+        }).WithName("RecentTicketsClear");
 
         group.MapPut("/order", async (
             [FromBody] ReorderRecentTicketsRequest request,
@@ -94,7 +94,7 @@ public static class RecentTicketsEndpoints
             await service.ReorderAsync(userId.Value, request.TicketIds ?? Array.Empty<Guid>(), ct);
             await BroadcastAsync(hub, userId.Value, ct);
             return Results.NoContent();
-        }).WithName("RecentTicketsReorder").WithOpenApi();
+        }).WithName("RecentTicketsReorder");
 
         return app;
     }

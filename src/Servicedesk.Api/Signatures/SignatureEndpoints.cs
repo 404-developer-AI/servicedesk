@@ -38,13 +38,13 @@ public static class SignatureEndpoints
             var byId = bindings.GroupBy(b => b.SignatureId)
                 .ToDictionary(g => g.Key, g => g.Select(x => x.QueueId).ToList());
             return Results.Ok(sigs.Select(s => MapSummary(s, byId.GetValueOrDefault(s.Id) ?? new List<Guid>())));
-        }).WithName("ListSignatures").WithOpenApi();
+        }).WithName("ListSignatures");
 
         group.MapGet("/tokens", () => Results.Ok(new
         {
             tokens = SignatureTokens.Supported.Select(t => new { token = t.Token, label = t.Label }),
             photoVariable = SignatureTokens.AgentPhoto,
-        })).WithName("ListSignatureTokens").WithOpenApi();
+        })).WithName("ListSignatureTokens");
 
         group.MapGet("/{id:guid}", async (Guid id, ISignatureRepository repo, CancellationToken ct) =>
         {
@@ -53,7 +53,7 @@ public static class SignatureEndpoints
             var assets = await repo.ListAssetsAsync(id, ct);
             var queueIds = await repo.ListQueuesForSignatureAsync(id, ct);
             return Results.Ok(MapDetail(sig, assets, queueIds));
-        }).WithName("GetSignature").WithOpenApi();
+        }).WithName("GetSignature");
 
         group.MapPost("/", async (
             [FromBody] UpsertSignatureRequest req, HttpContext http,
@@ -79,7 +79,7 @@ public static class SignatureEndpoints
             var assets = await repo.ListAssetsAsync(id, ct);
             var queueIds = await repo.ListQueuesForSignatureAsync(id, ct);
             return Results.Created($"/api/settings/signatures/{id}", MapDetail(created!, assets, queueIds));
-        }).WithName("CreateSignature").WithOpenApi();
+        }).WithName("CreateSignature");
 
         group.MapPut("/{id:guid}", async (
             Guid id, [FromBody] UpsertSignatureRequest req, HttpContext http,
@@ -107,7 +107,7 @@ public static class SignatureEndpoints
             var assets = await repo.ListAssetsAsync(id, ct);
             var queueIds = await repo.ListQueuesForSignatureAsync(id, ct);
             return Results.Ok(MapDetail(updated!, assets, queueIds));
-        }).WithName("UpdateSignature").WithOpenApi();
+        }).WithName("UpdateSignature");
 
         group.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, ISignatureRepository repo,
@@ -133,7 +133,7 @@ public static class SignatureEndpoints
 
             await Audit(audit, http, "signature.delete", id, null);
             return Results.NoContent();
-        }).WithName("DeleteSignature").WithOpenApi();
+        }).WithName("DeleteSignature");
 
         MapPortabilityEndpoints(group);
         MapAssetEndpoints(group);
@@ -175,7 +175,7 @@ public static class SignatureEndpoints
             var bundle = new SignatureBundle(
                 SignatureBundle.KindValue, SignatureBundle.CurrentVersion, sig.Name, sig.Design, bundleAssets);
             return Results.Json(bundle);
-        }).WithName("ExportSignature").WithOpenApi();
+        }).WithName("ExportSignature");
 
         group.MapPost("/import", async (
             HttpContext http, ISignatureRepository repo, ISignatureHtmlSanitizer sanitizer,
@@ -260,7 +260,7 @@ public static class SignatureEndpoints
             var created = await repo.GetAsync(newId, ct);
             var createdAssets = await repo.ListAssetsAsync(newId, ct);
             return Results.Created($"/api/settings/signatures/{newId}", MapDetail(created!, createdAssets, Array.Empty<Guid>()));
-        }).WithName("ImportSignature").WithOpenApi();
+        }).WithName("ImportSignature");
     }
 
     private static async Task<IResult> FailImport(ISignatureRepository repo, Guid id, CancellationToken ct, string message)
@@ -366,7 +366,7 @@ public static class SignatureEndpoints
                 filename,
                 size = written.SizeBytes,
             });
-        }).WithName("UploadSignatureAsset").WithOpenApi();
+        }).WithName("UploadSignatureAsset");
 
         // Serve an asset for the builder preview. Admin-only (same group auth).
         group.MapGet("/{id:guid}/assets/{assetId:guid}", async (
@@ -390,7 +390,7 @@ public static class SignatureEndpoints
             // every other blob route (uploads are image-only already).
             return Servicedesk.Api.Tickets.AttachmentResponse.File(
                 stream, asset.MimeType, asset.OriginalFilename, inlineRequested: true);
-        }).WithName("GetSignatureAsset").WithOpenApi();
+        }).WithName("GetSignatureAsset");
 
         group.MapDelete("/{id:guid}/assets/{assetId:guid}", async (
             Guid id, Guid assetId, HttpContext http,
@@ -404,7 +404,7 @@ public static class SignatureEndpoints
 
             await Audit(audit, http, "signature.asset.delete", id, new { assetId });
             return Results.NoContent();
-        }).WithName("DeleteSignatureAsset").WithOpenApi();
+        }).WithName("DeleteSignatureAsset");
     }
 
     public sealed record UpsertSignatureRequest(

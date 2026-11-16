@@ -64,20 +64,20 @@ public static class M365Endpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapGet("/status", GetStatus).WithName("GetM365Status").WithOpenApi();
+        admin.MapGet("/status", GetStatus).WithName("GetM365Status");
 
-        admin.MapGet("/secret", GetSecretStatus).WithName("GetM365SecretStatus").WithOpenApi();
-        admin.MapPut("/secret", SetSecret).WithName("SetM365Secret").WithOpenApi();
-        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteM365Secret").WithOpenApi();
+        admin.MapGet("/secret", GetSecretStatus).WithName("GetM365SecretStatus");
+        admin.MapPut("/secret", SetSecret).WithName("SetM365Secret");
+        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteM365Secret");
 
-        admin.MapPut("/config", SetConfig).WithName("SetM365Config").WithOpenApi();
-        admin.MapPut("/enabled", SetEnabled).WithName("SetM365Enabled").WithOpenApi();
-        admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetM365SyncInterval").WithOpenApi();
+        admin.MapPut("/config", SetConfig).WithName("SetM365Config");
+        admin.MapPut("/enabled", SetEnabled).WithName("SetM365Enabled");
+        admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetM365SyncInterval");
 
-        admin.MapPost("/test-connection", TestConnection).WithName("TestM365Connection").WithOpenApi();
-        admin.MapPost("/sync", SyncNow).WithName("SyncM365Now").WithOpenApi();
+        admin.MapPost("/test-connection", TestConnection).WithName("TestM365Connection");
+        admin.MapPost("/sync", SyncNow).WithName("SyncM365Now");
 
-        admin.MapGet("/audit", GetAuditLog).WithName("GetM365AuditLog").WithOpenApi();
+        admin.MapGet("/audit", GetAuditLog).WithName("GetM365AuditLog");
 
         // PUBLIC consent callback — the customer's admin lands here after
         // granting (or declining) admin consent in their own tenant; they are

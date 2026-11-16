@@ -22,7 +22,7 @@ public static class TriggerGroupEndpoints
         {
             var groups = await repo.ListAllAsync(ct);
             return Results.Ok(new { items = groups.Select(Project).ToArray() });
-        }).WithName("ListTriggerGroups").WithOpenApi();
+        }).WithName("ListTriggerGroups");
 
         admin.MapPost("/", async (
             [FromBody] TriggerGroupInput req, HttpContext http,
@@ -37,7 +37,7 @@ public static class TriggerGroupEndpoints
             var row = await repo.CreateAsync(new NewTriggerGroup(name, NormalizeColor(req.Color)), ct);
             await LogAsync(audit, http, TriggerAuditEventTypes.GroupCreated, row.Id.ToString(), new { row.Name });
             return Results.Created($"/api/admin/trigger-groups/{row.Id}", Project(row));
-        }).WithName("CreateTriggerGroup").WithOpenApi();
+        }).WithName("CreateTriggerGroup");
 
         admin.MapPut("/{id:guid}", async (
             Guid id, [FromBody] TriggerGroupInput req, HttpContext http,
@@ -53,7 +53,7 @@ public static class TriggerGroupEndpoints
             if (row is null) return Results.NotFound();
             await LogAsync(audit, http, TriggerAuditEventTypes.GroupUpdated, id.ToString(), new { row.Name });
             return Results.Ok(Project(row));
-        }).WithName("UpdateTriggerGroup").WithOpenApi();
+        }).WithName("UpdateTriggerGroup");
 
         admin.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http,
@@ -65,7 +65,7 @@ public static class TriggerGroupEndpoints
             if (!ok) return Results.NotFound();
             await LogAsync(audit, http, TriggerAuditEventTypes.GroupDeleted, id.ToString(), null);
             return Results.NoContent();
-        }).WithName("DeleteTriggerGroup").WithOpenApi();
+        }).WithName("DeleteTriggerGroup");
 
         admin.MapPost("/reorder", async (
             [FromBody] ReorderGroupsInput req, HttpContext http,
@@ -83,7 +83,7 @@ public static class TriggerGroupEndpoints
             await repo.ReorderAsync(placements, ct);
             await LogAsync(audit, http, TriggerAuditEventTypes.GroupReordered, null, new { count = placements.Count });
             return Results.NoContent();
-        }).WithName("ReorderTriggerGroups").WithOpenApi();
+        }).WithName("ReorderTriggerGroups");
 
         return app;
     }

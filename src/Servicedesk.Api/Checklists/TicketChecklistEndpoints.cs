@@ -23,7 +23,7 @@ public static class TicketChecklistEndpoints
             {
                 var views = await svc.ListAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, ct);
                 return Results.Ok(new { items = views.Select(MapView) });
-            })).WithName("ListTicketChecklists").WithOpenApi();
+            })).WithName("ListTicketChecklists");
 
         group.MapGet("/available-templates", async (Guid ticketId, HttpContext http, ITicketChecklistService svc, CancellationToken ct) =>
             await Run(async () =>
@@ -37,7 +37,7 @@ public static class TicketChecklistEndpoints
                         itemCount = t.ItemCount, blockClose = t.BlockClose,
                     }),
                 });
-            })).WithName("ListAvailableChecklistTemplates").WithOpenApi();
+            })).WithName("ListAvailableChecklistTemplates");
 
         group.MapPost("/", async (
             Guid ticketId, [FromBody] AttachChecklistRequest req, HttpContext http,
@@ -48,7 +48,7 @@ public static class TicketChecklistEndpoints
                     return Results.BadRequest(new { error = "templateId is required.", code = ChecklistRejectCode.Invalid });
                 var view = await svc.AttachAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, req.TemplateId, ct);
                 return Results.Created($"/api/tickets/{ticketId}/checklists/{view.Checklist.Id}", MapView(view));
-            })).WithName("AttachTicketChecklist").WithOpenApi();
+            })).WithName("AttachTicketChecklist");
 
         group.MapDelete("/{checklistId:guid}", async (
             Guid ticketId, Guid checklistId, HttpContext http, ITicketChecklistService svc, CancellationToken ct) =>
@@ -56,7 +56,7 @@ public static class TicketChecklistEndpoints
             {
                 await svc.DetachAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, checklistId, ct);
                 return Results.NoContent();
-            })).WithName("DetachTicketChecklist").WithOpenApi();
+            })).WithName("DetachTicketChecklist");
 
         group.MapPost("/{checklistId:guid}/items", async (
             Guid ticketId, Guid checklistId, [FromBody] ChecklistItemRequest req, HttpContext http,
@@ -66,7 +66,7 @@ public static class TicketChecklistEndpoints
                 var item = await svc.AddItemAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, checklistId,
                     req.SectionId, ToInput(req), ct);
                 return Results.Created($"/api/tickets/{ticketId}/checklists/items/{item.Id}", MapItem(item));
-            })).WithName("AddTicketChecklistItem").WithOpenApi();
+            })).WithName("AddTicketChecklistItem");
 
         group.MapPut("/items/{itemId:guid}", async (
             Guid ticketId, Guid itemId, [FromBody] ChecklistItemRequest req, HttpContext http,
@@ -75,7 +75,7 @@ public static class TicketChecklistEndpoints
             {
                 var item = await svc.UpdateItemAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, itemId, ToInput(req), ct);
                 return Results.Ok(MapItem(item));
-            })).WithName("UpdateTicketChecklistItem").WithOpenApi();
+            })).WithName("UpdateTicketChecklistItem");
 
         group.MapDelete("/items/{itemId:guid}", async (
             Guid ticketId, Guid itemId, HttpContext http, ITicketChecklistService svc, CancellationToken ct) =>
@@ -83,7 +83,7 @@ public static class TicketChecklistEndpoints
             {
                 await svc.RemoveItemAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, itemId, ct);
                 return Results.NoContent();
-            })).WithName("RemoveTicketChecklistItem").WithOpenApi();
+            })).WithName("RemoveTicketChecklistItem");
 
         group.MapPatch("/items/{itemId:guid}/state", async (
             Guid ticketId, Guid itemId, [FromBody] ChecklistItemStateRequest req, HttpContext http,
@@ -93,7 +93,7 @@ public static class TicketChecklistEndpoints
                 var item = await svc.SetItemStateAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, itemId,
                     req.State ?? string.Empty, req.Reason, req.Comment, ct);
                 return Results.Ok(MapItem(item));
-            })).WithName("SetTicketChecklistItemState").WithOpenApi();
+            })).WithName("SetTicketChecklistItemState");
 
         group.MapPost("/items/{itemId:guid}/comments", async (
             Guid ticketId, Guid itemId, [FromBody] ChecklistCommentRequest req, HttpContext http,
@@ -102,7 +102,7 @@ public static class TicketChecklistEndpoints
             {
                 var item = await svc.AddCommentAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, itemId, req.Comment ?? string.Empty, ct);
                 return Results.Ok(MapItem(item));
-            })).WithName("AddTicketChecklistItemComment").WithOpenApi();
+            })).WithName("AddTicketChecklistItemComment");
 
         group.MapGet("/items/{itemId:guid}/events", async (
             Guid ticketId, Guid itemId, HttpContext http, ITicketChecklistService svc, CancellationToken ct) =>
@@ -117,7 +117,7 @@ public static class TicketChecklistEndpoints
                         fromState = e.FromState, toState = e.ToState, comment = e.Comment, createdUtc = e.CreatedUtc,
                     }),
                 });
-            })).WithName("ListTicketChecklistItemEvents").WithOpenApi();
+            })).WithName("ListTicketChecklistItemEvents");
 
         return app;
     }

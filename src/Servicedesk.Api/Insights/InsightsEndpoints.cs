@@ -54,20 +54,20 @@ public static class InsightsEndpoints
             .WithTags("Insights")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        group.MapGet("/config", GetConfig).WithName("InsightsConfig").WithOpenApi();
-        group.MapGet(KindRoute, GetReport).WithName("InsightsReport").WithOpenApi();
-        group.MapGet(KindRoute + "/pdf", ExportPdf).WithName("InsightsReportPdf").WithOpenApi();
-        group.MapGet(KindRoute + "/tickets", ListTickets).WithName("InsightsReportTickets").WithOpenApi();
-        group.MapGet("/agents", GetAgentReport).WithName("InsightsAgents").WithOpenApi();
-        group.MapGet("/agents/tickets", ListAgentTickets).WithName("InsightsAgentTickets").WithOpenApi();
-        group.MapGet("/agents/opened", ListOpenedWithoutAction).WithName("InsightsAgentOpened").WithOpenApi();
-        group.MapGet("/agents/pdf", ExportAgentPdf).WithName("InsightsAgentsPdf").WithOpenApi();
-        group.MapGet("/rewind/views", ListRewindViews).WithName("InsightsRewindViews").WithOpenApi();
-        group.MapGet("/rewind/{viewId:guid}/series", GetRewindSeries).WithName("InsightsRewindSeries").WithOpenApi();
-        group.MapGet("/rewind/{viewId:guid}/snapshot", GetRewindSnapshot).WithName("InsightsRewindSnapshot").WithOpenApi();
-        group.MapGet("/workflow/config", GetWorkflowConfig).WithName("InsightsWorkflowConfig").WithOpenApi();
-        group.MapGet("/workflow", GetWorkflowReport).WithName("InsightsWorkflow").WithOpenApi();
-        group.MapGet("/workflow/cases", GetWorkflowCases).WithName("InsightsWorkflowCases").WithOpenApi();
+        group.MapGet("/config", GetConfig).WithName("InsightsConfig");
+        group.MapGet(KindRoute, GetReport).WithName("InsightsReport");
+        group.MapGet(KindRoute + "/pdf", ExportPdf).WithName("InsightsReportPdf");
+        group.MapGet(KindRoute + "/tickets", ListTickets).WithName("InsightsReportTickets");
+        group.MapGet("/agents", GetAgentReport).WithName("InsightsAgents");
+        group.MapGet("/agents/tickets", ListAgentTickets).WithName("InsightsAgentTickets");
+        group.MapGet("/agents/opened", ListOpenedWithoutAction).WithName("InsightsAgentOpened");
+        group.MapGet("/agents/pdf", ExportAgentPdf).WithName("InsightsAgentsPdf");
+        group.MapGet("/rewind/views", ListRewindViews).WithName("InsightsRewindViews");
+        group.MapGet("/rewind/{viewId:guid}/series", GetRewindSeries).WithName("InsightsRewindSeries");
+        group.MapGet("/rewind/{viewId:guid}/snapshot", GetRewindSnapshot).WithName("InsightsRewindSnapshot");
+        group.MapGet("/workflow/config", GetWorkflowConfig).WithName("InsightsWorkflowConfig");
+        group.MapGet("/workflow", GetWorkflowReport).WithName("InsightsWorkflow");
+        group.MapGet("/workflow/cases", GetWorkflowCases).WithName("InsightsWorkflowCases");
 
         return app;
     }

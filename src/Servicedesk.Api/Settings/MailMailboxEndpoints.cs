@@ -48,7 +48,7 @@ public static class MailMailboxEndpoints
                 .ToList();
 
             return Results.Ok(mailboxes);
-        }).WithName("ListInboundMailboxes").WithOpenApi();
+        }).WithName("ListInboundMailboxes");
 
         group.MapPut("/{sourceId:guid}/polling", async (
             Guid sourceId, PollingToggleRequest req, HttpContext http,
@@ -68,7 +68,7 @@ public static class MailMailboxEndpoints
                 Payload: new { enabled = req.Enabled }));
 
             return Results.Ok(new { sourceId, pollingEnabled = req.Enabled });
-        }).WithName("SetInboundMailboxPolling").WithOpenApi();
+        }).WithName("SetInboundMailboxPolling");
 
         return app;
     }

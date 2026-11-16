@@ -54,7 +54,7 @@ public static class UserDashboardLayoutEndpoints
                     Results.BadRequest(new { error = "Invalid tile size.", size = bad.Size }),
                 _ => Results.Problem("Unhandled dashboard layout result."),
             };
-        }).WithName("UserDashboardLayoutSave").WithOpenApi();
+        }).WithName("UserDashboardLayoutSave");
 
         return app;
     }

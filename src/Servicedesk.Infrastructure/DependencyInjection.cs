@@ -74,8 +74,8 @@ public static class DependencyInjection
             var connectionString = configuration.GetConnectionString("Postgres")
                 ?? throw new InvalidOperationException(
                     "ConnectionStrings:Postgres is not configured. Set it via environment variable or user-secrets.");
-            return new NpgsqlDataSourceBuilder(
-                ApplyAutoPrepare(ApplyPoolLimits(connectionString, configuration), configuration)).Build();
+            return ServicedeskDataSource.Create(
+                ApplyAutoPrepare(ApplyPoolLimits(connectionString, configuration), configuration));
         });
 
         // v0.0.42 — IAuditLogger is decorated so every whitelisted audit

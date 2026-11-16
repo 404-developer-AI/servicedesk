@@ -21,10 +21,10 @@ public static class AdsolutTimesheetEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireFeature(UserFeature.AdsolutTimesheet);
 
-        group.MapGet("/receipts", GetReceipts).WithName("ListAdsolutSalesReceipts").WithOpenApi();
-        group.MapGet("/receipts/{id:guid}", GetReceiptDetail).WithName("GetAdsolutSalesReceiptDetail").WithOpenApi();
-        group.MapGet("/receipts/{id:guid}/hours", GetReceiptHours).WithName("GetAdsolutSalesReceiptHours").WithOpenApi();
-        group.MapPost("/receipts/{id:guid}/resync", ResyncReceipt).WithName("ResyncAdsolutSalesReceipt").WithOpenApi();
+        group.MapGet("/receipts", GetReceipts).WithName("ListAdsolutSalesReceipts");
+        group.MapGet("/receipts/{id:guid}", GetReceiptDetail).WithName("GetAdsolutSalesReceiptDetail");
+        group.MapGet("/receipts/{id:guid}/hours", GetReceiptHours).WithName("GetAdsolutSalesReceiptHours");
+        group.MapPost("/receipts/{id:guid}/resync", ResyncReceipt).WithName("ResyncAdsolutSalesReceipt");
 
         return group;
     }
