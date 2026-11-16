@@ -22,11 +22,12 @@ import {
   type FormAnswers,
   type FormField,
   type RichTextAnswer,
+  type ShortTextOrdersAnswer,
   type TicketFormDetail,
 } from "@/lib/forms-api";
 import { SafeHtml } from "@/components/SafeHtml";
 import { formDraftKey, useWorkspaceStore } from "@/stores/useWorkspaceStore";
-import { draftFromAnswers, draftToInput, emptyDraft, validateDraft, type FormDraft } from "@/lib/formDraft";
+import { draftFromAnswers, draftToInput, emptyDraft, shortTextSegments, validateDraft, type FormDraft } from "@/lib/formDraft";
 import { cn } from "@/lib/utils";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { FormFieldInput, formInputCn, type FieldPicker } from "./FormFieldInput";
@@ -390,6 +391,8 @@ function displayValue(f: FormField, v: FormAnswerValue | undefined, zone: string
       const r = v as { name?: string; email?: string };
       return r.name && r.email ? `${r.name} · ${r.email}` : r.name || r.email || "";
     }
+    case "ShortText":
+      return typeof v === "object" && !Array.isArray(v) && "text" in v ? (v as ShortTextOrdersAnswer).text : String(v);
     default:
       return String(v);
   }
@@ -439,6 +442,22 @@ export function FormAnswersView({ fields, answers }: { fields: FormField[]; answ
               <dt className="text-xs font-medium text-muted-foreground">{f.label}</dt>
               <dd className="mt-0.5 break-words text-sm">
                 <SafeHtml html={(v as RichTextAnswer).html} />
+              </dd>
+            </div>
+          );
+        }
+        if (f.type === "ShortText" && v && typeof v === "object" && !Array.isArray(v) && "orders" in v) {
+          // Linked orders render as the same pill as in a note; the global
+          // OrderPillHost opens the order on click.
+          const a = v as ShortTextOrdersAnswer;
+          return (
+            <div key={f.id} className={span}>
+              <dt className="text-xs font-medium text-muted-foreground">{f.label}</dt>
+              <dd className="mt-0.5 break-words text-sm">
+                {shortTextSegments(a.text, a.orders).map((s, i) => s.order ? (
+                  <span key={i} className="sd-order-mention" data-order-mention="true"
+                    data-order-id={s.order.id} data-label={s.order.label}>{s.text}</span>
+                ) : <React.Fragment key={i}>{s.text}</React.Fragment>)}
               </dd>
             </div>
           );

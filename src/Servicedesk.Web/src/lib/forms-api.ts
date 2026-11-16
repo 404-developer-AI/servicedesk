@@ -70,10 +70,16 @@ export type ArticleRowAnswer = { articleId: string; code?: string; name?: string
 export type RefAnswer = { id: string; name: string; email?: string };
 /// A rich-text LongText answer (v0.1.55); older answers are plain strings.
 export type RichTextAnswer = { html: string };
+/// An Adsolut order picked through `::` in a short text field: the order id
+/// and the label as it appears in the text.
+export type FormOrderRef = { id: string; label: string };
+/// A short text answer with linked orders; without orders it is a string.
+export type ShortTextOrdersAnswer = { text: string; orders: FormOrderRef[] };
 
 export type FormAnswerValue =
   | string
   | RichTextAnswer
+  | ShortTextOrdersAnswer
   | number
   | boolean
   | string[]
@@ -225,7 +231,7 @@ export const ticketFormsApi = {
 
 /// What the client sends: ids only for references (the server resolves and
 /// stores names), article rows as {articleId, quantity}.
-export type FormAnswersInput = Record<string, string | number | boolean | string[] | RichTextAnswer | { articleId: string; quantity: number }[]>;
+export type FormAnswersInput = Record<string, string | number | boolean | string[] | RichTextAnswer | ShortTextOrdersAnswer | { articleId: string; quantity: number }[]>;
 
 /// Query keys under ["ticket", id] so the TicketUpdated realtime push
 /// (useTicketRealtime) refreshes them with no extra wiring.

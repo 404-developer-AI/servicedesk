@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FormField } from "@/lib/forms-api";
-import { draftFromAnswers, draftToInput, emptyDraft, parseDuration, validateDraft } from "@/lib/formDraft";
+import { draftFromAnswers, draftToInput, emptyDraft, parseDuration, shortTextSegments, validateDraft } from "@/lib/formDraft";
 
 const field = (over: Partial<FormField> & Pick<FormField, "id" | "type">): FormField => ({
   label: over.id,
@@ -124,5 +124,31 @@ describe("template variables in defaults", () => {
 
   it("keeps the raw variables in the admin preview", () => {
     expect(emptyDraft(fields).who).toEqual({ kind: "text", value: "{{contact.firstName}} ({{contact.phone}})" });
+  });
+});
+
+describe("short text with linked orders", () => {
+  const ref = field({ id: "ref", type: "ShortText" });
+  const order = { id: "0b8f2c1e-1111-4a2b-9c3d-000000000001", label: "OR12 · Example Ltd" };
+
+  it("sends only orders whose label is still in the text", () => {
+    expect(draftToInput([ref], { ref: { kind: "text", value: "See OR12 · Example Ltd", orders: [order] } }))
+      .toEqual({ ref: { text: "See OR12 · Example Ltd", orders: [order] } });
+    expect(draftToInput([ref], { ref: { kind: "text", value: "See OR1", orders: [order] } }))
+      .toEqual({ ref: "See OR1" });
+  });
+
+  it("round-trips a stored answer into the draft", () => {
+    expect(draftFromAnswers([ref], { ref: { text: "x OR12 · Example Ltd", orders: [order] } }).ref)
+      .toEqual({ kind: "text", value: "x OR12 · Example Ltd", orders: [order] });
+    expect(draftFromAnswers([ref], { ref: "plain" }).ref).toEqual({ kind: "text", value: "plain" });
+  });
+
+  it("splits the text around each order's first free occurrence", () => {
+    expect(shortTextSegments("a OR12 · Example Ltd b", [order])).toEqual([
+      { text: "a " },
+      { text: "OR12 · Example Ltd", order },
+      { text: " b" },
+    ]);
   });
 });
