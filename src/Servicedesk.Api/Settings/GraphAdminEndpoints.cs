@@ -21,7 +21,7 @@ public static class GraphAdminEndpoints
 
         group.MapGet("/secret", async (IProtectedSecretStore secrets, CancellationToken ct) =>
             Results.Ok(new { configured = await secrets.HasAsync(ProtectedSecretKeys.GraphClientSecret, ct) }))
-            .WithName("GetGraphSecretStatus").WithOpenApi();
+            .WithName("GetGraphSecretStatus");
 
         group.MapPut("/secret", async (
             [FromBody] SetSecretRequest req,
@@ -43,7 +43,7 @@ public static class GraphAdminEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
                 Payload: new { configured = true }));
             return Results.NoContent();
-        }).WithName("SetGraphSecret").WithOpenApi();
+        }).WithName("SetGraphSecret");
 
         group.MapDelete("/secret", async (
             HttpContext http,
@@ -62,7 +62,7 @@ public static class GraphAdminEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
                 Payload: new { configured = false }));
             return Results.NoContent();
-        }).WithName("DeleteGraphSecret").WithOpenApi();
+        }).WithName("DeleteGraphSecret");
 
         group.MapGet("/folders", async (
             [FromQuery] string mailbox,
@@ -80,7 +80,7 @@ public static class GraphAdminEndpoints
             {
                 return Results.Ok(new { error = ex.GetType().Name + ": " + ex.Message });
             }
-        }).WithName("ListGraphFolders").WithOpenApi();
+        }).WithName("ListGraphFolders");
 
         group.MapPost("/test", async (
             [FromBody] TestConnectionRequest req,
@@ -98,7 +98,7 @@ public static class GraphAdminEndpoints
             {
                 return Results.Ok(new { ok = false, error = ex.GetType().Name + ": " + ex.Message });
             }
-        }).WithName("TestGraphConnection").WithOpenApi();
+        }).WithName("TestGraphConnection");
 
         return app;
     }

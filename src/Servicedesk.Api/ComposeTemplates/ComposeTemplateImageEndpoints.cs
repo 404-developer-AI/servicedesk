@@ -65,7 +65,7 @@ public static class ComposeTemplateImageEndpoints
             });
         }).WithTags("ComposeTemplates")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin)
-          .WithName("UploadComposeTemplateImage").WithOpenApi();
+          .WithName("UploadComposeTemplateImage");
 
         // GET /api/compose-templates/images/{id} — agent-readable download.
         // The template body's <img> tags point here; the compose editor, the
@@ -97,7 +97,7 @@ public static class ComposeTemplateImageEndpoints
                 stream, att.MimeType, fileName, inline == true);
         }).WithTags("ComposeTemplates")
           .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-          .WithName("GetComposeTemplateImage").WithOpenApi();
+          .WithName("GetComposeTemplateImage");
 
         return app;
     }

@@ -28,7 +28,7 @@ public static class CompanyEndpoints
             string? search, bool? includeInactive,
             ICompanyRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListCompaniesAsync(search, includeInactive ?? false, ct)))
-            .WithName("ListCompanies").WithOpenApi();
+            .WithName("ListCompanies");
 
         adminGroup.MapPost("/", async (
             [FromBody] CompanyRequest req, HttpContext http,
@@ -65,7 +65,7 @@ public static class CompanyEndpoints
                 Email: NormalizeEmail(req.Email)), ct);
             await AuditWrite(audit, http, "company.created", created.Id.ToString(), new { created.Id, created.Code, created.Name });
             return Results.Created($"/api/companies/{created.Id}", created);
-        }).WithName("CreateCompany").WithOpenApi();
+        }).WithName("CreateCompany");
 
         adminGroup.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
@@ -76,7 +76,7 @@ public static class CompanyEndpoints
                 DeleteResult.NotFound => Results.NotFound(),
                 _ => await DeletedOk(http, audit, "company.deleted", id),
             };
-        }).WithName("DeleteCompany").WithOpenApi();
+        }).WithName("DeleteCompany");
 
         // ---- Domains: admin-only (shaping portal visibility + mail auto-link) ----
         //
@@ -103,7 +103,7 @@ public static class CompanyEndpoints
             if (added is null) return Results.Conflict(new { error = "Domain already linked." });
             await AuditWrite(audit, http, "company.domain.added", id.ToString(), new { domain });
             return Results.Created($"/api/companies/{id}/domains/{added.Id}", added);
-        }).WithName("AddCompanyDomain").WithOpenApi();
+        }).WithName("AddCompanyDomain");
 
         adminGroup.MapDelete("/{id:guid}/domains/{domainId:guid}", async (
             Guid id, Guid domainId, HttpContext http,
@@ -113,7 +113,7 @@ public static class CompanyEndpoints
             if (!removed) return Results.NotFound();
             await AuditWrite(audit, http, "company.domain.removed", id.ToString(), new { domainId });
             return Results.NoContent();
-        }).WithName("RemoveCompanyDomain").WithOpenApi();
+        }).WithName("RemoveCompanyDomain");
 
         // ---- Agent+Admin: per-company read/update, contacts management ----
         var agentGroup = app.MapGroup("/api/companies")
@@ -126,7 +126,7 @@ public static class CompanyEndpoints
             if (company is null) return Results.NotFound();
             var domains = await repo.ListDomainsAsync(id, ct);
             return Results.Ok(new { company, domains });
-        }).WithName("GetCompany").WithOpenApi();
+        }).WithName("GetCompany");
 
         agentGroup.MapPut("/{id:guid}", async (
             Guid id, [FromBody] CompanyRequest req, HttpContext http,
@@ -168,7 +168,7 @@ public static class CompanyEndpoints
             if (updated is null) return Results.NotFound();
             await AuditWrite(audit, http, "company.updated", id.ToString(), new { updated.Id, updated.Code, updated.Name });
             return Results.Ok(updated);
-        }).WithName("UpdateCompany").WithOpenApi();
+        }).WithName("UpdateCompany");
 
         // includeInactive: this endpoint backs *display* lists (the company
         // detail page and the ticket side-panel's linked-contacts card), where
@@ -178,7 +178,7 @@ public static class CompanyEndpoints
         agentGroup.MapGet("/{id:guid}/contacts", async (
             Guid id, string? search, ICompanyRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListContactsAsync(id, search, includeInactive: true, ct)))
-            .WithName("ListCompanyContacts").WithOpenApi();
+            .WithName("ListCompanyContacts");
 
         // Link a contact to a company with an explicit role. The body is
         // optional; when omitted we default to 'primary' so existing flows
@@ -229,7 +229,7 @@ public static class CompanyEndpoints
                 });
             }
             return Results.Ok(link);
-        }).WithName("LinkCompanyContact").WithOpenApi();
+        }).WithName("LinkCompanyContact");
 
         agentGroup.MapDelete("/{id:guid}/contacts/{contactId:guid}", async (
             Guid id, Guid contactId, HttpContext http,
@@ -239,7 +239,7 @@ public static class CompanyEndpoints
             if (!removed) return Results.NotFound();
             await AuditWrite(audit, http, "company.contact.unlinked", id.ToString(), new { contactId });
             return Results.NoContent();
-        }).WithName("UnlinkCompanyContact").WithOpenApi();
+        }).WithName("UnlinkCompanyContact");
 
         // New in v0.0.9 step 2: inspect all role-tagged links for one contact.
         // The Contacts tab and the ticket side-panel both use this to render
@@ -247,7 +247,7 @@ public static class CompanyEndpoints
         agentGroup.MapGet("/{id:guid}/links", async (
             Guid id, ICompanyRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListCompanyLinksAsync(id, ct)))
-            .WithName("ListCompanyLinks").WithOpenApi();
+            .WithName("ListCompanyLinks");
 
         // v0.0.9 ToDo #4: lightweight active-company picker for the ticket
         // company-assignment dialog. Agents can already read any company they
@@ -261,7 +261,7 @@ public static class CompanyEndpoints
             return Results.Ok(results
                 .Take(20)
                 .Select(c => new { c.Id, c.Name, c.Code, c.ShortName, c.IsActive }));
-        }).WithName("CompanyPicker").WithOpenApi();
+        }).WithName("CompanyPicker");
 
         // ---- Contacts (unchanged, top-level, agent+admin) ----
         var contactGroup = app.MapGroup("/api/contacts")
@@ -277,7 +277,7 @@ public static class CompanyEndpoints
         contactGroup.MapGet("/", async (Guid? companyId, string? search,
             ICompanyRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListContactsAsync(companyId, search, includeInactive: false, ct)))
-            .WithName("ListContacts").WithOpenApi();
+            .WithName("ListContacts");
 
         // v0.0.34 — phone-keyed lookup for the Telavox call-popup. The
         // caller passes a raw "From" number from CAPI; the server normalises
@@ -301,7 +301,7 @@ public static class CompanyEndpoints
             }
             var items = await repo.LookupContactsByPhoneE164Async(e164, limit ?? 10, ct);
             return Results.Ok(new { phoneE164 = e164, items });
-        }).WithName("LookupContactsByPhone").WithOpenApi();
+        }).WithName("LookupContactsByPhone");
 
         // Paginated + enriched overview for the dedicated `/contacts` page.
         // Separate from `GET /api/contacts` so the existing picker/typeahead
@@ -325,13 +325,13 @@ public static class CompanyEndpoints
                 effectivePageSize,
                 ct);
             return Results.Ok(result);
-        }).WithName("BrowseContacts").WithOpenApi();
+        }).WithName("BrowseContacts");
 
         contactGroup.MapGet("/{id:guid}", async (Guid id, ICompanyRepository repo, CancellationToken ct) =>
         {
             var c = await repo.GetContactAsync(id, ct);
             return c is null ? Results.NotFound() : Results.Ok(c);
-        }).WithName("GetContact").WithOpenApi();
+        }).WithName("GetContact");
 
         // v0.0.9 ToDo #4: contact's role-annotated company links joined with
         // the target company's name/code — feeds the default list of the
@@ -340,7 +340,7 @@ public static class CompanyEndpoints
         contactGroup.MapGet("/{id:guid}/companies", async (
             Guid id, ICompanyRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListContactCompanyOptionsAsync(id, ct)))
-            .WithName("ListContactCompanies").WithOpenApi();
+            .WithName("ListContactCompanies");
 
         // v0.0.10: contact-scoped audit history for the detail page. Unions
         // events targeted at the contact with events whose payload references
@@ -365,7 +365,7 @@ public static class CompanyEndpoints
                 }),
                 nextCursor = page.NextCursor,
             });
-        }).WithName("ListContactAudit").WithOpenApi();
+        }).WithName("ListContactAudit");
 
         contactGroup.MapPost("/", async (
             [FromBody] ContactRequest req, HttpContext http,
@@ -397,7 +397,7 @@ public static class CompanyEndpoints
                 UpdatedUtc: now), req.CompanyId, role, ct);
             await AuditWrite(audit, http, "contact.created", created.Id.ToString(), new { created.Email, companyId = req.CompanyId, role = req.CompanyId is null ? null : role });
             return Results.Created($"/api/contacts/{created.Id}", created);
-        }).WithName("CreateContact").WithOpenApi();
+        }).WithName("CreateContact");
 
         contactGroup.MapPut("/{id:guid}", async (
             Guid id, [FromBody] ContactRequest req, HttpContext http,
@@ -443,7 +443,7 @@ public static class CompanyEndpoints
             }
             await AuditWrite(audit, http, "contact.updated", id.ToString(), new { updated.Email });
             return Results.Ok(updated);
-        }).WithName("UpdateContact").WithOpenApi();
+        }).WithName("UpdateContact");
 
         contactGroup.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
@@ -455,7 +455,7 @@ public static class CompanyEndpoints
                 DeleteResult.InUse => Results.Conflict(new { error = "Contact still has open tickets." }),
                 _ => await DeletedOk(http, audit, "contact.deleted", id),
             };
-        }).WithName("DeleteContact").WithOpenApi();
+        }).WithName("DeleteContact");
 
         return app;
     }

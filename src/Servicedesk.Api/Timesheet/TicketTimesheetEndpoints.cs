@@ -36,8 +36,7 @@ public static class TicketTimesheetEndpoints
             var totalMinutes = rows.Sum(r => r.Minutes);
             return Results.Ok(new { items = rows, totalMinutes });
         })
-        .WithName("ListTicketTimesheetEntries")
-        .WithOpenApi();
+        .WithName("ListTicketTimesheetEntries");
 
         group.MapGet("/{ticketId:guid}/reply-html", async (
             Guid ticketId,
@@ -51,8 +50,7 @@ public static class TicketTimesheetEndpoints
             var html = await svc.BuildReplyHtmlAsync(ticketId, ct);
             return Results.Ok(new { html });
         })
-        .WithName("GetTicketTimesheetReplyHtml")
-        .WithOpenApi();
+        .WithName("GetTicketTimesheetReplyHtml");
 
         // v0.0.87 — per-ticket hour-limit alert. Status drives both the
         // ticket-open warning popup and the "Time logged" remaining display.
@@ -68,8 +66,7 @@ public static class TicketTimesheetEndpoints
             var status = await svc.GetStatusAsync(ticketId, ct);
             return Results.Ok(status);
         })
-        .WithName("GetTicketTimeAlertStatus")
-        .WithOpenApi();
+        .WithName("GetTicketTimeAlertStatus");
 
         // Agent dismissed the warning: logged, limit unchanged, recurs on
         // the next open while still over limit. v0.0.89 — admins may pass
@@ -100,8 +97,7 @@ public static class TicketTimesheetEndpoints
             await svc.DismissAsync(ticketId, ActorContext.GetUserId(http), effectiveSilent, ct);
             return Results.NoContent();
         })
-        .WithName("DismissTicketTimeAlert")
-        .WithOpenApi();
+        .WithName("DismissTicketTimeAlert");
 
         // Agent raised the ticket's limit. The mandatory customer-confirmation
         // tick is enforced server-side, not just in the dialog.
@@ -129,8 +125,7 @@ public static class TicketTimesheetEndpoints
                 _ => Results.Json(new { error = "Could not raise the ticket limit." }, statusCode: 409),
             };
         })
-        .WithName("ExtendTicketTimeAlert")
-        .WithOpenApi();
+        .WithName("ExtendTicketTimeAlert");
 
         // v0.0.88 — agent disabled hour tracking for this ticket. The reason is
         // mandatory (re-checked server-side), posted as an internal note, and a
@@ -156,8 +151,7 @@ public static class TicketTimesheetEndpoints
                 _ => Results.Json(new { error = "Could not disable hour tracking." }, statusCode: 409),
             };
         })
-        .WithName("DisableTicketTimeAlert")
-        .WithOpenApi();
+        .WithName("DisableTicketTimeAlert");
 
         return app;
     }

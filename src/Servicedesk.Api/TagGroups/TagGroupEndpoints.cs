@@ -30,7 +30,7 @@ public static class TagGroupEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         admin.MapGet("/", async (ITagGroupRepository repo, CancellationToken ct) =>
-            Results.Ok((await repo.ListAsync(ct)).Select(MapGroup))).WithName("ListTagGroups").WithOpenApi();
+            Results.Ok((await repo.ListAsync(ct)).Select(MapGroup))).WithName("ListTagGroups");
 
         admin.MapPost("/", async (
             [FromBody] UpsertRequest req, HttpContext http, ITagGroupRepository repo,
@@ -47,7 +47,7 @@ public static class TagGroupEndpoints
             await AuditAsync(audit, http, "tag_group.create", id,
                 new { name, personalAck = req.PersonalAck ?? false, memberCount = members!.Count });
             return Results.Created($"/api/settings/tag-groups/{id}", MapGroup((await repo.GetAsync(id, ct))!));
-        }).WithName("CreateTagGroup").WithOpenApi();
+        }).WithName("CreateTagGroup");
 
         admin.MapPut("/{id:guid}", async (
             Guid id, [FromBody] UpsertRequest req, HttpContext http, ITagGroupRepository repo,
@@ -74,7 +74,7 @@ public static class TagGroupEndpoints
                     personalAck = req.PersonalAck ?? existing.PersonalAck, memberCount = members!.Count,
                 });
             return Results.Ok(MapGroup((await repo.GetAsync(id, ct))!));
-        }).WithName("UpdateTagGroup").WithOpenApi();
+        }).WithName("UpdateTagGroup");
 
         admin.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, ITagGroupRepository repo, IAuditLogger audit, CancellationToken ct) =>
@@ -85,7 +85,7 @@ public static class TagGroupEndpoints
             await repo.DeleteAsync(id, ct);
             await AuditAsync(audit, http, "tag_group.delete", id, new { existing.Name });
             return Results.NoContent();
-        }).WithName("DeleteTagGroup").WithOpenApi();
+        }).WithName("DeleteTagGroup");
 
         // @@-picker — same posture as /api/tagging-mailboxes/search.
         app.MapGet("/api/tag-groups/search", async (string? q, int? limit, ITagGroupRepository repo, CancellationToken ct) =>
@@ -95,8 +95,7 @@ public static class TagGroupEndpoints
         })
             .WithTags("TagGroupsAgent")
             .WithName("SearchTagGroups")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-            .WithOpenApi();
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         var tags = app.MapGroup("/api/group-tags")
             .WithTags("GroupTags")
@@ -111,7 +110,7 @@ public static class TagGroupEndpoints
                 isMember = items.Count > 0 || await groups.IsMemberOfAnyActiveAsync(userId, ct),
                 items = items.Select(MapTag),
             });
-        }).WithName("ListPendingGroupTags").WithOpenApi();
+        }).WithName("ListPendingGroupTags");
 
         tags.MapGet("/history", async (
             [FromQuery] DateTime? cursorUtc, [FromQuery] Guid? cursorId, [FromQuery] int? limit,
@@ -126,7 +125,7 @@ public static class TagGroupEndpoints
                 items = rows.Select(MapTag),
                 nextCursor = last is null ? null : new { createdUtc = last.CreatedUtc, id = last.Id },
             });
-        }).WithName("ListGroupTagHistory").WithOpenApi();
+        }).WithName("ListGroupTagHistory");
 
         tags.MapPost("/{id:guid}/ack", async (
             Guid id, HttpContext http, IGroupTagRepository repo, ITagGroupRepository groups,
@@ -163,7 +162,7 @@ public static class TagGroupEndpoints
                 logs.CreateLogger("GroupTags").LogWarning(ex, "Group tag refresh push failed for tag {TagId}.", id);
             }
             return Results.Ok(new { acked = true });
-        }).WithName("AckGroupTag").WithOpenApi();
+        }).WithName("AckGroupTag");
 
         return app;
     }

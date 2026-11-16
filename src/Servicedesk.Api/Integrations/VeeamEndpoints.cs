@@ -27,28 +27,28 @@ public static class VeeamEndpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapGet("/status", GetStatus).WithName("GetVeeamStatus").WithOpenApi();
+        admin.MapGet("/status", GetStatus).WithName("GetVeeamStatus");
 
-        admin.MapGet("/secret", GetSecretStatus).WithName("GetVeeamSecretStatus").WithOpenApi();
-        admin.MapPut("/secret", SetSecret).WithName("SetVeeamSecret").WithOpenApi();
-        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteVeeamSecret").WithOpenApi();
+        admin.MapGet("/secret", GetSecretStatus).WithName("GetVeeamSecretStatus");
+        admin.MapPut("/secret", SetSecret).WithName("SetVeeamSecret");
+        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteVeeamSecret");
 
-        admin.MapPut("/config", SetConfig).WithName("SetVeeamConfig").WithOpenApi();
-        admin.MapPut("/enabled", SetEnabled).WithName("SetVeeamEnabled").WithOpenApi();
-        admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetVeeamSyncInterval").WithOpenApi();
+        admin.MapPut("/config", SetConfig).WithName("SetVeeamConfig");
+        admin.MapPut("/enabled", SetEnabled).WithName("SetVeeamEnabled");
+        admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetVeeamSyncInterval");
 
-        admin.MapPost("/test-connection", TestConnection).WithName("TestVeeamConnection").WithOpenApi();
+        admin.MapPost("/test-connection", TestConnection).WithName("TestVeeamConnection");
 
-        admin.MapPost("/sync", SyncNow).WithName("SyncVeeamNow").WithOpenApi();
-        admin.MapGet("/companies", GetCompanies).WithName("GetVeeamCompanies").WithOpenApi();
+        admin.MapPost("/sync", SyncNow).WithName("SyncVeeamNow");
+        admin.MapGet("/companies", GetCompanies).WithName("GetVeeamCompanies");
 
-        admin.MapGet("/vspc-companies", GetVspcCompanies).WithName("GetVeeamVspcCompanies").WithOpenApi();
-        admin.MapGet("/links", GetCompanyLinks).WithName("GetVeeamCompanyLinks").WithOpenApi();
-        admin.MapGet("/linkable-companies", GetLinkableCompanies).WithName("GetVeeamLinkableCompanies").WithOpenApi();
-        admin.MapPost("/links", AddCompanyLink).WithName("AddVeeamCompanyLink").WithOpenApi();
-        admin.MapDelete("/links/{parentCompanyId:guid}/{vspcCompanyUid}", RemoveCompanyLink).WithName("RemoveVeeamCompanyLink").WithOpenApi();
+        admin.MapGet("/vspc-companies", GetVspcCompanies).WithName("GetVeeamVspcCompanies");
+        admin.MapGet("/links", GetCompanyLinks).WithName("GetVeeamCompanyLinks");
+        admin.MapGet("/linkable-companies", GetLinkableCompanies).WithName("GetVeeamLinkableCompanies");
+        admin.MapPost("/links", AddCompanyLink).WithName("AddVeeamCompanyLink");
+        admin.MapDelete("/links/{parentCompanyId:guid}/{vspcCompanyUid}", RemoveCompanyLink).WithName("RemoveVeeamCompanyLink");
 
-        admin.MapGet("/audit", GetAuditLog).WithName("GetVeeamAuditLog").WithOpenApi();
+        admin.MapGet("/audit", GetAuditLog).WithName("GetVeeamAuditLog");
 
         return app;
     }

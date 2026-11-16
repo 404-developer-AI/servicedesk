@@ -23,13 +23,13 @@ public static class ChecklistTemplateEndpoints
         {
             var list = await repo.ListAsync(ct);
             return Results.Ok(new { items = list.Select(MapSummary) });
-        }).WithName("ListChecklistTemplates").WithOpenApi();
+        }).WithName("ListChecklistTemplates");
 
         group.MapGet("/{id:guid}", async (Guid id, IChecklistTemplateRepository repo, CancellationToken ct) =>
         {
             var t = await repo.GetAsync(id, ct);
             return t is null ? Results.NotFound() : Results.Ok(MapDetail(t));
-        }).WithName("GetChecklistTemplate").WithOpenApi();
+        }).WithName("GetChecklistTemplate");
 
         group.MapPost("/", async (
             [FromBody] ChecklistTemplateRequest req, HttpContext http,
@@ -45,7 +45,7 @@ public static class ChecklistTemplateEndpoints
                 new { input.Name, itemCount = input.Definition.ItemCount, input.BlockClose, queueCount = input.QueueIds.Count });
             var created = await repo.GetAsync(id, ct);
             return Results.Created($"/api/settings/checklist-templates/{id}", MapDetail(created!));
-        }).WithName("CreateChecklistTemplate").WithOpenApi();
+        }).WithName("CreateChecklistTemplate");
 
         group.MapPut("/{id:guid}", async (
             Guid id, [FromBody] ChecklistTemplateRequest req, HttpContext http,
@@ -61,7 +61,7 @@ public static class ChecklistTemplateEndpoints
                 new { input.Name, itemCount = input.Definition.ItemCount, input.BlockClose, input.IsActive, queueCount = input.QueueIds.Count });
             var updated = await repo.GetAsync(id, ct);
             return Results.Ok(MapDetail(updated!));
-        }).WithName("UpdateChecklistTemplate").WithOpenApi();
+        }).WithName("UpdateChecklistTemplate");
 
         group.MapPost("/{id:guid}/duplicate", async (
             Guid id, HttpContext http, IChecklistTemplateRepository repo, IAuditLogger audit, CancellationToken ct) =>
@@ -78,7 +78,7 @@ public static class ChecklistTemplateEndpoints
             await Audit(audit, http, "checklist_template.duplicated", copyId, new { sourceId = id, name });
             var created = await repo.GetAsync(copyId, ct);
             return Results.Created($"/api/settings/checklist-templates/{copyId}", MapDetail(created!));
-        }).WithName("DuplicateChecklistTemplate").WithOpenApi();
+        }).WithName("DuplicateChecklistTemplate");
 
         group.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, IChecklistTemplateRepository repo, IAuditLogger audit, CancellationToken ct) =>
@@ -88,7 +88,7 @@ public static class ChecklistTemplateEndpoints
             await repo.DeleteAsync(id, ct);
             await Audit(audit, http, "checklist_template.deleted", id, new { existing.Name });
             return Results.NoContent();
-        }).WithName("DeleteChecklistTemplate").WithOpenApi();
+        }).WithName("DeleteChecklistTemplate");
 
         return app;
     }

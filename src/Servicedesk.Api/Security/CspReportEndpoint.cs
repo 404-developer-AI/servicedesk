@@ -86,7 +86,6 @@ public static class CspReportEndpoint
             return Results.NoContent();
         })
         .WithName("CspReport")
-        .WithOpenApi()
         .RequireRateLimiting("csp-report");
 
         return app;

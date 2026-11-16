@@ -25,7 +25,7 @@ public static class NotificationEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var rows = await repo.ListPendingForUserAsync(userId, ct);
             return Results.Ok(rows.Select(Map));
-        }).WithName("ListPendingNotifications").WithOpenApi();
+        }).WithName("ListPendingNotifications");
 
         group.MapGet("/history", async (
             HttpContext http, INotificationRepository repo,
@@ -53,7 +53,7 @@ public static class NotificationEndpoints
                     last.CreatedUtc.ToString("O"), last.Id);
             }
             return Results.Ok(new { items, nextCursor });
-        }).WithName("ListNotificationHistory").WithOpenApi();
+        }).WithName("ListNotificationHistory");
 
         group.MapPost("/{id:guid}/view", async (
             Guid id, HttpContext http, INotificationRepository repo, IAuditLogger audit,
@@ -77,7 +77,7 @@ public static class NotificationEndpoints
                     Payload: new { row.TicketId, row.EventId, row.NotificationType }));
             }
             return Results.NoContent();
-        }).WithName("MarkNotificationViewed").WithOpenApi();
+        }).WithName("MarkNotificationViewed");
 
         group.MapPost("/{id:guid}/ack", async (
             Guid id, HttpContext http, INotificationRepository repo, IAuditLogger audit,
@@ -101,7 +101,7 @@ public static class NotificationEndpoints
                     Payload: new { row.TicketId, row.EventId, row.NotificationType }));
             }
             return Results.NoContent();
-        }).WithName("MarkNotificationAcked").WithOpenApi();
+        }).WithName("MarkNotificationAcked");
 
         group.MapPost("/ack-all", async (
             HttpContext http, INotificationRepository repo, IAuditLogger audit,
@@ -122,7 +122,7 @@ public static class NotificationEndpoints
                     Payload: new { count }));
             }
             return Results.NoContent();
-        }).WithName("AckAllNotifications").WithOpenApi();
+        }).WithName("AckAllNotifications");
 
         return app;
     }

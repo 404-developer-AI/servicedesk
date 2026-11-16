@@ -22,10 +22,10 @@ public static class AssetsEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireFeature(UserFeature.Assets);
 
-        group.MapGet("/", ListAssets).WithName("ListAssets").WithOpenApi();
-        group.MapGet("/builds", ListBuilds).WithName("ListAssetBuilds").WithOpenApi();
-        group.MapGet("/sync-state", GetSyncState).WithName("GetAssetsSyncState").WithOpenApi();
-        group.MapGet("/{id:guid}", GetAsset).WithName("GetAsset").WithOpenApi();
+        group.MapGet("/", ListAssets).WithName("ListAssets");
+        group.MapGet("/builds", ListBuilds).WithName("ListAssetBuilds");
+        group.MapGet("/sync-state", GetSyncState).WithName("GetAssetsSyncState");
+        group.MapGet("/{id:guid}", GetAsset).WithName("GetAsset");
 
         return app;
     }

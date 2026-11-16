@@ -47,7 +47,7 @@ public static class HealthEndpoints
                 pollIntervalSeconds = await ResolvePollIntervalAsync(settings, ct),
             });
         })
-        .WithName("GetSystemHealth").WithOpenApi();
+        .WithName("GetSystemHealth");
 
         var admin = app.MapGroup("/api/admin/health")
             .WithTags("Health")
@@ -88,7 +88,7 @@ public static class HealthEndpoints
                 }),
             });
         })
-        .WithName("GetAdminHealth").WithOpenApi();
+        .WithName("GetAdminHealth");
 
         admin.MapGet("/integrations", async (
             IHealthReportCache cache,
@@ -131,7 +131,7 @@ public static class HealthEndpoints
                 }),
             });
         })
-        .WithName("GetIntegrationsHealth").WithOpenApi();
+        .WithName("GetIntegrationsHealth");
 
         admin.MapPost("/integrations/adsolut/sync/ack", async (
             HttpContext http,
@@ -162,7 +162,7 @@ public static class HealthEndpoints
                 ct);
             return Results.NoContent();
         })
-        .WithName("AcknowledgeAdsolutSync").WithOpenApi();
+        .WithName("AcknowledgeAdsolutSync");
 
         admin.MapPost("/mail-polling/sources/{sourceId:guid}/reset", async (
             Guid sourceId,
@@ -183,7 +183,7 @@ public static class HealthEndpoints
                 Payload: new { sourceId }));
             return Results.NoContent();
         })
-        .WithName("ResetMailPollingFailures").WithOpenApi();
+        .WithName("ResetMailPollingFailures");
 
         admin.MapPost("/attachment-jobs/requeue-dead-lettered", async (
             HttpContext http,
@@ -203,7 +203,7 @@ public static class HealthEndpoints
                 Payload: new { requeued }));
             return Results.Ok(new { requeued });
         })
-        .WithName("RequeueDeadLetteredAttachmentJobs").WithOpenApi();
+        .WithName("RequeueDeadLetteredAttachmentJobs");
 
         admin.MapPost("/attachment-jobs/cancel-dead-lettered", async (
             HttpContext http,
@@ -223,7 +223,7 @@ public static class HealthEndpoints
                 Payload: new { cancelled }));
             return Results.Ok(new { cancelled });
         })
-        .WithName("CancelDeadLetteredAttachmentJobs").WithOpenApi();
+        .WithName("CancelDeadLetteredAttachmentJobs");
 
         admin.MapPost("/tls-cert/renew", async (
             HttpContext http,
@@ -247,7 +247,7 @@ public static class HealthEndpoints
                 Payload: null));
             return Results.Accepted();
         })
-        .WithName("RenewTlsCert").WithOpenApi();
+        .WithName("RenewTlsCert");
 
         admin.MapPost("/blob-store/clear", async (
             HttpContext http,
@@ -267,7 +267,7 @@ public static class HealthEndpoints
                 Payload: null));
             return Results.NoContent();
         })
-        .WithName("ClearBlobStoreHealth").WithOpenApi();
+        .WithName("ClearBlobStoreHealth");
 
         // Wakes the blob GC for an immediate run. It still honours
         // Storage.BlobGcDryRun and the grace period — this only skips the wait.
@@ -289,7 +289,7 @@ public static class HealthEndpoints
                 Payload: null));
             return Results.NoContent();
         })
-        .WithName("RunBlobGc").WithOpenApi();
+        .WithName("RunBlobGc");
 
         admin.MapGet("/incidents", async (
             IIncidentLog incidents,
@@ -299,7 +299,7 @@ public static class HealthEndpoints
             var rows = await incidents.ListOpenRecentAsync(take ?? 200, ct);
             return Results.Ok(new { items = rows.Select(ToDto) });
         })
-        .WithName("ListIncidents").WithOpenApi();
+        .WithName("ListIncidents");
 
         admin.MapGet("/incidents/archive", async (
             IIncidentLog incidents,
@@ -311,7 +311,7 @@ public static class HealthEndpoints
             var rows = await incidents.ListArchiveAsync(subsystem, take ?? 100, skip ?? 0, ct);
             return Results.Ok(new { items = rows.Select(ToDto) });
         })
-        .WithName("ListIncidentArchive").WithOpenApi();
+        .WithName("ListIncidentArchive");
 
         admin.MapPost("/incidents/{id:long}/ack", async (
             long id,
@@ -339,7 +339,7 @@ public static class HealthEndpoints
                 Payload: new { id, subsystem, clearedState = cleared }));
             return subsystem is not null ? Results.NoContent() : Results.NotFound();
         })
-        .WithName("AcknowledgeIncident").WithOpenApi();
+        .WithName("AcknowledgeIncident");
 
         admin.MapPost("/incidents/ack-subsystem/{subsystem}", async (
             string subsystem,
@@ -363,7 +363,7 @@ public static class HealthEndpoints
                 Payload: new { subsystem, count, clearedState = cleared }));
             return Results.Ok(new { acknowledged = count });
         })
-        .WithName("AcknowledgeIncidentsBySubsystem").WithOpenApi();
+        .WithName("AcknowledgeIncidentsBySubsystem");
 
         return app;
     }

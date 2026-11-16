@@ -50,8 +50,7 @@ public static class PortalPublicEndpoints
             });
         })
         .WithName("PortalPublicConfig")
-        .WithTags("PortalPublic")
-        .WithOpenApi();
+        .WithTags("PortalPublic");
         return app;
     }
 }

@@ -151,7 +151,7 @@ public static class TicketEndpoints
                     : null,
                 nextOffset = page.NextOffset,
             });
-        }).WithName("ListTickets").WithOpenApi();
+        }).WithName("ListTickets");
 
         group.MapGet("/{id:guid}", async (
             Guid id, HttpContext http, ITicketRepository repo, ITicketTimelineReader timeline,
@@ -275,7 +275,7 @@ public static class TicketEndpoints
                 contactNotLinkedWarning = rel.RequesterCompanyLinkCount == 0
                     && await settings.GetAsync<bool>(SettingKeys.Tickets.ShowContactNotLinkedWarning, ct),
             });
-        }).WithName("GetTicket").WithOpenApi();
+        }).WithName("GetTicket");
 
         // v0.1.33 — older timeline events, paged backwards from the oldest
         // event the client has. `untilId` loads back to (and including) one
@@ -313,7 +313,7 @@ public static class TicketEndpoints
                 events = enriched.Events;
             }
             return Results.Ok(new { events, hasMore = slice.HasMore });
-        }).WithName("ListTicketEvents").WithOpenApi();
+        }).WithName("ListTicketEvents");
 
         group.MapPost("/", async (
             [FromBody] CreateTicketRequest req, HttpContext http,
@@ -480,7 +480,7 @@ public static class TicketEndpoints
                 companyAlert,
                 showAlertOnCreate,
             });
-        }).WithName("CreateTicket").WithOpenApi();
+        }).WithName("CreateTicket");
 
         // v0.0.42 — gate matching probe. Returns the active
         // gate:status_change triggers whose conditions + source/target
@@ -506,7 +506,7 @@ public static class TicketEndpoints
             {
                 items = matches.Select(g => ProjectGateForApi(g)),
             });
-        }).WithName("ListStatusGates").WithOpenApi();
+        }).WithName("ListStatusGates");
 
         // First-open title-review gate probe. The ticket detail page calls
         // this once on load; a non-null `gate` means the agent must review
@@ -527,7 +527,7 @@ public static class TicketEndpoints
 
             var gate = await gates.FindMatchingAsync(id, ct);
             return Results.Ok(new { gate = gate is null ? null : ProjectFirstOpenGateForApi(gate, id) });
-        }).WithName("ListOpenGates").WithOpenApi();
+        }).WithName("ListOpenGates");
 
         // Confirm a first-open title-review gate. Applies the (possibly
         // edited) subject, marks the ticket reviewed exactly once, and runs
@@ -636,7 +636,7 @@ public static class TicketEndpoints
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
-        }).WithName("ConfirmOpenGate").WithOpenApi();
+        }).WithName("ConfirmOpenGate");
 
         // v0.0.102 — bulk action: post a note/comment and/or change status,
         // queue, assignee, priority on many tickets in one request. Each
@@ -680,7 +680,7 @@ public static class TicketEndpoints
             {
                 return Results.BadRequest(new { error = ex.Message, code = ex.Code });
             }
-        }).WithName("BulkTicketAction").RequireRateLimiting("bulk").WithOpenApi();
+        }).WithName("BulkTicketAction").RequireRateLimiting("bulk");
 
         group.MapPatch("/{id:guid}", async (
             Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
@@ -946,7 +946,7 @@ public static class TicketEndpoints
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
-        }).WithName("UpdateTicket").WithOpenApi();
+        }).WithName("UpdateTicket");
 
         // Manual company assignment (v0.0.9 ToDo #4). Triggered when a ticket
         // was created with awaiting_company_assignment=true because the contact
@@ -1031,7 +1031,7 @@ public static class TicketEndpoints
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
-        }).WithName("AssignTicketCompany").WithOpenApi();
+        }).WithName("AssignTicketCompany");
 
         // v0.0.12: switch the requester on an ongoing ticket. The new contact's
         // company is re-resolved with the same decision tree used at ticket
@@ -1103,7 +1103,7 @@ public static class TicketEndpoints
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
-        }).WithName("ChangeTicketRequester").WithOpenApi();
+        }).WithName("ChangeTicketRequester");
 
         group.MapPost("/{id:guid}/events", async (
             Guid id, [FromBody] AddEventRequest req, HttpContext http,
@@ -1256,7 +1256,7 @@ public static class TicketEndpoints
             }
 
             return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
-        }).WithName("AddTicketEvent").WithOpenApi();
+        }).WithName("AddTicketEvent");
 
         group.MapPost("/{id:guid}/mail", async (
             Guid id, [FromBody] SendOutboundMailRequest req, HttpContext http,
@@ -1360,7 +1360,7 @@ public static class TicketEndpoints
             }
 
             return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
-        }).WithName("SendTicketMail").WithOpenApi();
+        }).WithName("SendTicketMail");
 
         // v0.0.61 — resolved signature preview for the compose window. Returns a
         // self-contained (data-URI) HTML block to pre-load directly under the
@@ -1384,7 +1384,7 @@ public static class TicketEndpoints
             var html = await signatures.ComposePreviewForQueueAsync(
                 ticket.QueueId, userId, isReply: reply ?? false, ct);
             return Results.Ok(new { html });
-        }).WithName("GetComposeSignature").WithOpenApi();
+        }).WithName("GetComposeSignature");
 
         // Ranked recipient suggestions for the composer's To/Cc/Bcc fields:
         // company contacts + previously-used addresses first (most-used on
@@ -1407,7 +1407,7 @@ public static class TicketEndpoints
 
             var items = await suggestions.ListAsync(context.CompanyId, q, limit: 20, ct);
             return Results.Ok(new { items });
-        }).WithName("GetRecipientSuggestions").WithOpenApi();
+        }).WithName("GetRecipientSuggestions");
 
         group.MapPut("/{id:guid}/events/{eventId:long}", async (
             Guid id, long eventId, [FromBody] UpdateEventRequest req, HttpContext http,
@@ -1461,7 +1461,7 @@ public static class TicketEndpoints
             await hub.Clients.Group($"ticket:{id}").SendAsync("TicketUpdated", id.ToString(), ct);
 
             return Results.Ok(updated);
-        }).WithName("UpdateTicketEvent").WithOpenApi();
+        }).WithName("UpdateTicketEvent");
 
         group.MapGet("/{id:guid}/events/{eventId:long}/revisions", async (
             Guid id, long eventId, HttpContext http,
@@ -1476,7 +1476,7 @@ public static class TicketEndpoints
 
             var revisions = await tickets.GetEventRevisionsAsync(id, eventId, ct);
             return Results.Ok(revisions);
-        }).WithName("GetEventRevisions").WithOpenApi();
+        }).WithName("GetEventRevisions");
 
         // ── Pin / Unpin events ──
 
@@ -1506,7 +1506,7 @@ public static class TicketEndpoints
 
             await hub.Clients.Group($"ticket:{id}").SendAsync("TicketUpdated", id.ToString(), ct);
             return Results.Ok(pin);
-        }).WithName("PinTicketEvent").WithOpenApi();
+        }).WithName("PinTicketEvent");
 
         group.MapDelete("/{id:guid}/events/{eventId:long}/pin", async (
             Guid id, long eventId, HttpContext http,
@@ -1534,7 +1534,7 @@ public static class TicketEndpoints
 
             await hub.Clients.Group($"ticket:{id}").SendAsync("TicketUpdated", id.ToString(), ct);
             return Results.NoContent();
-        }).WithName("UnpinTicketEvent").WithOpenApi();
+        }).WithName("UnpinTicketEvent");
 
         group.MapPatch("/{id:guid}/events/{eventId:long}/pin", async (
             Guid id, long eventId, [FromBody] UpdatePinRemarkRequest req, HttpContext http,
@@ -1562,7 +1562,7 @@ public static class TicketEndpoints
 
             await hub.Clients.Group($"ticket:{id}").SendAsync("TicketUpdated", id.ToString(), ct);
             return Results.Ok(pin);
-        }).WithName("UpdatePinRemark").WithOpenApi();
+        }).WithName("UpdatePinRemark");
 
         // v0.0.23 ticket merge: lightweight typeahead used by the merge dialog
         // to pick a target ticket. Filters out the source ticket, soft-deleted
@@ -1600,7 +1600,7 @@ public static class TicketEndpoints
                 ct: ct,
                 projectsOnly: projectsOnly == true);
             return Results.Ok(new { items = hits });
-        }).WithName("PickTicket").WithOpenApi();
+        }).WithName("PickTicket");
 
         // v0.0.23 ticket merge endpoint. Idempotency-by-construction: if the
         // source is already merged the repository returns AlreadyMerged and we
@@ -1712,7 +1712,7 @@ public static class TicketEndpoints
                 movedEventCount = result.MovedEventCount,
                 crossCustomer = result.CrossCustomer,
             });
-        }).WithName("MergeTicket").WithOpenApi();
+        }).WithName("MergeTicket");
 
         // Manual Main/Sub-ticket linking. Sets parent_ticket_id on the
         // current ticket (the child). Different from merge (which closes
@@ -1798,7 +1798,7 @@ public static class TicketEndpoints
                 parentTicketId = req.ParentTicketId,
                 parentNumber = parent.Number,
             });
-        }).WithName("LinkTicketParent").WithOpenApi();
+        }).WithName("LinkTicketParent");
 
         group.MapDelete("/{id:guid}/link-parent", async (
             Guid id, HttpContext http,
@@ -1835,7 +1835,7 @@ public static class TicketEndpoints
             }
 
             return Results.NoContent();
-        }).WithName("UnlinkTicketParent").WithOpenApi();
+        }).WithName("UnlinkTicketParent");
 
         // v0.0.39 — list active manual-trigger presets visible from this
         // ticket. Each row carries the ticket-type metadata so the
@@ -1860,7 +1860,7 @@ public static class TicketEndpoints
 
             var list = await presets.ListAvailablePresetsAsync(id, ct);
             return Results.Ok(list);
-        }).WithName("ListLinkedTicketPresets").WithOpenApi();
+        }).WithName("ListLinkedTicketPresets");
 
         // v0.0.39 — server-rendered prefill for a single preset. The
         // drawer opens with this DTO; the agent reviews/edits and
@@ -1884,7 +1884,7 @@ public static class TicketEndpoints
             var prefill = await presets.ResolvePrefillAsync(triggerId, id, userId, ct);
             if (prefill is null) return Results.NotFound();
             return Results.Ok(prefill);
-        }).WithName("GetLinkedTicketPresetPrefill").WithOpenApi();
+        }).WithName("GetLinkedTicketPresetPrefill");
 
         // v0.0.23 ticket split endpoint. Splits a multi-question mail off into
         // a fresh ticket with system defaults for queue/priority/status. The
@@ -1984,7 +1984,7 @@ public static class TicketEndpoints
                 newTicketNumber = result.NewTicketNumber,
                 sourceNumber = result.SourceNumber,
             });
-        }).WithName("SplitTicket").WithOpenApi();
+        }).WithName("SplitTicket");
 
         return app;
     }
@@ -2013,7 +2013,7 @@ public static class TicketEndpoints
                 elapsedMs = sw.ElapsedMilliseconds,
                 rowsPerSecond = inserted / Math.Max(1, sw.Elapsed.TotalSeconds),
             });
-        }).WithName("DevSeedTickets").WithOpenApi();
+        }).WithName("DevSeedTickets");
 
         group.MapGet("/benchmarks", async (ITicketRepository repo, CancellationToken ct) =>
         {
@@ -2048,7 +2048,7 @@ public static class TicketEndpoints
             });
 
             return Results.Ok(new { benchmarks = results });
-        }).WithName("DevBenchmarks").WithOpenApi();
+        }).WithName("DevBenchmarks");
 
         group.MapPost("/seed-agent", async (
             [FromQuery] string email,
@@ -2071,7 +2071,7 @@ public static class TicketEndpoints
                 return Results.Conflict(new { error = "User already exists" });
 
             return Results.Ok(new { id, email, role = "Agent" });
-        }).WithName("DevSeedAgent").WithOpenApi();
+        }).WithName("DevSeedAgent");
 
         return app;
     }

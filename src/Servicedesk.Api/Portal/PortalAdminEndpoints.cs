@@ -23,32 +23,32 @@ public static class PortalAdminEndpoints
             .WithTags("PortalAdmin")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        agent.MapGet("/accounts", ListAccounts).WithName("PortalAdminListAccounts").WithOpenApi();
-        agent.MapGet("/accounts/{userId:guid}", GetAccount).WithName("PortalAdminGetAccount").WithOpenApi();
-        agent.MapGet("/accounts/by-contact/{contactId:guid}", GetByContact).WithName("PortalAdminGetByContact").WithOpenApi();
-        agent.MapGet("/accounts/by-ticket/{ticketId:guid}", GetByTicket).WithName("PortalAdminGetByTicket").WithOpenApi();
-        agent.MapPost("/accounts/{userId:guid}/approve", Approve).WithName("PortalAdminApprove").WithOpenApi();
-        agent.MapPost("/accounts/{userId:guid}/reject", Reject).WithName("PortalAdminReject").WithOpenApi();
-        agent.MapPost("/accounts/{userId:guid}/deactivate", Deactivate).WithName("PortalAdminDeactivate").WithOpenApi();
-        agent.MapPost("/accounts/{userId:guid}/reactivate", Reactivate).WithName("PortalAdminReactivate").WithOpenApi();
-        agent.MapPost("/accounts/{userId:guid}/reset-totp", ResetTotp).WithName("PortalAdminResetTotp").WithOpenApi();
-        agent.MapPost("/accounts/{userId:guid}/revoke-sessions", RevokeSessions).WithName("PortalAdminRevokeSessions").WithOpenApi();
-        agent.MapPost("/accounts/{userId:guid}/resend-verification", ResendVerification).WithName("PortalAdminResendVerification").WithOpenApi();
-        agent.MapGet("/invitations", ListInvitations).WithName("PortalAdminListInvitations").WithOpenApi();
-        agent.MapPost("/invitations", Invite).WithName("PortalAdminInvite").WithOpenApi();
-        agent.MapPut("/contacts/{contactId:guid}/companies/{companyId:guid}/role", SetPortalRole).WithName("PortalAdminSetPortalRole").WithOpenApi();
-        agent.MapPost("/invitations/{id:guid}/resend", ResendInvitation).WithName("PortalAdminResendInvitation").WithOpenApi();
-        agent.MapDelete("/invitations/{id:guid}", RevokeInvitation).WithName("PortalAdminRevokeInvitation").WithOpenApi();
+        agent.MapGet("/accounts", ListAccounts).WithName("PortalAdminListAccounts");
+        agent.MapGet("/accounts/{userId:guid}", GetAccount).WithName("PortalAdminGetAccount");
+        agent.MapGet("/accounts/by-contact/{contactId:guid}", GetByContact).WithName("PortalAdminGetByContact");
+        agent.MapGet("/accounts/by-ticket/{ticketId:guid}", GetByTicket).WithName("PortalAdminGetByTicket");
+        agent.MapPost("/accounts/{userId:guid}/approve", Approve).WithName("PortalAdminApprove");
+        agent.MapPost("/accounts/{userId:guid}/reject", Reject).WithName("PortalAdminReject");
+        agent.MapPost("/accounts/{userId:guid}/deactivate", Deactivate).WithName("PortalAdminDeactivate");
+        agent.MapPost("/accounts/{userId:guid}/reactivate", Reactivate).WithName("PortalAdminReactivate");
+        agent.MapPost("/accounts/{userId:guid}/reset-totp", ResetTotp).WithName("PortalAdminResetTotp");
+        agent.MapPost("/accounts/{userId:guid}/revoke-sessions", RevokeSessions).WithName("PortalAdminRevokeSessions");
+        agent.MapPost("/accounts/{userId:guid}/resend-verification", ResendVerification).WithName("PortalAdminResendVerification");
+        agent.MapGet("/invitations", ListInvitations).WithName("PortalAdminListInvitations");
+        agent.MapPost("/invitations", Invite).WithName("PortalAdminInvite");
+        agent.MapPut("/contacts/{contactId:guid}/companies/{companyId:guid}/role", SetPortalRole).WithName("PortalAdminSetPortalRole");
+        agent.MapPost("/invitations/{id:guid}/resend", ResendInvitation).WithName("PortalAdminResendInvitation");
+        agent.MapDelete("/invitations/{id:guid}", RevokeInvitation).WithName("PortalAdminRevokeInvitation");
 
         var admin = app.MapGroup("/api/portal/admin")
             .WithTags("PortalAdmin")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
-        admin.MapGet("/status", Status).WithName("PortalAdminStatus").WithOpenApi();
-        admin.MapDelete("/accounts/{userId:guid}", Delete).WithName("PortalAdminDeleteAccount").WithOpenApi();
-        admin.MapPost("/accounts/{userId:guid}/impersonate", Impersonate).WithName("PortalAdminImpersonate").WithOpenApi();
-        admin.MapGet("/turnstile/secret", GetTurnstileSecretStatus).WithName("PortalAdminTurnstileSecretStatus").WithOpenApi();
-        admin.MapPut("/turnstile/secret", SetTurnstileSecret).WithName("PortalAdminSetTurnstileSecret").WithOpenApi();
-        admin.MapDelete("/turnstile/secret", DeleteTurnstileSecret).WithName("PortalAdminDeleteTurnstileSecret").WithOpenApi();
+        admin.MapGet("/status", Status).WithName("PortalAdminStatus");
+        admin.MapDelete("/accounts/{userId:guid}", Delete).WithName("PortalAdminDeleteAccount");
+        admin.MapPost("/accounts/{userId:guid}/impersonate", Impersonate).WithName("PortalAdminImpersonate");
+        admin.MapGet("/turnstile/secret", GetTurnstileSecretStatus).WithName("PortalAdminTurnstileSecretStatus");
+        admin.MapPut("/turnstile/secret", SetTurnstileSecret).WithName("PortalAdminSetTurnstileSecret");
+        admin.MapDelete("/turnstile/secret", DeleteTurnstileSecret).WithName("PortalAdminDeleteTurnstileSecret");
         return app;
     }
 

@@ -19,7 +19,7 @@ public static class QueueAccessEndpoints
         {
             var queueIds = await svc.GetAccessibleQueueIdsAsync(userId, "Agent", ct);
             return Results.Ok(new { queueIds });
-        }).WithName("GetQueueAccess").WithOpenApi();
+        }).WithName("GetQueueAccess");
 
         group.MapPut("/{userId:guid}", async (
             Guid userId, [FromBody] SetQueueAccessRequest req,
@@ -38,14 +38,14 @@ public static class QueueAccessEndpoints
                 Payload: new { queueIds = req.QueueIds }));
 
             return Results.NoContent();
-        }).WithName("SetQueueAccess").WithOpenApi();
+        }).WithName("SetQueueAccess");
 
         group.MapGet("/by-queue/{queueId:guid}", async (
             Guid queueId, IQueueAccessService svc, CancellationToken ct) =>
         {
             var userIds = await svc.GetUsersForQueueAsync(queueId, ct);
             return Results.Ok(new { userIds });
-        }).WithName("GetQueueAccessByQueue").WithOpenApi();
+        }).WithName("GetQueueAccessByQueue");
 
         return app;
     }

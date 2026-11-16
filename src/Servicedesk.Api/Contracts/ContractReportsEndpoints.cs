@@ -30,29 +30,29 @@ public static class ContractReportsEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         // Template CRUD.
-        group.MapGet("/templates", ListTemplates).WithName("ListReportTemplates").WithOpenApi();
-        group.MapGet("/templates/{id:guid}", GetTemplate).WithName("GetReportTemplate").WithOpenApi();
-        group.MapPost("/templates", CreateTemplate).WithName("CreateReportTemplate").WithOpenApi();
-        group.MapPut("/templates/{id:guid}", UpdateTemplate).WithName("UpdateReportTemplate").WithOpenApi();
-        group.MapDelete("/templates/{id:guid}", DeleteTemplate).WithName("DeleteReportTemplate").WithOpenApi();
+        group.MapGet("/templates", ListTemplates).WithName("ListReportTemplates");
+        group.MapGet("/templates/{id:guid}", GetTemplate).WithName("GetReportTemplate");
+        group.MapPost("/templates", CreateTemplate).WithName("CreateReportTemplate");
+        group.MapPut("/templates/{id:guid}", UpdateTemplate).WithName("UpdateReportTemplate");
+        group.MapDelete("/templates/{id:guid}", DeleteTemplate).WithName("DeleteReportTemplate");
 
         // Authoring metadata.
-        group.MapGet("/columns", GetColumns).WithName("ListReportColumns").WithOpenApi();
-        group.MapGet("/tokens", GetTokens).WithName("ListReportTokens").WithOpenApi();
-        group.MapGet("/defaults", GetDefaults).WithName("GetReportDefaults").WithOpenApi();
+        group.MapGet("/columns", GetColumns).WithName("ListReportColumns");
+        group.MapGet("/tokens", GetTokens).WithName("ListReportTokens");
+        group.MapGet("/defaults", GetDefaults).WithName("GetReportDefaults");
 
         // Reporting contacts (per company).
         group.MapGet("/companies/{companyId:guid}/reporting-contacts", ListReportingContacts)
-            .WithName("ListReportingContacts").WithOpenApi();
+            .WithName("ListReportingContacts");
         group.MapPut("/companies/{companyId:guid}/reporting-contacts/{contactId:guid}", SetReportingContact)
-            .WithName("SetReportingContact").WithOpenApi();
+            .WithName("SetReportingContact");
 
         // Preview + send.
-        group.MapPost("/companies/{companyId:guid}/preview", Preview).WithName("PreviewReport").WithOpenApi();
-        group.MapPost("/companies/{companyId:guid}/send", Send).WithName("SendReport").WithOpenApi();
+        group.MapPost("/companies/{companyId:guid}/preview", Preview).WithName("PreviewReport");
+        group.MapPost("/companies/{companyId:guid}/send", Send).WithName("SendReport");
 
         // "Last sent" stamps for the matching list + detail header.
-        group.MapGet("/last-sent", ListLastSent).WithName("ListReportLastSent").WithOpenApi();
+        group.MapGet("/last-sent", ListLastSent).WithName("ListReportLastSent");
 
         return group;
     }

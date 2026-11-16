@@ -23,9 +23,9 @@ public static class ContractArticlesEndpoints
             .WithTags("Contracts")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        group.MapGet("", ListArticles).WithName("ListAdsolutArticles").WithOpenApi();
-        group.MapPost("/sync", TriggerSync).WithName("TriggerAdsolutArticlesSync").WithOpenApi();
-        group.MapPost("/{id:guid}/resync", ResyncArticle).WithName("ResyncAdsolutArticle").WithOpenApi();
+        group.MapGet("", ListArticles).WithName("ListAdsolutArticles");
+        group.MapPost("/sync", TriggerSync).WithName("TriggerAdsolutArticlesSync");
+        group.MapPost("/{id:guid}/resync", ResyncArticle).WithName("ResyncAdsolutArticle");
 
         return group;
     }

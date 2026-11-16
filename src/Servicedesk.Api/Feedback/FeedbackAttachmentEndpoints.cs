@@ -62,7 +62,7 @@ public static class FeedbackAttachmentEndpoints
                 size = writeResult.SizeBytes,
                 filename = safeFilename,
             });
-        }).WithName("UploadFeedbackAttachment").WithOpenApi();
+        }).WithName("UploadFeedbackAttachment");
 
         // GET /api/feedback/entries/{id}/attachments/{attachmentId} — download.
         group.MapGet("/{id:guid}/attachments/{attachmentId:guid}", async (
@@ -100,7 +100,7 @@ public static class FeedbackAttachmentEndpoints
             // Inline only for inline-safe types (audit v0.1.1 #2).
             return Servicedesk.Api.Tickets.AttachmentResponse.File(
                 stream, att.MimeType, att.OriginalFilename, inline == true);
-        }).WithName("GetFeedbackAttachment").WithOpenApi();
+        }).WithName("GetFeedbackAttachment");
 
         return app;
     }

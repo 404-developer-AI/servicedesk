@@ -60,7 +60,7 @@ public static class SearchEndpoints
                 minQueryLength = minLen,
                 debounceMs,
             });
-        }).WithName("GlobalSearch").WithOpenApi();
+        }).WithName("GlobalSearch");
 
         // Full-page search: one source, paginated.
         group.MapGet("/full", async (
@@ -114,7 +114,7 @@ public static class SearchEndpoints
                 availableKinds = available,
                 minQueryLength = minLen,
             });
-        }).WithName("GlobalSearchFull").WithOpenApi();
+        }).WithName("GlobalSearchFull");
 
         return app;
     }

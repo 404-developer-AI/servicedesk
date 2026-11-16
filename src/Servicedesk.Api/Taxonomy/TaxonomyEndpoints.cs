@@ -51,13 +51,13 @@ public static class TaxonomyEndpoints
         // needs the catalog to render its buttons. Writes stay admin-only.
         group.MapGet("/ticket-types", async (ITaxonomyRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListTicketTypesAsync(ct)))
-            .WithName("ListTicketTypes").WithOpenApi();
+            .WithName("ListTicketTypes");
 
         group.MapGet("/ticket-types/{id:guid}", async (Guid id, ITaxonomyRepository repo, CancellationToken ct) =>
         {
             var t = await repo.GetTicketTypeAsync(id, ct);
             return t is null ? Results.NotFound() : Results.Ok(t);
-        }).WithName("GetTicketType").WithOpenApi();
+        }).WithName("GetTicketType");
 
         group.MapPost("/ticket-types", async (
             [FromBody] TicketTypeRequest req, HttpContext http,
@@ -87,7 +87,7 @@ public static class TaxonomyEndpoints
                 UpdatedUtc: now), ct);
             await AuditWrite(audit, http, "taxonomy.ticket_type.created", created.Id.ToString(), created);
             return Results.Created($"/api/taxonomy/ticket-types/{created.Id}", created);
-        }).WithName("CreateTicketType").WithOpenApi()
+        }).WithName("CreateTicketType")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPut("/ticket-types/{id:guid}", async (
@@ -108,7 +108,7 @@ public static class TaxonomyEndpoints
             if (updated is null) return Results.NotFound();
             await AuditWrite(audit, http, "taxonomy.ticket_type.updated", id.ToString(), updated);
             return Results.Ok(updated);
-        }).WithName("UpdateTicketType").WithOpenApi()
+        }).WithName("UpdateTicketType")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapDelete("/ticket-types/{id:guid}", async (
@@ -116,7 +116,7 @@ public static class TaxonomyEndpoints
         {
             var result = await repo.DeleteTicketTypeAsync(id, ct);
             return await DeleteResultToHttp(result, http, audit, "taxonomy.ticket_type.deleted", id);
-        }).WithName("DeleteTicketType").WithOpenApi()
+        }).WithName("DeleteTicketType")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 
@@ -239,7 +239,7 @@ public static class TaxonomyEndpoints
                     byQueue.TryGetValue(q.Id, out var s) ? s : Array.Empty<QueueInboundMailbox>()))
                 .ToList();
             return Results.Ok(result);
-        }).WithName("ListQueues").WithOpenApi();
+        }).WithName("ListQueues");
 
         group.MapGet("/queues/{id:guid}", async (
             Guid id, ITaxonomyRepository repo, IQueueInboundMailboxRepository sources, CancellationToken ct) =>
@@ -248,7 +248,7 @@ public static class TaxonomyEndpoints
             if (q is null) return Results.NotFound();
             var srcs = await sources.ListByQueueAsync(id, ct);
             return Results.Ok(ToQueueResponse(q, srcs));
-        }).WithName("GetQueue").WithOpenApi();
+        }).WithName("GetQueue");
 
         group.MapPost("/queues", async (
             [FromBody] QueueRequest req, HttpContext http,
@@ -290,7 +290,7 @@ public static class TaxonomyEndpoints
             var response = ToQueueResponse(fresh, srcs);
             await AuditWrite(audit, http, "taxonomy.queue.created", created.Id.ToString(), response);
             return Results.Created($"/api/taxonomy/queues/{created.Id}", response);
-        }).WithName("CreateQueue").WithOpenApi()
+        }).WithName("CreateQueue")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPut("/queues/{id:guid}", async (
@@ -344,7 +344,7 @@ public static class TaxonomyEndpoints
             var response = ToQueueResponse(fresh, srcs);
             await AuditWrite(audit, http, "taxonomy.queue.updated", id.ToString(), response);
             return Results.Ok(response);
-        }).WithName("UpdateQueue").WithOpenApi()
+        }).WithName("UpdateQueue")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapDelete("/queues/{id:guid}", async (
@@ -352,7 +352,7 @@ public static class TaxonomyEndpoints
         {
             var result = await repo.DeleteQueueAsync(id, ct);
             return await DeleteResultToHttp(result, http, audit, "taxonomy.queue.deleted", id);
-        }).WithName("DeleteQueue").WithOpenApi()
+        }).WithName("DeleteQueue")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 
@@ -416,13 +416,13 @@ public static class TaxonomyEndpoints
     {
         group.MapGet("/priorities", async (ITaxonomyRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListPrioritiesAsync(ct)))
-            .WithName("ListPriorities").WithOpenApi();
+            .WithName("ListPriorities");
 
         group.MapGet("/priorities/{id:guid}", async (Guid id, ITaxonomyRepository repo, CancellationToken ct) =>
         {
             var p = await repo.GetPriorityAsync(id, ct);
             return p is null ? Results.NotFound() : Results.Ok(p);
-        }).WithName("GetPriority").WithOpenApi();
+        }).WithName("GetPriority");
 
         group.MapPost("/priorities", async (
             [FromBody] PriorityRequest req, HttpContext http,
@@ -436,7 +436,7 @@ public static class TaxonomyEndpoints
                 req.SortOrder, req.IsActive, IsSystem: false, req.IsDefault, now, now), ct);
             await AuditWrite(audit, http, "taxonomy.priority.created", created.Id.ToString(), created);
             return Results.Created($"/api/taxonomy/priorities/{created.Id}", created);
-        }).WithName("CreatePriority").WithOpenApi()
+        }).WithName("CreatePriority")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPut("/priorities/{id:guid}", async (
@@ -450,7 +450,7 @@ public static class TaxonomyEndpoints
             if (updated is null) return Results.NotFound();
             await AuditWrite(audit, http, "taxonomy.priority.updated", id.ToString(), updated);
             return Results.Ok(updated);
-        }).WithName("UpdatePriority").WithOpenApi()
+        }).WithName("UpdatePriority")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapDelete("/priorities/{id:guid}", async (
@@ -458,7 +458,7 @@ public static class TaxonomyEndpoints
         {
             var result = await repo.DeletePriorityAsync(id, ct);
             return await DeleteResultToHttp(result, http, audit, "taxonomy.priority.deleted", id);
-        }).WithName("DeletePriority").WithOpenApi()
+        }).WithName("DeletePriority")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 
@@ -480,13 +480,13 @@ public static class TaxonomyEndpoints
     {
         group.MapGet("/statuses", async (ITaxonomyRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListStatusesAsync(ct)))
-            .WithName("ListStatuses").WithOpenApi();
+            .WithName("ListStatuses");
 
         group.MapGet("/statuses/{id:guid}", async (Guid id, ITaxonomyRepository repo, CancellationToken ct) =>
         {
             var s = await repo.GetStatusAsync(id, ct);
             return s is null ? Results.NotFound() : Results.Ok(s);
-        }).WithName("GetStatus").WithOpenApi();
+        }).WithName("GetStatus");
 
         group.MapPost("/statuses", async (
             [FromBody] StatusRequest req, HttpContext http,
@@ -502,7 +502,7 @@ public static class TaxonomyEndpoints
                 req.SortOrder, req.IsActive, IsSystem: false, req.IsDefault, now, now), ct);
             await AuditWrite(audit, http, "taxonomy.status.created", created.Id.ToString(), created);
             return Results.Created($"/api/taxonomy/statuses/{created.Id}", created);
-        }).WithName("CreateStatus").WithOpenApi()
+        }).WithName("CreateStatus")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPut("/statuses/{id:guid}", async (
@@ -518,7 +518,7 @@ public static class TaxonomyEndpoints
             if (updated is null) return Results.NotFound();
             await AuditWrite(audit, http, "taxonomy.status.updated", id.ToString(), updated);
             return Results.Ok(updated);
-        }).WithName("UpdateStatus").WithOpenApi()
+        }).WithName("UpdateStatus")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapDelete("/statuses/{id:guid}", async (
@@ -526,7 +526,7 @@ public static class TaxonomyEndpoints
         {
             var result = await repo.DeleteStatusAsync(id, ct);
             return await DeleteResultToHttp(result, http, audit, "taxonomy.status.deleted", id);
-        }).WithName("DeleteStatus").WithOpenApi()
+        }).WithName("DeleteStatus")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 
@@ -543,13 +543,13 @@ public static class TaxonomyEndpoints
     {
         group.MapGet("/categories", async (ITaxonomyRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListCategoriesAsync(ct)))
-            .WithName("ListCategories").WithOpenApi();
+            .WithName("ListCategories");
 
         group.MapGet("/categories/{id:guid}", async (Guid id, ITaxonomyRepository repo, CancellationToken ct) =>
         {
             var c = await repo.GetCategoryAsync(id, ct);
             return c is null ? Results.NotFound() : Results.Ok(c);
-        }).WithName("GetCategory").WithOpenApi();
+        }).WithName("GetCategory");
 
         group.MapPost("/categories", async (
             [FromBody] CategoryRequest req, HttpContext http,
@@ -562,7 +562,7 @@ public static class TaxonomyEndpoints
                 req.Description ?? "", req.SortOrder, req.IsActive, IsSystem: false, now, now), ct);
             await AuditWrite(audit, http, "taxonomy.category.created", created.Id.ToString(), created);
             return Results.Created($"/api/taxonomy/categories/{created.Id}", created);
-        }).WithName("CreateCategory").WithOpenApi()
+        }).WithName("CreateCategory")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPut("/categories/{id:guid}", async (
@@ -577,7 +577,7 @@ public static class TaxonomyEndpoints
             if (updated is null) return Results.NotFound();
             await AuditWrite(audit, http, "taxonomy.category.updated", id.ToString(), updated);
             return Results.Ok(updated);
-        }).WithName("UpdateCategory").WithOpenApi()
+        }).WithName("UpdateCategory")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapDelete("/categories/{id:guid}", async (
@@ -585,7 +585,7 @@ public static class TaxonomyEndpoints
         {
             var result = await repo.DeleteCategoryAsync(id, ct);
             return await DeleteResultToHttp(result, http, audit, "taxonomy.category.deleted", id);
-        }).WithName("DeleteCategory").WithOpenApi()
+        }).WithName("DeleteCategory")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 

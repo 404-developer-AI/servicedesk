@@ -49,7 +49,7 @@ public static class TimesheetImportEndpoints
             var enabled = await settings.GetAsync<bool>(SettingKeys.Timesheet.ImportEnabled, ct);
             var configured = await secrets.HasAsync(ProtectedSecretKeys.TimesheetImportToken, ct);
             return Results.Ok(new { enabled, secretConfigured = configured });
-        }).WithName("GetTimesheetImportStatus").WithOpenApi();
+        }).WithName("GetTimesheetImportStatus");
 
         admin.MapPut("/enabled", async (
             [FromBody] SetEnabledRequest req,
@@ -60,7 +60,7 @@ public static class TimesheetImportEndpoints
             await TimesheetAudit.WriteAsync(audit, http, TimesheetAudit.ImportEnabledChanged,
                 SettingKeys.Timesheet.ImportEnabled, new { enabled = req.Enabled });
             return Results.Ok(new { enabled = req.Enabled });
-        }).WithName("SetTimesheetImportEnabled").WithOpenApi();
+        }).WithName("SetTimesheetImportEnabled");
 
         admin.MapPut("/secret", async (
             [FromBody] SetSecretRequest req,
@@ -75,7 +75,7 @@ public static class TimesheetImportEndpoints
             await TimesheetAudit.WriteAsync(audit, http, TimesheetAudit.ImportSecretUpdated,
                 ProtectedSecretKeys.TimesheetImportToken, new { configured = true });
             return Results.NoContent();
-        }).WithName("SetTimesheetImportSecret").WithOpenApi();
+        }).WithName("SetTimesheetImportSecret");
 
         admin.MapDelete("/secret", async (
             HttpContext http, IProtectedSecretStore secrets, IAuditLogger audit, CancellationToken ct) =>
@@ -84,7 +84,7 @@ public static class TimesheetImportEndpoints
             await TimesheetAudit.WriteAsync(audit, http, TimesheetAudit.ImportSecretDeleted,
                 ProtectedSecretKeys.TimesheetImportToken, new { configured = false });
             return Results.NoContent();
-        }).WithName("DeleteTimesheetImportSecret").WithOpenApi();
+        }).WithName("DeleteTimesheetImportSecret");
 
         // ---- Migration surface (secret-gated) ------------------------------
         var mig = app.MapGroup("/api/timesheet/import").WithTags("Timesheet");
@@ -108,7 +108,7 @@ public static class TimesheetImportEndpoints
                     archived = t.Archived,
                 }),
             });
-        }).WithName("ListTimesheetImportTasks").WithOpenApi();
+        }).WithName("ListTimesheetImportTasks");
 
         mig.MapGet("/users", async (
             HttpContext http, ISettingsService settings, IProtectedSecretStore secrets,
@@ -129,7 +129,7 @@ public static class TimesheetImportEndpoints
                     timesheetEnabled = u.TimesheetEnabled,
                 }),
             });
-        }).WithName("ListTimesheetImportUsers").WithOpenApi();
+        }).WithName("ListTimesheetImportUsers");
 
         mig.MapPost("/entries", async (
             [FromBody] ImportBatchRequest req,
@@ -195,7 +195,7 @@ public static class TimesheetImportEndpoints
                 withoutTicketMatch = result.WithoutTicketMatch,
                 skipped = result.Skipped.Select(s => new { importRef = s.ImportRef, reason = s.Reason }),
             });
-        }).WithName("ImportTimesheetEntries").WithOpenApi();
+        }).WithName("ImportTimesheetEntries");
 
         return app;
     }

@@ -54,7 +54,7 @@ public sealed class PostgresDatabase : IAsyncLifetime
         }
 
         var builder = new NpgsqlConnectionStringBuilder(admin) { Database = _databaseName };
-        DataSource = NpgsqlDataSource.Create(builder.ConnectionString);
+        DataSource = ServicedeskDataSource.Create(builder.ConnectionString);
         await new DatabaseBootstrapper(DataSource, NullLogger<DatabaseBootstrapper>.Instance)
             .StartAsync(CancellationToken.None);
     }

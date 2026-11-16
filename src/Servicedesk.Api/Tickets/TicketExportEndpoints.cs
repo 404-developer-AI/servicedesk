@@ -130,7 +130,7 @@ public static class TicketExportEndpoints
             var pdfBytes = TicketPdfGenerator.Generate(pdfData);
 
             return Results.File(pdfBytes, "application/pdf", $"ticket-{detail.Ticket.Number}.pdf");
-        }).WithName("ExportTicketPdf").WithOpenApi();
+        }).WithName("ExportTicketPdf");
 
         return app;
     }

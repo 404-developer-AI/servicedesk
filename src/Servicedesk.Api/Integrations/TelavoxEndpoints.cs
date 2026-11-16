@@ -28,37 +28,37 @@ public static class TelavoxEndpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapGet("/status", GetStatus).WithName("GetTelavoxStatus").WithOpenApi();
+        admin.MapGet("/status", GetStatus).WithName("GetTelavoxStatus");
 
         // Partner-token CRUD. Mirrors the Adsolut /secret surface — only
         // existence is reported back, never the value.
-        admin.MapGet("/secret", GetSecretStatus).WithName("GetTelavoxSecretStatus").WithOpenApi();
-        admin.MapPut("/secret", SetSecret).WithName("SetTelavoxSecret").WithOpenApi();
-        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteTelavoxSecret").WithOpenApi();
+        admin.MapGet("/secret", GetSecretStatus).WithName("GetTelavoxSecretStatus");
+        admin.MapPut("/secret", SetSecret).WithName("SetTelavoxSecret");
+        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteTelavoxSecret");
 
         // Customer-id pin. PUT sets a value picked from the test-connection
         // dropdown; DELETE clears it (integration falls back to "Test
         // connection to pick a customer" state).
-        admin.MapPut("/customer", SetCustomerId).WithName("SetTelavoxCustomerId").WithOpenApi();
-        admin.MapDelete("/customer", ClearCustomerId).WithName("ClearTelavoxCustomerId").WithOpenApi();
+        admin.MapPut("/customer", SetCustomerId).WithName("SetTelavoxCustomerId");
+        admin.MapDelete("/customer", ClearCustomerId).WithName("ClearTelavoxCustomerId");
 
         // Diagnostics — verifies the partner-token and lists customers /
         // extensions the admin can pin and link against.
-        admin.MapPost("/test-connection", TestConnection).WithName("TestTelavoxConnection").WithOpenApi();
-        admin.MapGet("/extensions", ListExtensions).WithName("ListTelavoxExtensions").WithOpenApi();
+        admin.MapPost("/test-connection", TestConnection).WithName("TestTelavoxConnection");
+        admin.MapGet("/extensions", ListExtensions).WithName("ListTelavoxExtensions");
 
         // Per-agent provisioning.
-        admin.MapGet("/agents", ListAgentLinks).WithName("ListTelavoxAgentLinks").WithOpenApi();
+        admin.MapGet("/agents", ListAgentLinks).WithName("ListTelavoxAgentLinks");
         admin.MapPost("/agents/{userId:guid}/provision", ProvisionAgent)
-            .WithName("ProvisionTelavoxAgent").WithOpenApi();
+            .WithName("ProvisionTelavoxAgent");
         // Manual-link fallback for installs where PAPI api-user creation
         // is not available — admin pastes a CAPI bearer-token they minted
         // via the Telavox webapp directly. Separate route so the audit
         // trail can distinguish PAPI-minted from admin-pasted links.
         admin.MapPost("/agents/{userId:guid}/provision-manual", ProvisionAgentManual)
-            .WithName("ProvisionTelavoxAgentManual").WithOpenApi();
+            .WithName("ProvisionTelavoxAgentManual");
         admin.MapDelete("/agents/{userId:guid}/provision", RevokeAgent)
-            .WithName("RevokeTelavoxAgent").WithOpenApi();
+            .WithName("RevokeTelavoxAgent");
 
         // integration_audit reader. Mirrors the Adsolut /audit surface so
         // the SPA's existing IntegrationAuditLog component can render
@@ -66,7 +66,7 @@ public static class TelavoxEndpoints
         // this an admin staring at a 502 on /test-connection has no way
         // to see the upstream error code the client already wrote into
         // the table.
-        admin.MapGet("/audit", GetAuditLog).WithName("GetTelavoxAuditLog").WithOpenApi();
+        admin.MapGet("/audit", GetAuditLog).WithName("GetTelavoxAuditLog");
 
         return app;
     }

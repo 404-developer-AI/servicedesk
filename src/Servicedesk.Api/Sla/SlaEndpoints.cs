@@ -40,8 +40,7 @@ public static class SlaEndpoints
         })
         .WithTags("Sla")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetTicketSlaState")
-        .WithOpenApi();
+        .WithName("GetTicketSlaState");
 
         return app;
     }

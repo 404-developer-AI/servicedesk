@@ -41,24 +41,24 @@ public static class IpBlockEndpoints
                     lastHitUtc = r.LastHitUtc,
                 }),
             });
-        }).WithName("GetIpBlockingOverview").WithOpenApi();
+        }).WithName("GetIpBlockingOverview");
 
         group.MapPost("/proposals/{id:long}/block", async (long id, DecisionRequest? req, HttpContext http,
             IIpBlockService service, CancellationToken ct) =>
         {
             var (outcome, known) = await service.BlockProposalAsync(id, req?.Reason, req?.ConfirmKnownLogins == true, Actor(http), ct);
             return ToResult(outcome, known);
-        }).WithName("BlockIpProposal").WithOpenApi();
+        }).WithName("BlockIpProposal");
 
         group.MapPost("/proposals/{id:long}/whitelist", async (long id, DecisionRequest? req, HttpContext http,
             IIpBlockService service, CancellationToken ct) =>
             ToResult(await service.WhitelistProposalAsync(id, req?.Reason, Actor(http), ct), 0))
-            .WithName("WhitelistIpProposal").WithOpenApi();
+            .WithName("WhitelistIpProposal");
 
         group.MapPost("/proposals/{id:long}/dismiss", async (long id, HttpContext http,
             IIpBlockService service, CancellationToken ct) =>
             ToResult(await service.DismissProposalAsync(id, Actor(http), ct), 0))
-            .WithName("DismissIpProposal").WithOpenApi();
+            .WithName("DismissIpProposal");
 
         group.MapPost("/rules", async (AddRuleRequest req, HttpContext http, IIpBlockService service, CancellationToken ct) =>
         {
@@ -67,11 +67,11 @@ public static class IpBlockEndpoints
             var (outcome, known) = await service.AddRuleAsync(req.Ip, req.Kind ?? string.Empty, req.Reason,
                 req.ConfirmKnownLogins == true, Actor(http), ct);
             return ToResult(outcome, known);
-        }).WithName("AddIpRule").WithOpenApi();
+        }).WithName("AddIpRule");
 
         group.MapDelete("/rules/{ip}", async (string ip, HttpContext http, IIpBlockService service, CancellationToken ct) =>
             ToResult(await service.RemoveRuleAsync(ip, Actor(http), ct), 0))
-            .WithName("RemoveIpRule").WithOpenApi();
+            .WithName("RemoveIpRule");
 
         return app;
     }

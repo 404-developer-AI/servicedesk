@@ -37,7 +37,7 @@ public static class TimesheetEntryEndpoints
             var userId = ActorContext.GetUserId(http);
             var rows = await svc.ListByDateAsync(userId, entryDate, ct);
             return Results.Ok(new { date = entryDate.ToString("yyyy-MM-dd"), items = rows });
-        }).WithName("ListTimesheetEntries").WithOpenApi();
+        }).WithName("ListTimesheetEntries");
 
         group.MapPost("/", async (
             [FromBody] EntryRequest req,
@@ -59,7 +59,7 @@ public static class TimesheetEntryEndpoints
                     Results.UnprocessableEntity(new { errors = v.Errors }),
                 _ => Results.Problem("Unhandled create-entry result."),
             };
-        }).WithName("CreateTimesheetEntry").WithOpenApi();
+        }).WithName("CreateTimesheetEntry");
 
         group.MapPut("/{id:guid}", async (
             Guid id,
@@ -88,7 +88,7 @@ public static class TimesheetEntryEndpoints
                     Results.UnprocessableEntity(new { errors = v.Errors }),
                 _ => Results.Problem("Unhandled update-entry result."),
             };
-        }).WithName("UpdateTimesheetEntry").WithOpenApi();
+        }).WithName("UpdateTimesheetEntry");
 
         group.MapDelete("/{id:guid}", async (
             Guid id,
@@ -109,7 +109,7 @@ public static class TimesheetEntryEndpoints
                 new { user_id = userId });
             await notifier.NotifyEntryChangedAsync(before?.TicketId, ct);
             return Results.NoContent();
-        }).WithName("DeleteTimesheetEntry").WithOpenApi();
+        }).WithName("DeleteTimesheetEntry");
 
         // v0.0.35-E — caller's own effective preferences. Used by Tab 1
         // to seed the start-time of a new day. Reads override-or-global
@@ -125,8 +125,7 @@ public static class TimesheetEntryEndpoints
         })
         .WithTags("Timesheet")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("GetTimesheetSelfPreferences")
-        .WithOpenApi();
+        .WithName("GetTimesheetSelfPreferences");
 
         // v0.0.74 — self-service write of the caller's own default Tab-1 task.
         // Scoped to the caller's own row (userId from the session, never the
@@ -157,8 +156,7 @@ public static class TimesheetEntryEndpoints
         })
         .WithTags("Timesheet")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-        .WithName("SetTimesheetSelfDefaultTask")
-        .WithOpenApi();
+        .WithName("SetTimesheetSelfDefaultTask");
 
         return app;
     }

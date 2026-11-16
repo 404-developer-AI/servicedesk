@@ -20,7 +20,7 @@ public static class FeedbackWorkPointTypeEndpoints
         admin.MapGet("/", async (
             bool? includeInactive, IFeedbackWorkPointTypeService svc, CancellationToken ct) =>
             Results.Ok(new { items = await svc.ListAsync(includeInactive ?? true, ct) }))
-            .WithName("AdminListFeedbackWorkPointTypes").WithOpenApi();
+            .WithName("AdminListFeedbackWorkPointTypes");
 
         admin.MapPost("/", async (
             [FromBody] TypeUpsertRequest req, HttpContext http,
@@ -38,7 +38,7 @@ public static class FeedbackWorkPointTypeEndpoints
                     Results.Conflict(new { error = "Another active type already uses that name." }),
                 _ => Results.Problem("Unhandled create-type result."),
             };
-        }).WithName("AdminCreateFeedbackWorkPointType").WithOpenApi();
+        }).WithName("AdminCreateFeedbackWorkPointType");
 
         admin.MapPut("/{id:guid}", async (
             Guid id, [FromBody] TypeUpsertRequest req, HttpContext http,
@@ -58,7 +58,7 @@ public static class FeedbackWorkPointTypeEndpoints
                     Results.Conflict(new { error = "Another active type already uses that name." }),
                 _ => Results.Problem("Unhandled update-type result."),
             };
-        }).WithName("AdminUpdateFeedbackWorkPointType").WithOpenApi();
+        }).WithName("AdminUpdateFeedbackWorkPointType");
 
         admin.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http,
@@ -78,7 +78,7 @@ public static class FeedbackWorkPointTypeEndpoints
                 default:
                     return Results.NotFound();
             }
-        }).WithName("AdminDeleteFeedbackWorkPointType").WithOpenApi();
+        }).WithName("AdminDeleteFeedbackWorkPointType");
 
         return app;
     }

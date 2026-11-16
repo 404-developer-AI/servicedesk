@@ -66,14 +66,14 @@ public static class SurveyEndpoints
         {
             var surveys = await repo.ListAsync(includeInactive ?? true, ct);
             return Results.Ok(surveys.Select(MapSummaryDto));
-        }).WithName("ListSurveys").WithOpenApi();
+        }).WithName("ListSurveys");
 
         group.MapGet("/{id:guid}", async (
             Guid id, ISurveyRepository repo, CancellationToken ct) =>
         {
             var survey = await repo.GetAsync(id, ct);
             return survey is null ? Results.NotFound() : Results.Ok(MapSurveyDto(survey));
-        }).WithName("GetSurvey").WithOpenApi();
+        }).WithName("GetSurvey");
 
         group.MapPost("/", async (
             [FromBody] SurveyUpsertRequest req, HttpContext http,
@@ -115,7 +115,7 @@ public static class SurveyEndpoints
 
             var created = await repo.GetAsync(id, ct);
             return Results.Created($"/api/settings/surveys/{id}", MapSurveyDto(created!));
-        }).WithName("CreateSurvey").WithOpenApi();
+        }).WithName("CreateSurvey");
 
         group.MapPut("/{id:guid}", async (
             Guid id, [FromBody] SurveyUpsertRequest req, HttpContext http,
@@ -158,7 +158,7 @@ public static class SurveyEndpoints
 
             var updated = await repo.GetAsync(id, ct);
             return Results.Ok(MapSurveyDto(updated!));
-        }).WithName("UpdateSurvey").WithOpenApi();
+        }).WithName("UpdateSurvey");
 
         group.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, ISurveyRepository repo,
@@ -188,7 +188,7 @@ public static class SurveyEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString()));
 
             return Results.NoContent();
-        }).WithName("DeleteSurvey").WithOpenApi();
+        }).WithName("DeleteSurvey");
 
         // Admin-only: results aggregation. Agents can see SurveySent on the
         // timeline as context, but the response body + leaderboard + per-
@@ -202,7 +202,7 @@ public static class SurveyEndpoints
         {
             var agg = await invitations.GetAggregateResultsAsync(id, ct);
             return Results.Ok(MapResultsDto(agg));
-        }).WithName("GetSurveyResults").WithOpenApi();
+        }).WithName("GetSurveyResults");
 
         results.MapGet("/{id:guid}/invitations", async (
             Guid id, string? status, int? limit, ISurveyInvitationRepository invitations, CancellationToken ct) =>
@@ -215,7 +215,7 @@ public static class SurveyEndpoints
             }
             var rows = await invitations.ListForSurveyAsync(id, statusFilter, Math.Clamp(limit ?? 50, 1, 200), ct);
             return Results.Ok(rows.Select(MapInvitationSummaryDto));
-        }).WithName("ListSurveyInvitations").WithOpenApi();
+        }).WithName("ListSurveyInvitations");
 
         // Full, paged list of submitted responses (the "Responses" section
         // on the results page). Unknown sort/comment values fall back to the
@@ -248,14 +248,14 @@ public static class SurveyEndpoints
                     commentPreview = r.CommentPreview,
                 }),
             });
-        }).WithName("ListSurveyResponses").WithOpenApi();
+        }).WithName("ListSurveyResponses");
 
         results.MapGet("/invitations/{invitationId:guid}", async (
             Guid invitationId, ISurveyInvitationRepository invitations, CancellationToken ct) =>
         {
             var detail = await invitations.GetResponseDetailAsync(invitationId, ct);
             return detail is null ? Results.NotFound() : Results.Ok(MapResponseDetailDto(detail));
-        }).WithName("GetSurveyResponse").WithOpenApi();
+        }).WithName("GetSurveyResponse");
 
         // Admin: cancel a Sent invitation manually (retire the link without
         // waiting for expiry).
@@ -278,7 +278,7 @@ public static class SurveyEndpoints
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString()));
             return Results.NoContent();
-        }).WithName("CancelSurveyInvitation").WithOpenApi();
+        }).WithName("CancelSurveyInvitation");
     }
 
     // ============================================================
@@ -300,7 +300,7 @@ public static class SurveyEndpoints
                 name = HtmlEncoder.Default.Encode(s.Name),
                 ttlDays = s.TtlDays,
             }));
-        }).WithName("ListUsableSurveys").WithOpenApi();
+        }).WithName("ListUsableSurveys");
 
         // Per-ticket invitation list. Admin-only: agents see SurveySent on
         // the timeline but never the response detail or invitation status.
@@ -312,8 +312,7 @@ public static class SurveyEndpoints
         })
             .WithTags("SurveysAdmin")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin)
-            .WithName("ListTicketSurveys")
-            .WithOpenApi();
+            .WithName("ListTicketSurveys");
     }
 
     // ============================================================
@@ -347,7 +346,7 @@ public static class SurveyEndpoints
                 return Results.Json(new { status = "submitted", message = view.ThankYouMessage }, statusCode: StatusCodes.Status409Conflict);
 
             return Results.Ok(MapPublicDto(view));
-        }).WithName("GetPublicSurvey").WithOpenApi();
+        }).WithName("GetPublicSurvey");
 
         group.MapPost("/{token}/submit", async (
             string token, [FromBody] PublicSubmitRequest req, HttpContext http,
@@ -419,7 +418,7 @@ public static class SurveyEndpoints
                 surveyName = result.SurveyName,
                 message = view.ThankYouMessage,
             });
-        }).WithName("SubmitPublicSurvey").WithOpenApi();
+        }).WithName("SubmitPublicSurvey");
     }
 
     // ============================================================
@@ -877,7 +876,6 @@ public static class SurveyEndpoints
         }))
             .WithTags("SurveysAdmin")
             .WithName("ListSurveyTokens")
-            .RequireAuthorization(AuthorizationPolicies.RequireAdmin)
-            .WithOpenApi();
+            .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 }

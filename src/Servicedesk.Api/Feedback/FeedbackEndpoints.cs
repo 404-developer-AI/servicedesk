@@ -29,7 +29,7 @@ public static class FeedbackEndpoints
             var (_, _, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
             return Results.Ok(new { items = await svc.ListEmployeesAsync(ct) });
-        }).WithName("ListFeedbackEmployees").WithOpenApi();
+        }).WithName("ListFeedbackEmployees");
 
         // Active work-point types for the dropdown (read-only; admins manage
         // the catalogue under /api/admin/feedback/work-point-types).
@@ -40,7 +40,7 @@ public static class FeedbackEndpoints
             var (_, _, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
             return Results.Ok(new { items = await types.ListAsync(includeInactive: false, ct) });
-        }).WithName("ListFeedbackWorkPointTypes").WithOpenApi();
+        }).WithName("ListFeedbackWorkPointTypes");
 
         // Resolve a typed ticket number → live ticket (id + subject) so the UI
         // can render a clickable link. 404 when no live ticket carries it.
@@ -57,7 +57,7 @@ public static class FeedbackEndpoints
             return resolution.Id is null
                 ? Results.NotFound(new { number = n })
                 : Results.Ok(new { number = resolution.Number, id = resolution.Id, subject = resolution.Subject });
-        }).WithName("ResolveFeedbackTicket").WithOpenApi();
+        }).WithName("ResolveFeedbackTicket");
 
         // Which timeline events of a ticket already have feedback logged, so the
         // ticket timeline can mark the "Log feedback" button (avoid double logs).
@@ -74,7 +74,7 @@ public static class FeedbackEndpoints
                 items = await svc.ListLoggedEventsAsync(
                     tid, userId, access == FeedbackAccess.OwnOnly, ct),
             });
-        }).WithName("ListFeedbackLoggedEvents").WithOpenApi();
+        }).WithName("ListFeedbackLoggedEvents");
 
         group.MapGet("/entries", async (
             Guid? targetUserId, Guid? workPointTypeId, bool? completed, bool? mgmtReviewed,
@@ -86,7 +86,7 @@ public static class FeedbackEndpoints
             var filter = new FeedbackEntryFilter(targetUserId, workPointTypeId, completed, mgmtReviewed);
             var rows = await svc.ListAsync(filter, userId, access == FeedbackAccess.OwnOnly, ct);
             return Results.Ok(new { items = rows });
-        }).WithName("ListFeedbackEntries").WithOpenApi();
+        }).WithName("ListFeedbackEntries");
 
         group.MapPost("/entries", async (
             [FromBody] CreateEntryRequest? req,
@@ -105,7 +105,7 @@ public static class FeedbackEndpoints
                     Results.UnprocessableEntity(new { errors = v.Errors }),
                 _ => Results.Problem("Unhandled create-entry result."),
             };
-        }).WithName("CreateFeedbackEntry").WithOpenApi();
+        }).WithName("CreateFeedbackEntry");
 
         group.MapPost("/entries/log", async (
             [FromBody] LogEntryRequest req,
@@ -125,7 +125,7 @@ public static class FeedbackEndpoints
                     Results.UnprocessableEntity(new { errors = v.Errors }),
                 _ => Results.Problem("Unhandled log-entry result."),
             };
-        }).WithName("LogFeedbackEntry").WithOpenApi();
+        }).WithName("LogFeedbackEntry");
 
         group.MapPut("/entries/{id:guid}", async (
             Guid id, [FromBody] UpdateEntryRequest req,
@@ -146,7 +146,7 @@ public static class FeedbackEndpoints
                     Results.UnprocessableEntity(new { errors = v.Errors }),
                 _ => Results.Problem("Unhandled update-entry result."),
             };
-        }).WithName("UpdateFeedbackEntry").WithOpenApi();
+        }).WithName("UpdateFeedbackEntry");
 
         group.MapPost("/entries/{id:guid}/completed", async (
             Guid id, [FromBody] CompletedRequest req,
@@ -164,7 +164,7 @@ public static class FeedbackEndpoints
             await FeedbackAudit.WriteAsync(audit, http, FeedbackAudit.EntryCompleted, id.ToString(),
                 new { is_completed = row.IsCompleted, target_user_id = row.TargetUserId });
             return Results.Ok(row);
-        }).WithName("SetFeedbackEntryCompleted").WithOpenApi();
+        }).WithName("SetFeedbackEntryCompleted");
 
         group.MapPost("/entries/{id:guid}/mgmt-reviewed", async (
             Guid id, [FromBody] MgmtReviewedRequest req,
@@ -182,7 +182,7 @@ public static class FeedbackEndpoints
             await FeedbackAudit.WriteAsync(audit, http, FeedbackAudit.EntryMgmtReviewed, id.ToString(),
                 new { mgmt_reviewed = row.MgmtReviewed, target_user_id = row.TargetUserId });
             return Results.Ok(row);
-        }).WithName("SetFeedbackEntryMgmtReviewed").WithOpenApi();
+        }).WithName("SetFeedbackEntryMgmtReviewed");
 
         group.MapDelete("/entries/{id:guid}", async (
             Guid id, HttpContext http, IUserService users, IFeedbackEntryService svc,
@@ -196,7 +196,7 @@ public static class FeedbackEndpoints
 
             await FeedbackAudit.WriteAsync(audit, http, FeedbackAudit.EntryDeleted, id.ToString(), new { });
             return Results.NoContent();
-        }).WithName("DeleteFeedbackEntry").WithOpenApi();
+        }).WithName("DeleteFeedbackEntry");
 
         return app;
     }

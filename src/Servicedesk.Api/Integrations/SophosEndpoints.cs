@@ -22,18 +22,18 @@ public static class SophosEndpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapGet("/status", GetStatus).WithName("GetSophosStatus").WithOpenApi();
-        admin.MapPut("/credentials", SetCredentials).WithName("SetSophosCredentials").WithOpenApi();
-        admin.MapDelete("/credentials", DeleteCredentials).WithName("DeleteSophosCredentials").WithOpenApi();
-        admin.MapPut("/enabled", SetEnabled).WithName("SetSophosEnabled").WithOpenApi();
-        admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetSophosSyncInterval").WithOpenApi();
-        admin.MapPost("/test-connection", TestConnection).WithName("TestSophosConnection").WithOpenApi();
-        admin.MapPost("/sync", SyncNow).WithName("SyncSophosNow").WithOpenApi();
-        admin.MapGet("/tenants", GetTenants).WithName("GetSophosTenants").WithOpenApi();
-        admin.MapGet("/linkable-companies", GetLinkableCompanies).WithName("GetSophosLinkableCompanies").WithOpenApi();
-        admin.MapPost("/tenants/{tenantId}/links", AddTenantLink).WithName("AddSophosTenantLink").WithOpenApi();
-        admin.MapDelete("/tenants/{tenantId}/links/{companyId:guid}", RemoveTenantLink).WithName("RemoveSophosTenantLink").WithOpenApi();
-        admin.MapGet("/audit", GetAuditLog).WithName("GetSophosAuditLog").WithOpenApi();
+        admin.MapGet("/status", GetStatus).WithName("GetSophosStatus");
+        admin.MapPut("/credentials", SetCredentials).WithName("SetSophosCredentials");
+        admin.MapDelete("/credentials", DeleteCredentials).WithName("DeleteSophosCredentials");
+        admin.MapPut("/enabled", SetEnabled).WithName("SetSophosEnabled");
+        admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetSophosSyncInterval");
+        admin.MapPost("/test-connection", TestConnection).WithName("TestSophosConnection");
+        admin.MapPost("/sync", SyncNow).WithName("SyncSophosNow");
+        admin.MapGet("/tenants", GetTenants).WithName("GetSophosTenants");
+        admin.MapGet("/linkable-companies", GetLinkableCompanies).WithName("GetSophosLinkableCompanies");
+        admin.MapPost("/tenants/{tenantId}/links", AddTenantLink).WithName("AddSophosTenantLink");
+        admin.MapDelete("/tenants/{tenantId}/links/{companyId:guid}", RemoveTenantLink).WithName("RemoveSophosTenantLink");
+        admin.MapGet("/audit", GetAuditLog).WithName("GetSophosAuditLog");
 
         return app;
     }

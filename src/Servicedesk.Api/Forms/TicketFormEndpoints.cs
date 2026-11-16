@@ -25,7 +25,7 @@ public static class TicketFormEndpoints
             {
                 var list = await svc.ListAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, ct);
                 return Results.Ok(new { items = list.Select(MapSummary) });
-            })).WithName("ListTicketForms").WithOpenApi();
+            })).WithName("ListTicketForms");
 
         ticket.MapGet("/templates", async (Guid ticketId, HttpContext http, ITicketFormService svc, CancellationToken ct) =>
             await Run(async () =>
@@ -35,7 +35,7 @@ public static class TicketFormEndpoints
                 {
                     items = list.Select(t => new { id = t.Id, name = t.Name, description = t.Description, fieldCount = t.FieldCount }),
                 });
-            })).WithName("ListUsableFormTemplates").WithOpenApi();
+            })).WithName("ListUsableFormTemplates");
 
         ticket.MapGet("/templates/{templateId:guid}", async (
             Guid ticketId, Guid templateId, HttpContext http, ITicketFormService svc, CancellationToken ct) =>
@@ -43,7 +43,7 @@ public static class TicketFormEndpoints
             {
                 var t = await svc.GetUsableTemplateAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, templateId, ct);
                 return Results.Ok(new { id = t.Id, name = t.Name, description = t.Description, fields = t.Definition.Fields });
-            })).WithName("GetUsableFormTemplate").WithOpenApi();
+            })).WithName("GetUsableFormTemplate");
 
         ticket.MapPost("/", async (
             Guid ticketId, [FromBody] CreateTicketFormRequest req, HttpContext http,
@@ -54,7 +54,7 @@ public static class TicketFormEndpoints
                     return Results.BadRequest(new { error = "templateId is required.", code = FormRejectCode.Invalid });
                 var result = await svc.CreateAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, req.TemplateId, req.Answers, ct);
                 return Results.Created($"/api/ticket-forms/{result.Form.Summary.Id}", MapDetail(result.Form, result.EventId));
-            })).WithName("CreateTicketForm").WithOpenApi();
+            })).WithName("CreateTicketForm");
 
         ticket.MapGet("/article-options", async (
             Guid ticketId, [FromQuery] string? search, [FromQuery] string? scope, HttpContext http,
@@ -66,7 +66,7 @@ public static class TicketFormEndpoints
                 // Code + name only: prices and contract details stay behind
                 // the Contracts feature flag.
                 return Results.Ok(new { items = list.Select(a => new { id = a.Id, code = a.Code, name = a.Name }) });
-            })).WithName("ListTicketFormArticleOptions").WithOpenApi();
+            })).WithName("ListTicketFormArticleOptions");
 
         ticket.MapGet("/contact-options", async (
             Guid ticketId, [FromQuery] string? search, HttpContext http,
@@ -75,7 +75,7 @@ public static class TicketFormEndpoints
             {
                 var list = await svc.SearchContactsAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, search, ct);
                 return Results.Ok(new { items = list.Select(c => new { id = c.Id, name = c.Name, email = c.Email }) });
-            })).WithName("ListTicketFormContactOptions").WithOpenApi();
+            })).WithName("ListTicketFormContactOptions");
 
         var form = app.MapGroup("/api/ticket-forms/{formId:guid}")
             .WithTags("Forms")
@@ -86,7 +86,7 @@ public static class TicketFormEndpoints
             {
                 var f = await svc.GetAsync(TicketEndpoints.ResolveMutationActor(http), formId, ct);
                 return Results.Ok(MapDetail(f, null));
-            })).WithName("GetTicketForm").WithOpenApi();
+            })).WithName("GetTicketForm");
 
         form.MapGet("/versions", async (Guid formId, HttpContext http, ITicketFormService svc, CancellationToken ct) =>
             await Run(async () =>
@@ -100,7 +100,7 @@ public static class TicketFormEndpoints
                         savedByUserId = v.SavedByUserId, savedByName = v.SavedByName, savedUtc = v.SavedUtc,
                     }),
                 });
-            })).WithName("ListTicketFormVersions").WithOpenApi();
+            })).WithName("ListTicketFormVersions");
 
         form.MapPut("/", async (
             Guid formId, [FromBody] UpdateTicketFormRequest req, HttpContext http,
@@ -111,7 +111,7 @@ public static class TicketFormEndpoints
                     return Results.BadRequest(new { error = "expectedVersion is required.", code = FormRejectCode.Invalid });
                 var result = await svc.UpdateAsync(TicketEndpoints.ResolveMutationActor(http), formId, req.ExpectedVersion, req.Answers, ct);
                 return Results.Ok(MapDetail(result.Form, result.EventId));
-            })).WithName("UpdateTicketForm").WithOpenApi();
+            })).WithName("UpdateTicketForm");
 
         form.MapPost("/remove", async (
             Guid formId, [FromBody] RemoveTicketFormRequest req, HttpContext http,
@@ -120,7 +120,7 @@ public static class TicketFormEndpoints
             {
                 await svc.DeleteAsync(TicketEndpoints.ResolveMutationActor(http), formId, req?.Reason, ct);
                 return Results.NoContent();
-            })).WithName("RemoveTicketForm").WithOpenApi();
+            })).WithName("RemoveTicketForm");
 
         return app;
     }

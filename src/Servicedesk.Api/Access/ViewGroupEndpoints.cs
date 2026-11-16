@@ -19,13 +19,13 @@ public static class ViewGroupEndpoints
         group.MapGet("/", async (IViewGroupRepository repo, CancellationToken ct) =>
         {
             return Results.Ok(await repo.ListAsync(ct));
-        }).WithName("ListViewGroups").WithOpenApi();
+        }).WithName("ListViewGroups");
 
         group.MapGet("/{id:guid}", async (Guid id, IViewGroupRepository repo, CancellationToken ct) =>
         {
             var detail = await repo.GetDetailAsync(id, ct);
             return detail is null ? Results.NotFound() : Results.Ok(detail);
-        }).WithName("GetViewGroup").WithOpenApi();
+        }).WithName("GetViewGroup");
 
         group.MapPost("/", async (
             [FromBody] ViewGroupRequest req, IViewGroupRepository repo,
@@ -47,7 +47,7 @@ public static class ViewGroupEndpoints
                 Payload: new { created.Name }));
 
             return Results.Created($"/api/admin/view-groups/{created.Id}", created);
-        }).WithName("CreateViewGroup").WithOpenApi();
+        }).WithName("CreateViewGroup");
 
         group.MapPut("/{id:guid}", async (
             Guid id, [FromBody] ViewGroupRequest req, IViewGroupRepository repo,
@@ -70,7 +70,7 @@ public static class ViewGroupEndpoints
                 Payload: new { updated.Name }));
 
             return Results.Ok(updated);
-        }).WithName("UpdateViewGroup").WithOpenApi();
+        }).WithName("UpdateViewGroup");
 
         group.MapDelete("/{id:guid}", async (
             Guid id, IViewGroupRepository repo,
@@ -90,7 +90,7 @@ public static class ViewGroupEndpoints
                 Payload: new { }));
 
             return Results.NoContent();
-        }).WithName("DeleteViewGroup").WithOpenApi();
+        }).WithName("DeleteViewGroup");
 
         group.MapPut("/{id:guid}/members", async (
             Guid id, [FromBody] SetMembersRequest req,
@@ -117,7 +117,7 @@ public static class ViewGroupEndpoints
                 Payload: new { userIds = req.UserIds }));
 
             return Results.NoContent();
-        }).WithName("SetViewGroupMembers").WithOpenApi();
+        }).WithName("SetViewGroupMembers");
 
         group.MapPut("/{id:guid}/views", async (
             Guid id, [FromBody] SetViewsRequest req,
@@ -143,7 +143,7 @@ public static class ViewGroupEndpoints
                 Payload: new { viewIds = req.ViewIds }));
 
             return Results.NoContent();
-        }).WithName("SetViewGroupViews").WithOpenApi();
+        }).WithName("SetViewGroupViews");
 
         return app;
     }

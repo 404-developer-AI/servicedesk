@@ -72,7 +72,7 @@ public static class TicketAttachmentEndpoints
                 size = writeResult.SizeBytes,
                 filename = safeFilename,
             });
-        }).WithName("UploadTicketAttachment").WithOpenApi();
+        }).WithName("UploadTicketAttachment");
 
         // Generic download for ticket-owned and event-owned attachments
         // (Notes / Comments / outbound-mail attachments staged on the
@@ -143,7 +143,7 @@ public static class TicketAttachmentEndpoints
             // Inline only for inline-safe types (audit v0.1.1 #2) — see
             // AttachmentResponse for the reasoning.
             return AttachmentResponse.File(stream, att.MimeType, att.OriginalFilename, inline == true);
-        }).WithName("GetTicketAttachment").WithOpenApi();
+        }).WithName("GetTicketAttachment");
 
         return app;
     }

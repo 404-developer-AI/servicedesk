@@ -21,7 +21,7 @@ public static class KbConfigEndpoints
 
         group.MapGet("/config", async (IKbConfigRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.GetConfigAsync(ct)))
-            .WithName("GetKbConfig").WithOpenApi();
+            .WithName("GetKbConfig");
 
         group.MapPut("/config", async (
             [FromBody] KbConfigRequest req, HttpContext http,
@@ -37,12 +37,12 @@ public static class KbConfigEndpoints
             await KbAudit.WriteAsync(audit, http, "kb.config.updated", updated.Id.ToString(),
                 new { updated.IsActive, updated.DefaultLocaleCode });
             return Results.Ok(updated);
-        }).WithName("UpdateKbConfig").WithOpenApi();
+        }).WithName("UpdateKbConfig");
 
         group.MapGet("/locales", async (
             bool? includeInactive, IKbConfigRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListLocalesAsync(includeInactive ?? true, ct)))
-            .WithName("ListKbLocales").WithOpenApi();
+            .WithName("ListKbLocales");
 
         group.MapPost("/locales", async (
             [FromBody] KbLocaleRequest req, HttpContext http,
@@ -56,7 +56,7 @@ public static class KbConfigEndpoints
                 SortOrder: req.SortOrder ?? 0), ct);
             await KbAudit.WriteAsync(audit, http, "kb.locale.upserted", saved.Code, new { saved.Code, saved.IsActive });
             return Results.Ok(saved);
-        }).WithName("UpsertKbLocale").WithOpenApi();
+        }).WithName("UpsertKbLocale");
 
         group.MapDelete("/locales/{code}", async (
             string code, HttpContext http,
@@ -73,7 +73,7 @@ public static class KbConfigEndpoints
             if (!removed) return Results.NotFound();
             await KbAudit.WriteAsync(audit, http, "kb.locale.removed", code, new { code });
             return Results.NoContent();
-        }).WithName("RemoveKbLocale").WithOpenApi();
+        }).WithName("RemoveKbLocale");
 
         return app;
     }

@@ -27,24 +27,24 @@ public static class PortalAuthEndpoints
     {
         // Anonymous, CSRF-exempt, rate-limited.
         var pub = app.MapGroup("/api/portal/auth/public").WithTags("PortalAuth");
-        pub.MapPost("/register", Register).WithName("PortalRegister").WithOpenApi().RequireRateLimiting("portal-register");
-        pub.MapPost("/verify-email", VerifyEmail).WithName("PortalVerifyEmail").WithOpenApi().RequireRateLimiting("portal-auth");
-        pub.MapPost("/login", Login).WithName("PortalLogin").WithOpenApi().RequireRateLimiting("portal-auth");
-        pub.MapPost("/forgot-password", ForgotPassword).WithName("PortalForgotPassword").WithOpenApi().RequireRateLimiting("portal-register");
-        pub.MapPost("/reset-password", ResetPassword).WithName("PortalResetPassword").WithOpenApi().RequireRateLimiting("portal-auth");
-        pub.MapGet("/invitation", DescribeInvitation).WithName("PortalDescribeInvitation").WithOpenApi().RequireRateLimiting("portal-auth");
-        pub.MapPost("/invitation/accept", AcceptInvitation).WithName("PortalAcceptInvitation").WithOpenApi().RequireRateLimiting("portal-auth");
+        pub.MapPost("/register", Register).WithName("PortalRegister").RequireRateLimiting("portal-register");
+        pub.MapPost("/verify-email", VerifyEmail).WithName("PortalVerifyEmail").RequireRateLimiting("portal-auth");
+        pub.MapPost("/login", Login).WithName("PortalLogin").RequireRateLimiting("portal-auth");
+        pub.MapPost("/forgot-password", ForgotPassword).WithName("PortalForgotPassword").RequireRateLimiting("portal-register");
+        pub.MapPost("/reset-password", ResetPassword).WithName("PortalResetPassword").RequireRateLimiting("portal-auth");
+        pub.MapGet("/invitation", DescribeInvitation).WithName("PortalDescribeInvitation").RequireRateLimiting("portal-auth");
+        pub.MapPost("/invitation/accept", AcceptInvitation).WithName("PortalAcceptInvitation").RequireRateLimiting("portal-auth");
 
         // Session-bound but deliberately without the RequireCustomer policy:
         // these must run while the session is still "mfa-pending" (the TOTP
         // challenge / forced enrollment). Each handler checks the principal
         // itself (authenticated + role Customer).
         var session = app.MapGroup("/api/portal/auth").WithTags("PortalAuth");
-        session.MapPost("/2fa/verify", VerifyTwoFactor).WithName("PortalVerifyTwoFactor").WithOpenApi().RequireRateLimiting("portal-auth");
-        session.MapPost("/2fa/enroll/begin", BeginEnroll).WithName("PortalEnrollBegin").WithOpenApi();
-        session.MapPost("/2fa/enroll/confirm", ConfirmEnroll).WithName("PortalEnrollConfirm").WithOpenApi().RequireRateLimiting("portal-auth");
-        session.MapPost("/logout", Logout).WithName("PortalLogout").WithOpenApi();
-        session.MapGet("/me", Me).WithName("PortalMe").WithOpenApi();
+        session.MapPost("/2fa/verify", VerifyTwoFactor).WithName("PortalVerifyTwoFactor").RequireRateLimiting("portal-auth");
+        session.MapPost("/2fa/enroll/begin", BeginEnroll).WithName("PortalEnrollBegin");
+        session.MapPost("/2fa/enroll/confirm", ConfirmEnroll).WithName("PortalEnrollConfirm").RequireRateLimiting("portal-auth");
+        session.MapPost("/logout", Logout).WithName("PortalLogout");
+        session.MapGet("/me", Me).WithName("PortalMe");
         return app;
     }
 

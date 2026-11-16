@@ -63,14 +63,14 @@ public static class IntakeFormEndpoints
         {
             var templates = await repo.ListAsync(includeInactive ?? false, ct);
             return Results.Ok(templates.Select(MapTemplateDto));
-        }).WithName("ListIntakeTemplates").WithOpenApi();
+        }).WithName("ListIntakeTemplates");
 
         group.MapGet("/{id:guid}", async (
             Guid id, IIntakeTemplateRepository repo, CancellationToken ct) =>
         {
             var template = await repo.GetAsync(id, ct);
             return template is null ? Results.NotFound() : Results.Ok(MapTemplateDto(template));
-        }).WithName("GetIntakeTemplate").WithOpenApi();
+        }).WithName("GetIntakeTemplate");
 
         group.MapPost("/", async (
             [FromBody] TemplateUpsertRequest req, HttpContext http,
@@ -108,7 +108,7 @@ public static class IntakeFormEndpoints
 
             var created = await repo.GetAsync(id, ct);
             return Results.Created($"/api/settings/intake-templates/{id}", MapTemplateDto(created!));
-        }).WithName("CreateIntakeTemplate").WithOpenApi();
+        }).WithName("CreateIntakeTemplate");
 
         group.MapPut("/{id:guid}", async (
             Guid id, [FromBody] TemplateUpsertRequest req, HttpContext http,
@@ -153,7 +153,7 @@ public static class IntakeFormEndpoints
 
             var updated = await repo.GetAsync(id, ct);
             return Results.Ok(MapTemplateDto(updated!));
-        }).WithName("UpdateIntakeTemplate").WithOpenApi();
+        }).WithName("UpdateIntakeTemplate");
 
         group.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, IIntakeTemplateRepository repo,
@@ -172,7 +172,7 @@ public static class IntakeFormEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString()));
 
             return Results.NoContent();
-        }).WithName("DeactivateIntakeTemplate").WithOpenApi();
+        }).WithName("DeactivateIntakeTemplate");
     }
 
     // ============================================================
@@ -194,7 +194,7 @@ public static class IntakeFormEndpoints
 
             var list = await forms.ListForTicketAsync(ticketId, ct);
             return Results.Ok(list.Select(MapSummaryDto));
-        }).WithName("ListIntakeFormsForTicket").WithOpenApi();
+        }).WithName("ListIntakeFormsForTicket");
 
         group.MapGet("/{instanceId:guid}", async (
             Guid ticketId, Guid instanceId, HttpContext http,
@@ -206,7 +206,7 @@ public static class IntakeFormEndpoints
 
             var view = await forms.GetAgentViewAsync(ticketId, instanceId, ct);
             return view is null ? Results.NotFound() : Results.Ok(MapAgentViewDto(view));
-        }).WithName("GetIntakeFormInstance").WithOpenApi();
+        }).WithName("GetIntakeFormInstance");
 
         group.MapGet("/{instanceId:guid}/pdf", async (
             Guid ticketId, Guid instanceId, HttpContext http,
@@ -256,7 +256,7 @@ public static class IntakeFormEndpoints
             var safeName = SanitizeFilename(view.Template.Name);
             var fileName = $"intake-{ticketNumber}-{safeName}.pdf";
             return Results.File(bytes, "application/pdf", fileName);
-        }).WithName("DownloadIntakeFormPdf").WithOpenApi();
+        }).WithName("DownloadIntakeFormPdf");
 
         group.MapPost("/", async (
             Guid ticketId, [FromBody] CreateInstanceRequest req, HttpContext http,
@@ -293,7 +293,7 @@ public static class IntakeFormEndpoints
 
             var view = await forms.GetAgentViewAsync(ticketId, instanceId, ct);
             return Results.Created($"/api/tickets/{ticketId}/intake-forms/{instanceId}", MapAgentViewDto(view!));
-        }).WithName("CreateIntakeFormDraft").WithOpenApi();
+        }).WithName("CreateIntakeFormDraft");
 
         group.MapPut("/{instanceId:guid}/prefill", async (
             Guid ticketId, Guid instanceId, [FromBody] UpdatePrefillRequest req,
@@ -311,7 +311,7 @@ public static class IntakeFormEndpoints
 
             var updated = await forms.UpdateDraftPrefillAsync(instanceId, ticketId, prefillJson, ct);
             return updated ? Results.NoContent() : Results.NotFound();
-        }).WithName("UpdateIntakeFormPrefill").WithOpenApi();
+        }).WithName("UpdateIntakeFormPrefill");
 
         group.MapDelete("/{instanceId:guid}", async (
             Guid ticketId, Guid instanceId, HttpContext http,
@@ -340,7 +340,7 @@ public static class IntakeFormEndpoints
                 Payload: new { ticketId }));
 
             return Results.NoContent();
-        }).WithName("DeleteIntakeFormDraft").WithOpenApi();
+        }).WithName("DeleteIntakeFormDraft");
 
         group.MapPost("/{instanceId:guid}/resend", async (
             Guid ticketId, Guid instanceId, HttpContext http,
@@ -387,7 +387,7 @@ public static class IntakeFormEndpoints
 
             var newView = await forms.GetAgentViewAsync(ticketId, newInstanceId, ct);
             return Results.Created($"/api/tickets/{ticketId}/intake-forms/{newInstanceId}", MapAgentViewDto(newView!));
-        }).WithName("ResendIntakeForm").WithOpenApi();
+        }).WithName("ResendIntakeForm");
     }
 
     // ============================================================
@@ -422,7 +422,7 @@ public static class IntakeFormEndpoints
                 return Results.Json(new { status = "expired" }, statusCode: StatusCodes.Status410Gone);
 
             return Results.Ok(MapPublicDto(view));
-        }).WithName("GetPublicIntakeForm").WithOpenApi();
+        }).WithName("GetPublicIntakeForm");
 
         group.MapPost("/{token}/submit", async (
             string token, [FromBody] PublicSubmitRequest req, HttpContext http,
@@ -493,7 +493,7 @@ public static class IntakeFormEndpoints
                 templateName = result.TemplateName,
                 answers = validation.Answers.Select(a => new { questionId = a.QuestionId, answer = JsonDocument.Parse(a.AnswerJson).RootElement }),
             });
-        }).WithName("SubmitPublicIntakeForm").WithOpenApi();
+        }).WithName("SubmitPublicIntakeForm");
     }
 
     // ============================================================

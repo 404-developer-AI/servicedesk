@@ -21,26 +21,26 @@ public static class TrmmEndpoints
             .WithTags("Integrations")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapGet("/status", GetStatus).WithName("GetTrmmStatus").WithOpenApi();
+        admin.MapGet("/status", GetStatus).WithName("GetTrmmStatus");
 
-        admin.MapGet("/secret", GetSecretStatus).WithName("GetTrmmSecretStatus").WithOpenApi();
-        admin.MapPut("/secret", SetSecret).WithName("SetTrmmSecret").WithOpenApi();
-        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteTrmmSecret").WithOpenApi();
+        admin.MapGet("/secret", GetSecretStatus).WithName("GetTrmmSecretStatus");
+        admin.MapPut("/secret", SetSecret).WithName("SetTrmmSecret");
+        admin.MapDelete("/secret", DeleteSecret).WithName("DeleteTrmmSecret");
 
-        admin.MapPut("/base-url", SetBaseUrl).WithName("SetTrmmBaseUrl").WithOpenApi();
-        admin.MapPut("/enabled", SetEnabled).WithName("SetTrmmEnabled").WithOpenApi();
-        admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetTrmmSyncInterval").WithOpenApi();
+        admin.MapPut("/base-url", SetBaseUrl).WithName("SetTrmmBaseUrl");
+        admin.MapPut("/enabled", SetEnabled).WithName("SetTrmmEnabled");
+        admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetTrmmSyncInterval");
         // v0.1.10 — Remote Desktop check sync knobs + manual trigger.
-        admin.MapPut("/rds-settings", SetRdsSettings).WithName("SetTrmmRdsSettings").WithOpenApi();
-        admin.MapPost("/rds-sync", TriggerRdsSync).WithName("TriggerTrmmRdsSync").WithOpenApi();
+        admin.MapPut("/rds-settings", SetRdsSettings).WithName("SetTrmmRdsSettings");
+        admin.MapPost("/rds-sync", TriggerRdsSync).WithName("TriggerTrmmRdsSync");
 
-        admin.MapPost("/test-connection", TestConnection).WithName("TestTrmmConnection").WithOpenApi();
-        admin.MapPost("/sync", TriggerSync).WithName("TriggerTrmmSync").WithOpenApi();
+        admin.MapPost("/test-connection", TestConnection).WithName("TestTrmmConnection");
+        admin.MapPost("/sync", TriggerSync).WithName("TriggerTrmmSync");
 
-        admin.MapGet("/client-mappings", ListClientMappings).WithName("ListTrmmClientMappings").WithOpenApi();
-        admin.MapPut("/client-mappings/{trmmClientId:long}", SetClientMapping).WithName("SetTrmmClientMapping").WithOpenApi();
+        admin.MapGet("/client-mappings", ListClientMappings).WithName("ListTrmmClientMappings");
+        admin.MapPut("/client-mappings/{trmmClientId:long}", SetClientMapping).WithName("SetTrmmClientMapping");
 
-        admin.MapGet("/audit", GetAuditLog).WithName("GetTrmmAuditLog").WithOpenApi();
+        admin.MapGet("/audit", GetAuditLog).WithName("GetTrmmAuditLog");
 
         return app;
     }

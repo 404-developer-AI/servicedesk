@@ -50,7 +50,7 @@ public static class ReportingApiEndpoints
             var enabled = await settings.GetAsync<bool>(SettingKeys.Reporting.Enabled, ct);
             var configured = await secrets.HasAsync(ProtectedSecretKeys.ReportingApiKey, ct);
             return Results.Ok(new { enabled, keyConfigured = configured });
-        }).WithName("GetReportingApiStatus").WithOpenApi();
+        }).WithName("GetReportingApiStatus");
 
         admin.MapPut("/enabled", async (
             [FromBody] SetEnabledRequest req,
@@ -61,7 +61,7 @@ public static class ReportingApiEndpoints
             await ReportingAudit.WriteAsync(audit, http, ReportingAudit.EnabledChanged,
                 SettingKeys.Reporting.Enabled, new { enabled = req.Enabled });
             return Results.Ok(new { enabled = req.Enabled });
-        }).WithName("SetReportingApiEnabled").WithOpenApi();
+        }).WithName("SetReportingApiEnabled");
 
         admin.MapPut("/key", async (
             [FromBody] SetKeyRequest req,
@@ -77,7 +77,7 @@ public static class ReportingApiEndpoints
             await ReportingAudit.WriteAsync(audit, http, ReportingAudit.KeyUpdated,
                 ProtectedSecretKeys.ReportingApiKey, new { configured = true });
             return Results.NoContent();
-        }).WithName("SetReportingApiKey").WithOpenApi();
+        }).WithName("SetReportingApiKey");
 
         admin.MapDelete("/key", async (
             HttpContext http, IProtectedSecretStore secrets, IAuditLogger audit, CancellationToken ct) =>
@@ -86,7 +86,7 @@ public static class ReportingApiEndpoints
             await ReportingAudit.WriteAsync(audit, http, ReportingAudit.KeyDeleted,
                 ProtectedSecretKeys.ReportingApiKey, new { configured = false });
             return Results.NoContent();
-        }).WithName("DeleteReportingApiKey").WithOpenApi();
+        }).WithName("DeleteReportingApiKey");
 
         // ---- Public surface (key-gated, read-only) -------------------------
         var pub = app.MapGroup("/api/reporting")
@@ -151,7 +151,7 @@ public static class ReportingApiEndpoints
                 closed = ShapeSection(report.Closed),
                 openNow = ShapeSection(report.OpenNow),
             });
-        }).WithName("GetReportingTickets").WithOpenApi();
+        }).WithName("GetReportingTickets");
 
         pub.MapGet("/companies", async (
             [FromQuery] int? offset,
@@ -188,7 +188,7 @@ public static class ReportingApiEndpoints
                     isActive = c.IsActive,
                 }),
             });
-        }).WithName("GetReportingCompanies").WithOpenApi();
+        }).WithName("GetReportingCompanies");
 
         return app;
     }

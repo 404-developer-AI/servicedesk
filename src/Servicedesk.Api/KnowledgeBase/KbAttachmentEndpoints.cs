@@ -58,7 +58,7 @@ public static class KbAttachmentEndpoints
                 size = writeResult.SizeBytes,
                 filename = safeFilename,
             });
-        }).WithName("UploadKbAttachment").WithOpenApi();
+        }).WithName("UploadKbAttachment");
 
         // GET /api/kb/articles/{id}/attachments — list the article's attachments
         // (newest first). Backs the article-edit "Attachments" panel; the client
@@ -84,7 +84,7 @@ public static class KbAttachmentEndpoints
                     filename = a.OriginalFilename,
                 }),
             });
-        }).WithName("ListKbAttachments").WithOpenApi();
+        }).WithName("ListKbAttachments");
 
         // DELETE /api/kb/articles/{id}/attachments/{attachmentId} — remove an
         // attachment from the panel. Scoped to the owning article. Any link to
@@ -106,7 +106,7 @@ public static class KbAttachmentEndpoints
                 new { articleId = id });
 
             return Results.NoContent();
-        }).WithName("DeleteKbAttachment").WithOpenApi();
+        }).WithName("DeleteKbAttachment");
 
         // GET /api/kb/articles/{id}/attachments/{attachmentId} — download.
         // ETag from the content-hash makes repeated <img> renders cache-hits.
@@ -144,7 +144,7 @@ public static class KbAttachmentEndpoints
             // attachment route on the same rule.
             return Servicedesk.Api.Tickets.AttachmentResponse.File(
                 stream, att.MimeType, att.OriginalFilename, inline == true);
-        }).WithName("GetKbAttachment").WithOpenApi();
+        }).WithName("GetKbAttachment");
 
         return app;
     }

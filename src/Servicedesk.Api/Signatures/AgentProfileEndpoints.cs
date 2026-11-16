@@ -40,7 +40,7 @@ public static class AgentProfileEndpoints
                 photoUrl = string.IsNullOrWhiteSpace(p?.PhotoBlobHash) ? null : "/api/me/signature-photo",
                 entraSyncedUtc = p?.EntraSyncedUtc,
             });
-        }).WithName("GetMySignatureProfile").WithOpenApi();
+        }).WithName("GetMySignatureProfile");
 
         group.MapPut("/signature-profile", async (
             UpdateProfileRequest req, HttpContext http,
@@ -65,7 +65,7 @@ public static class AgentProfileEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString()));
 
             return Results.NoContent();
-        }).WithName("UpdateMySignatureProfile").WithOpenApi();
+        }).WithName("UpdateMySignatureProfile");
 
         group.MapPost("/signature-photo", async (
             HttpContext http, IAgentProfileRepository repo, IBlobStore blobs,
@@ -109,7 +109,7 @@ public static class AgentProfileEndpoints
             resolver.Invalidate(userId);
 
             return Results.Ok(new { photoUrl = "/api/me/signature-photo", mimeType = sniffed });
-        }).WithName("UploadMySignaturePhoto").WithOpenApi();
+        }).WithName("UploadMySignaturePhoto");
 
         group.MapDelete("/signature-photo", async (
             HttpContext http, IAgentProfileRepository repo,
@@ -119,7 +119,7 @@ public static class AgentProfileEndpoints
             await repo.SetPhotoAsync(userId, null, null, ct);
             resolver.Invalidate(userId);
             return Results.NoContent();
-        }).WithName("DeleteMySignaturePhoto").WithOpenApi();
+        }).WithName("DeleteMySignaturePhoto");
 
         group.MapGet("/signature-photo", async (
             HttpContext http, IAgentProfileRepository repo, IBlobStore blobs, CancellationToken ct) =>
@@ -139,7 +139,7 @@ public static class AgentProfileEndpoints
             if (stream is null) return Results.NotFound();
             return Results.File(stream, string.IsNullOrWhiteSpace(p.PhotoMime) ? "image/jpeg" : p.PhotoMime,
                 fileDownloadName: null, enableRangeProcessing: true);
-        }).WithName("GetMySignaturePhoto").WithOpenApi();
+        }).WithName("GetMySignaturePhoto");
 
         // Resolved `{{agent.*}}` values for the current user — drives the
         // builder's live preview so it shows real data, not placeholders.
@@ -159,7 +159,7 @@ public static class AgentProfileEndpoints
                 mobile = Enc(v.Mobile),
                 photoUrl = string.IsNullOrWhiteSpace(v.PhotoBlobHash) ? null : "/api/me/signature-photo",
             });
-        }).WithName("GetMySignatureVariables").WithOpenApi();
+        }).WithName("GetMySignatureVariables");
 
         MapAdminTeamProfiles(app);
         return app;
@@ -191,7 +191,7 @@ public static class AgentProfileEndpoints
                 photoUrl = r.HasPhoto ? $"/api/admin/signature-profiles/{r.UserId}/photo" : null,
                 entraSyncedUtc = r.EntraSyncedUtc,
             }));
-        }).WithName("ListTeamSignatureProfiles").WithOpenApi();
+        }).WithName("ListTeamSignatureProfiles");
 
         group.MapPut("/{userId:guid}", async (
             Guid userId, UpdateProfileRequest req, HttpContext http,
@@ -214,7 +214,7 @@ public static class AgentProfileEndpoints
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString()));
             return Results.NoContent();
-        }).WithName("UpdateTeamSignatureProfile").WithOpenApi();
+        }).WithName("UpdateTeamSignatureProfile");
 
         group.MapPost("/{userId:guid}/photo", async (
             Guid userId, HttpContext http, IAgentProfileRepository repo, IBlobStore blobs,
@@ -222,7 +222,7 @@ public static class AgentProfileEndpoints
         {
             var result = await StorePhotoAsync(userId, http, repo, blobs, settings, resolver, ct);
             return result;
-        }).WithName("UploadTeamSignaturePhoto").WithOpenApi();
+        }).WithName("UploadTeamSignaturePhoto");
 
         group.MapDelete("/{userId:guid}/photo", async (
             Guid userId, IAgentProfileRepository repo, ISignatureVariableResolver resolver, CancellationToken ct) =>
@@ -230,7 +230,7 @@ public static class AgentProfileEndpoints
             await repo.SetPhotoAsync(userId, null, null, ct);
             resolver.Invalidate(userId);
             return Results.NoContent();
-        }).WithName("DeleteTeamSignaturePhoto").WithOpenApi();
+        }).WithName("DeleteTeamSignaturePhoto");
 
         group.MapGet("/{userId:guid}/photo", async (
             Guid userId, HttpContext http, IAgentProfileRepository repo, IBlobStore blobs, CancellationToken ct) =>
@@ -247,7 +247,7 @@ public static class AgentProfileEndpoints
             if (stream is null) return Results.NotFound();
             return Results.File(stream, string.IsNullOrWhiteSpace(p.PhotoMime) ? "image/jpeg" : p.PhotoMime,
                 fileDownloadName: null, enableRangeProcessing: true);
-        }).WithName("GetTeamSignaturePhoto").WithOpenApi();
+        }).WithName("GetTeamSignaturePhoto");
 
         // ---- generic profile-photo frame (admin-uploaded background) --------
         // A single install-wide background image the client-side photo editor
@@ -287,7 +287,7 @@ public static class AgentProfileEndpoints
             await settings.SetAsync<string>(SettingKeys.Signatures.PhotoFrameBlobHash, written.ContentHash, actor, role, ct);
             await settings.SetAsync<string>(SettingKeys.Signatures.PhotoFrameMime, sniffed, actor, role, ct);
             return Results.Ok(new { frameUrl = "/api/admin/signature-profiles/frame", mimeType = sniffed });
-        }).WithName("UploadSignaturePhotoFrame").WithOpenApi();
+        }).WithName("UploadSignaturePhotoFrame");
 
         group.MapGet("/frame", async (
             HttpContext http, IBlobStore blobs, ISettingsService settings, CancellationToken ct) =>
@@ -305,7 +305,7 @@ public static class AgentProfileEndpoints
             if (stream is null) return Results.NotFound();
             return Results.File(stream, string.IsNullOrWhiteSpace(mime) ? "image/png" : mime,
                 fileDownloadName: null, enableRangeProcessing: true);
-        }).WithName("GetSignaturePhotoFrame").WithOpenApi();
+        }).WithName("GetSignaturePhotoFrame");
 
         group.MapDelete("/frame", async (HttpContext http, ISettingsService settings, CancellationToken ct) =>
         {
@@ -313,7 +313,7 @@ public static class AgentProfileEndpoints
             await settings.SetAsync<string>(SettingKeys.Signatures.PhotoFrameBlobHash, "", actor, role, ct);
             await settings.SetAsync<string>(SettingKeys.Signatures.PhotoFrameMime, "", actor, role, ct);
             return Results.NoContent();
-        }).WithName("DeleteSignaturePhotoFrame").WithOpenApi();
+        }).WithName("DeleteSignaturePhotoFrame");
     }
 
     /// Shared photo-store: sniff (image-only), blob-write, persist, invalidate.

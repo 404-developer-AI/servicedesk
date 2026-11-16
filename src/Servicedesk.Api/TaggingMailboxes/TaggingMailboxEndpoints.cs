@@ -42,7 +42,7 @@ public static class TaggingMailboxEndpoints
         {
             var rows = await repo.ListAsync(ct);
             return Results.Ok(rows.Select(MapDto));
-        }).WithName("ListTaggingMailboxes").WithOpenApi();
+        }).WithName("ListTaggingMailboxes");
 
         group.MapPost("/", async (
             [FromBody] UpsertRequest req, HttpContext http,
@@ -73,7 +73,7 @@ public static class TaggingMailboxEndpoints
 
             var created = await repo.GetAsync(id, ct);
             return Results.Created($"/api/settings/tagging-mailboxes/{id}", MapDto(created!));
-        }).WithName("CreateTaggingMailbox").WithOpenApi();
+        }).WithName("CreateTaggingMailbox");
 
         group.MapPut("/{id:guid}", async (
             Guid id, [FromBody] UpsertRequest req, HttpContext http,
@@ -106,7 +106,7 @@ public static class TaggingMailboxEndpoints
 
             var updated = await repo.GetAsync(id, ct);
             return Results.Ok(MapDto(updated!));
-        }).WithName("UpdateTaggingMailbox").WithOpenApi();
+        }).WithName("UpdateTaggingMailbox");
 
         group.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, ITaggingMailboxRepository repo,
@@ -128,7 +128,7 @@ public static class TaggingMailboxEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString()));
 
             return Results.NoContent();
-        }).WithName("DeleteTaggingMailbox").WithOpenApi();
+        }).WithName("DeleteTaggingMailbox");
     }
 
     private static void MapAgentEndpoints(IEndpointRouteBuilder app)
@@ -143,8 +143,7 @@ public static class TaggingMailboxEndpoints
         })
             .WithTags("TaggingMailboxesAgent")
             .WithName("SearchTaggingMailboxes")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
-            .WithOpenApi();
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
     }
 
     public sealed record UpsertRequest(

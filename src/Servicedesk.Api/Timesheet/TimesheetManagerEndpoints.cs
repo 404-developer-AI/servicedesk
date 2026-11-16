@@ -36,7 +36,7 @@ public static class TimesheetManagerEndpoints
             if (!await EnsureManagerAsync(http, users, ct)) return Results.Forbid();
             var list = await svc.ListTimesheetUsersAsync(ct);
             return Results.Ok(list);
-        }).WithName("ListTimesheetUsers").WithOpenApi();
+        }).WithName("ListTimesheetUsers");
 
         // -- entries list (Tab 2) ----------------------------------------
         group.MapGet("/entries", async (
@@ -68,7 +68,7 @@ public static class TimesheetManagerEndpoints
                 page = result.Page,
                 pageSize = result.PageSize,
             });
-        }).WithName("ListManagerTimesheetEntries").WithOpenApi();
+        }).WithName("ListManagerTimesheetEntries");
 
         // -- update (Tab 2 inline edit) ----------------------------------
         group.MapPut("/entries/{id:guid}", async (
@@ -93,7 +93,7 @@ public static class TimesheetManagerEndpoints
                     Results.UnprocessableEntity(new { errors = v.Errors }),
                 _ => Results.Problem("Unhandled manager-update result."),
             };
-        }).WithName("ManagerUpdateTimesheetEntry").WithOpenApi();
+        }).WithName("ManagerUpdateTimesheetEntry");
 
         // -- delete (Tab 2) ----------------------------------------------
         group.MapDelete("/entries/{id:guid}", async (
@@ -130,7 +130,7 @@ public static class TimesheetManagerEndpoints
                 });
             await notifier.NotifyEntryChangedAsync(before.TicketId, ct);
             return Results.NoContent();
-        }).WithName("ManagerDeleteTimesheetEntry").WithOpenApi();
+        }).WithName("ManagerDeleteTimesheetEntry");
 
         // -- month rollup (Tab 3) ----------------------------------------
         group.MapGet("/month", async (
@@ -148,7 +148,7 @@ public static class TimesheetManagerEndpoints
 
             var rollup = await svc.GetMonthAsync(userId.Value, year.Value, month.Value, ct);
             return Results.Ok(rollup);
-        }).WithName("GetTimesheetMonth").WithOpenApi();
+        }).WithName("GetTimesheetMonth");
 
         // -- CSV export (Tab 3) ------------------------------------------
         group.MapGet("/month/export.csv", async (
@@ -169,7 +169,7 @@ public static class TimesheetManagerEndpoints
             var fileName = $"timesheet_{Sanitize(rollup.UserEmail)}_{year:D4}-{month:D2}.csv";
             return Results.File(Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray(),
                 "text/csv; charset=utf-8", fileName);
-        }).WithName("ExportTimesheetMonthCsv").WithOpenApi();
+        }).WithName("ExportTimesheetMonthCsv");
 
         // -- effective preferences for any user (Tab 3 colour grid) ------
         group.MapGet("/preferences/{userId:guid}", async (
@@ -182,7 +182,7 @@ public static class TimesheetManagerEndpoints
             if (!await EnsureManagerAsync(http, users, ct)) return Results.Forbid();
             var p = await prefs.GetEffectiveAsync(userId, ct);
             return Results.Ok(p);
-        }).WithName("GetTimesheetUserPreferences").WithOpenApi();
+        }).WithName("GetTimesheetUserPreferences");
 
         return app;
     }

@@ -26,10 +26,10 @@ public static class ContractsOverviewEndpoints
             .WithTags("Contracts")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        group.MapGet("", ListContracts).WithName("ListAdsolutContracts").WithOpenApi();
-        group.MapGet("/{id:guid}", GetContractDetail).WithName("GetAdsolutContractDetail").WithOpenApi();
-        group.MapPost("/sync", TriggerSync).WithName("TriggerAdsolutContractsSync").WithOpenApi();
-        group.MapPost("/{id:guid}/resync", ResyncContract).WithName("ResyncAdsolutContract").WithOpenApi();
+        group.MapGet("", ListContracts).WithName("ListAdsolutContracts");
+        group.MapGet("/{id:guid}", GetContractDetail).WithName("GetAdsolutContractDetail");
+        group.MapPost("/sync", TriggerSync).WithName("TriggerAdsolutContractsSync");
+        group.MapPost("/{id:guid}/resync", ResyncContract).WithName("ResyncAdsolutContract");
 
         return group;
     }
