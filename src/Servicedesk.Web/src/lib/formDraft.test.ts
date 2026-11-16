@@ -79,3 +79,32 @@ describe("form draft", () => {
     expect(input.ok).toBe(false);
   });
 });
+
+describe("rich-text long text", () => {
+  const notes = field({ id: "notes", type: "LongText", required: true });
+
+  it("starts as html with the default turned into escaped paragraphs", () => {
+    const d = emptyDraft([{ ...notes, defaultValue: "a <b>\nline 2" }]);
+    expect(d.notes).toEqual({ kind: "html", value: "<p>a &lt;b&gt;</p><p>line 2</p>" });
+  });
+
+  it("sends rich html and omits an empty editor", () => {
+    expect(draftToInput([notes], { notes: { kind: "html", value: "<p><strong>x</strong></p>" } }))
+      .toEqual({ notes: { html: "<p><strong>x</strong></p>" } });
+    expect(draftToInput([notes], { notes: { kind: "html", value: "<p></p>" } })).toEqual({});
+    expect(validateDraft([notes], { notes: { kind: "html", value: "<p> </p>" } })).toEqual({ notes: "Required." });
+    expect(validateDraft([notes], { notes: { kind: "html", value: "<p>ok</p>" } })).toEqual({});
+  });
+
+  it("sends an untouched legacy answer back as the original string", () => {
+    const d = draftFromAnswers([notes], { notes: "line 1\nline 2" });
+    expect(d.notes).toMatchObject({ kind: "html", value: "<p>line 1</p><p>line 2</p>" });
+    expect(draftToInput([notes], d)).toEqual({ notes: "line 1\nline 2" });
+    const edited = { notes: { ...(d.notes as { kind: "html"; value: string }), value: "<p>line 1</p>" } };
+    expect(draftToInput([notes], edited)).toEqual({ notes: { html: "<p>line 1</p>" } });
+  });
+
+  it("loads a rich answer as html", () => {
+    expect(draftFromAnswers([notes], { notes: { html: "<p>x</p>" } }).notes).toEqual({ kind: "html", value: "<p>x</p>" });
+  });
+});

@@ -7,7 +7,8 @@ import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { useServerOffsetMinutes, useServerTimeZone } from "@/hooks/useServerTime";
 import { userApi } from "@/lib/ticket-api";
 import { ticketFormsApi, type FormField } from "@/lib/forms-api";
-import { newRowKey, type ArticleDraftRow, type DraftValue } from "@/lib/formDraft";
+import { newRowKey, plainTextToHtml, type ArticleDraftRow, type DraftValue } from "@/lib/formDraft";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import { cn } from "@/lib/utils";
 
 /// v0.1.52 — one input per form field type. Shared by the fill dialog and the
@@ -80,9 +81,8 @@ function renderControl(
       );
     case "LongText":
       return (
-        <textarea id={id} rows={4} disabled={disabled} value={text}
-          onChange={(e) => onChange({ kind: "text", value: e.target.value })}
-          className={cn(formInputCn, "min-h-[96px] resize-y py-2 leading-relaxed", ring)} />
+        <LongTextControl id={id} value={value} disabled={disabled} invalid={invalid}
+          onChange={onChange} />
       );
     case "Number":
       return (
@@ -189,6 +189,38 @@ function renderControl(
 }
 
 /* ─── primitives ─── */
+
+/// v0.1.55 — LongText is rich text: the shared editor without uploads (a
+/// form answer has no attachment tray). Order pills and links survive a
+/// re-edit; the server sanitizes the HTML like a ticket note.
+function LongTextControl({ id, value, onChange, disabled, invalid }: {
+  id: string;
+  value: DraftValue | undefined;
+  onChange: (v: DraftValue) => void;
+  disabled?: boolean;
+  invalid: boolean;
+}) {
+  const editorRef = React.useRef<{ commands: { focus: () => void } } | null>(null);
+  const html = value?.kind === "html" ? value.value : value?.kind === "text" ? plainTextToHtml(value.value) : "";
+  const legacy = value?.kind === "html" ? value.legacy : undefined;
+  return (
+    // The wrapper carries the field id so "focus the first invalid field"
+    // lands in the editor.
+    <div id={id} tabIndex={-1} onFocus={(e) => { if (e.target === e.currentTarget) editorRef.current?.commands.focus(); }}
+      className={cn("sd-form-rich rounded-md outline-hidden", invalid && "ring-1 ring-rose-500/60")}>
+      <RichTextEditor
+        content={html}
+        editable={!disabled}
+        placeholder=""
+        minHeight="96px"
+        maxHeight="320px"
+        preserveInlineNodes
+        onChange={(next) => onChange({ kind: "html", value: next, ...(legacy ? { legacy } : {}) })}
+        onEditorReady={(e) => { editorRef.current = e as typeof editorRef.current; }}
+      />
+    </div>
+  );
+}
 
 function CheckBox({ id, checked, onChange }: { id?: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (

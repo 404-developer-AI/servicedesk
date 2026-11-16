@@ -287,8 +287,8 @@ function ChangesTable({ changes }: { changes: { fieldId: string; label: string; 
         {changes.map((c) => (
           <tr key={c.fieldId}>
             <td className="py-1.5 pr-3 font-medium">{c.label}</td>
-            <td className="py-1.5 pr-2 text-amber-900/70 line-through decoration-amber-700/40 dark:text-amber-100/60">{c.before || "—"}</td>
-            <td className="py-1.5">{c.after || "—"}</td>
+            <td className="whitespace-pre-wrap py-1.5 pr-2 text-amber-900/70 line-through decoration-amber-700/40 dark:text-amber-100/60">{c.before || "—"}</td>
+            <td className="whitespace-pre-wrap py-1.5">{c.after || "—"}</td>
           </tr>
         ))}
       </tbody>

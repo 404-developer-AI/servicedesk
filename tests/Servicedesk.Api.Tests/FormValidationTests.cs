@@ -290,4 +290,106 @@ public sealed class FormValidationTests
         };
         Assert.Empty(FormRenderer.ChangedFields(def, stored, fresh));
     }
+
+    // ---- rich-text long text ------------------------------------------------
+
+    private static readonly Func<string, string?> Sanitize = new TicketHtmlSanitizer().Sanitize;
+
+    private static JsonObject Rich(string html) => new() { ["html"] = html };
+
+    private static JsonObject BuildRich(FormDefinition def, JsonObject answers) =>
+        FormAnswerValidator.Build(def, FormAnswerValidator.Parse(def, answers, Limits, Sanitize),
+            new FormResolvedReferences(
+                new Dictionary<Guid, string>(),
+                new Dictionary<Guid, (string, string)>(),
+                new Dictionary<Guid, (string, string)>()));
+
+    [Fact]
+    public void Long_text_accepts_plain_string_and_rich_html()
+    {
+        var f = F(FormFieldType.LongText, "Notes");
+        var def = Def(f);
+        Assert.Equal("old style", BuildRich(def, A((f, "old style")))[f.Id.ToString()]!.GetValue<string>());
+        var rich = BuildRich(def, A((f, Rich("<p><strong>Bold</strong> text</p>"))));
+        Assert.Equal("<p><strong>Bold</strong> text</p>", FormRenderer.RichHtml(rich[f.Id.ToString()]));
+    }
+
+    [Fact]
+    public void Rich_long_text_is_sanitized()
+    {
+        var f = F(FormFieldType.LongText, "Notes");
+        var def = Def(f);
+        var stored = BuildRich(def, A((f, Rich("<p>ok<script>alert(1)</script><img src=\"data:image/png;base64,AAAA\" onerror=\"x()\"></p>"))));
+        var html = FormRenderer.RichHtml(stored[f.Id.ToString()])!;
+        Assert.DoesNotContain("<script", html);
+        Assert.DoesNotContain("data:", html);
+        Assert.DoesNotContain("onerror", html);
+        Assert.Contains("ok", html);
+    }
+
+    [Fact]
+    public void Rich_long_text_counts_visible_text_and_empty_markup_is_unanswered()
+    {
+        var f = F(FormFieldType.LongText, "Notes", required: true);
+        var def = Def(f);
+        // 50 visible characters inside heavy markup fit the 50-char cap.
+        var fifty = new string('a', 50);
+        Assert.Single(FormAnswerValidator.Parse(def, A((f, Rich($"<p><strong><em>{fifty}</em></strong></p>"))), Limits, Sanitize).Values);
+        Assert.Throws<FormAnswerException>(() =>
+            FormAnswerValidator.Parse(def, A((f, Rich($"<p>{fifty}b</p>"))), Limits, Sanitize));
+        var ex = Assert.Throws<FormAnswerException>(() =>
+            FormAnswerValidator.Parse(def, A((f, Rich("<p> </p><p></p>"))), Limits, Sanitize));
+        Assert.Contains("required", ex.Message);
+        // Raw markup is capped too.
+        Assert.Throws<FormAnswerException>(() =>
+            FormAnswerValidator.Parse(def, A((f, Rich("<p>" + new string(' ', 1000) + "a</p>"))), Limits, Sanitize));
+    }
+
+    [Fact]
+    public void Rich_text_is_rejected_without_a_sanitizer_and_on_short_text()
+    {
+        var lng = F(FormFieldType.LongText, "Notes");
+        var sht = F(FormFieldType.ShortText, "Serial");
+        var def = Def(lng, sht);
+        Assert.Throws<FormAnswerException>(() => FormAnswerValidator.Parse(def, A((lng, Rich("<p>x</p>"))), Limits));
+        Assert.Throws<FormAnswerException>(() => FormAnswerValidator.Parse(def, A((sht, Rich("<p>x</p>"))), Limits, Sanitize));
+    }
+
+    [Fact]
+    public void Note_renders_rich_html_and_legacy_text_with_line_breaks()
+    {
+        var rich = F(FormFieldType.LongText, "Rich");
+        var legacy = F(FormFieldType.LongText, "Legacy");
+        var def = Def(rich, legacy);
+        var answers = BuildRich(def, A((rich, Rich("<p><strong>Bold</strong></p>")), (legacy, "line 1\n<b>line 2</b>")));
+        var html = FormRenderer.RenderNoteHtml(Guid.NewGuid(), "F", 1, def, answers, null, null, dt => dt.ToString("u"));
+        Assert.Contains("<p><strong>Bold</strong></p>", html);
+        Assert.Contains("line 1<br>&lt;b&gt;line 2&lt;/b&gt;", html);
+        Assert.Contains("Rich: Bold", FormRenderer.FlattenForSearch(def, answers));
+    }
+
+    [Fact]
+    public void Update_note_keeps_line_breaks_in_long_text_changes()
+    {
+        var f = F(FormFieldType.LongText, "Notes");
+        var def = Def(f);
+        var before = BuildRich(def, A((f, "a\nb")));
+        var after = BuildRich(def, A((f, Rich("<p>a</p><p>c</p>"))));
+        var changed = FormRenderer.ChangedFields(def, before, after);
+        var html = FormRenderer.RenderNoteHtml(Guid.NewGuid(), "F", 2, def, after, before, changed, dt => dt.ToString("u"));
+        Assert.Contains("a<br>b → a<br>c", html);
+    }
+
+    [Fact]
+    public void Legacy_text_resaved_as_rich_with_the_same_words_is_not_a_change()
+    {
+        var f = F(FormFieldType.LongText, "Notes");
+        var def = Def(f);
+        var legacy = BuildRich(def, A((f, "line 1\nline 2")));
+        Assert.Empty(FormRenderer.ChangedFields(def, legacy, BuildRich(def, A((f, Rich("<p>line 1</p><p>line 2</p>"))))));
+        // Formatting-only edits between two rich answers do count.
+        var plainRich = BuildRich(def, A((f, Rich("<p>x</p>"))));
+        var boldRich = BuildRich(def, A((f, Rich("<p><strong>x</strong></p>"))));
+        Assert.Single(FormRenderer.ChangedFields(def, plainRich, boldRich));
+    }
 }

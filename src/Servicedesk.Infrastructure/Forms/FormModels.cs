@@ -324,6 +324,8 @@ public static class FormAnswerValidator
 
     public abstract record ParsedValue;
     public sealed record TextValue(string Value) : ParsedValue;
+    /// A rich-text LongText answer: sanitized HTML (stored as {"html": …}).
+    public sealed record HtmlValue(string Html) : ParsedValue;
     public sealed record NumberValue(decimal Value) : ParsedValue;
     public sealed record BoolValue(bool Value) : ParsedValue;
     public sealed record OptionValue(string OptionId) : ParsedValue;
@@ -334,7 +336,11 @@ public static class FormAnswerValidator
     public sealed record RefValue(Guid Id) : ParsedValue;
     public sealed record ArticleRowsValue(IReadOnlyList<(Guid ArticleId, decimal Quantity)> Rows) : ParsedValue;
 
-    public static ParsedAnswers Parse(FormDefinition def, JsonObject? answers, FormRuntimeSettings limits)
+    /// <paramref name="sanitizeHtml"/> cleans a rich-text LongText answer
+    /// (the ticket-note sanitizer in production). Without one, rich-text
+    /// answers are rejected rather than stored unsanitized.
+    public static ParsedAnswers Parse(
+        FormDefinition def, JsonObject? answers, FormRuntimeSettings limits, Func<string, string?>? sanitizeHtml = null)
     {
         answers ??= new JsonObject();
         var byId = def.Fields.ToDictionary(f => f.Id);
@@ -353,7 +359,7 @@ public static class FormAnswerValidator
         {
             if (!FormFieldType.IsInput(f.Type)) continue;
             answers.TryGetPropertyValue(f.Id.ToString(), out var node);
-            var parsed = node is null ? null : ParseOne(f, node, limits);
+            var parsed = node is null ? null : ParseOne(f, node, limits, sanitizeHtml);
             if (parsed is null)
             {
                 if (f.Required) throw new FormAnswerException($"'{f.Label}' is required.", f.Id);
@@ -372,12 +378,27 @@ public static class FormAnswerValidator
     }
 
     /// Returns null for "no answer" (empty string, empty list, null).
-    private static ParsedValue? ParseOne(FormField f, JsonNode node, FormRuntimeSettings limits)
+    private static ParsedValue? ParseOne(FormField f, JsonNode node, FormRuntimeSettings limits, Func<string, string?>? sanitizeHtml)
     {
         FormAnswerException Bad(string msg) => new($"'{f.Label}': {msg}", f.Id);
 
         switch (f.Type)
         {
+            case FormFieldType.LongText when node is JsonObject rich:
+            {
+                // Rich text (v0.1.55): {"html": "…"}. The length limit counts
+                // the visible text; the raw HTML gets a generous hard cap so
+                // markup can't be used to store unbounded data.
+                var raw = rich["html"] is { } h ? ReadString(h) : null;
+                if (raw is null || rich.Count != 1) throw Bad("expected text.");
+                if (raw.Length > HtmlMaxLength(limits)) throw Bad($"at most {limits.LongTextMaxLength} characters.");
+                if (sanitizeHtml is null) throw Bad("rich text is not accepted here.");
+                var clean = (sanitizeHtml(raw) ?? string.Empty).Trim();
+                var text = KnowledgeBase.KbBodyStripper.HtmlToText(clean);
+                if (text.Length == 0) return null;
+                if (text.Length > limits.LongTextMaxLength) throw Bad($"at most {limits.LongTextMaxLength} characters.");
+                return new HtmlValue(clean);
+            }
             case FormFieldType.ShortText:
             case FormFieldType.LongText:
             {
@@ -504,6 +525,11 @@ public static class FormAnswerValidator
         throw Bad("unsupported field.");
     }
 
+    /// Hard cap on the raw HTML of a rich-text answer: markup around the
+    /// visible text (formatting, links, order pills) needs room, but not
+    /// without bound.
+    internal static int HtmlMaxLength(FormRuntimeSettings limits) => limits.LongTextMaxLength * 8;
+
     private static string? ReadString(JsonNode node)
         => node is JsonValue v && v.GetValueKind() == System.Text.Json.JsonValueKind.String ? v.GetValue<string>() : null;
 
@@ -528,6 +554,7 @@ public static class FormAnswerValidator
             JsonNode? node = v switch
             {
                 TextValue t => JsonValue.Create(t.Value),
+                HtmlValue h => new JsonObject { ["html"] = h.Html },
                 NumberValue n => JsonValue.Create(n.Value),
                 BoolValue b => JsonValue.Create(b.Value),
                 OptionValue ov => JsonValue.Create(ov.OptionId),
@@ -572,6 +599,8 @@ public static class FormRenderer
         {
             switch (f.Type)
             {
+                case FormFieldType.LongText when RichHtml(v) is { } html:
+                    return KnowledgeBase.KbBodyStripper.HtmlToText(html);
                 case FormFieldType.ShortText:
                 case FormFieldType.LongText:
                     return v.GetValue<string>();
@@ -629,9 +658,16 @@ public static class FormRenderer
         return string.Empty;
     }
 
+    /// The sanitized HTML of a rich-text LongText answer, or null for a plain
+    /// (legacy) string answer.
+    public static string? RichHtml(JsonNode? v)
+        => v is JsonObject o && o["html"] is JsonValue h && h.GetValueKind() == System.Text.Json.JsonValueKind.String
+            ? h.GetValue<string>() : null;
+
     public static string FormatQty(decimal q) => q.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string E(string s) => System.Net.WebUtility.HtmlEncode(s);
+    private static string Lines(string s) => E(s).Replace("\n", "<br>");
 
     /// The full form as note HTML. <paramref name="changedFieldIds"/> non-null
     /// = update note: only those fields, rendered as "old → new".
@@ -661,12 +697,14 @@ public static class FormRenderer
             if (changedFieldIds is not null)
             {
                 var before = DisplayValue(f, previous?[key], formatDateTime);
-                cell = $"{E(before.Length == 0 ? "—" : before)} → {E(now.Length == 0 ? "—" : now)}";
+                cell = $"{Lines(before.Length == 0 ? "—" : before)} → {Lines(now.Length == 0 ? "—" : now)}";
             }
             else
             {
                 if (now.Length == 0) continue;
-                cell = E(now).Replace("\n", "<br>");
+                // Rich text goes in as its (already sanitized) HTML; the note
+                // as a whole is sanitized again before it is stored.
+                cell = f.Type == FormFieldType.LongText && RichHtml(answers[key]) is { } html ? html : Lines(now);
             }
             if (pendingSection is not null)
             {
@@ -710,7 +748,17 @@ public static class FormRenderer
             var key = f.Id.ToString();
             var a = Canonical(before?[key]);
             var b = Canonical(after[key]);
-            if (!string.Equals(a, b, StringComparison.Ordinal)) changed.Add(f.Id);
+            if (string.Equals(a, b, StringComparison.Ordinal)) continue;
+            // A legacy plain-text LongText re-saved as rich text with the same
+            // words is not a change; two rich answers compare by HTML, so a
+            // formatting-only edit still counts.
+            if (f.Type == FormFieldType.LongText
+                && (RichHtml(before?[key]) is null) != (RichHtml(after[key]) is null)
+                && string.Equals(
+                    DisplayValue(f, before?[key], _ => string.Empty),
+                    DisplayValue(f, after[key], _ => string.Empty), StringComparison.Ordinal))
+                continue;
+            changed.Add(f.Id);
         }
         return changed;
     }

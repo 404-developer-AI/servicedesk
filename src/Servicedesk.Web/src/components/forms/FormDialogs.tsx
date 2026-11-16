@@ -21,8 +21,10 @@ import {
   type FormAnswerValue,
   type FormAnswers,
   type FormField,
+  type RichTextAnswer,
   type TicketFormDetail,
 } from "@/lib/forms-api";
+import { SafeHtml } from "@/components/SafeHtml";
 import { draftFromAnswers, draftToInput, emptyDraft, validateDraft, type FormDraft } from "@/lib/formDraft";
 import { cn } from "@/lib/utils";
 import { FormFieldInput, formInputCn } from "./FormFieldInput";
@@ -308,6 +310,16 @@ export function FormAnswersView({ fields, answers }: { fields: FormField[]; answ
                     </tbody>
                   </table>
                 )}
+              </dd>
+            </div>
+          );
+        }
+        if (f.type === "LongText" && v && typeof v === "object" && "html" in v) {
+          return (
+            <div key={f.id} className={span}>
+              <dt className="text-xs font-medium text-muted-foreground">{f.label}</dt>
+              <dd className="mt-0.5 break-words text-sm">
+                <SafeHtml html={(v as RichTextAnswer).html} />
               </dd>
             </div>
           );
