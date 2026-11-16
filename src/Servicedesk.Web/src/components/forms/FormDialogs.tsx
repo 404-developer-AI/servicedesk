@@ -27,7 +27,9 @@ import {
 import { SafeHtml } from "@/components/SafeHtml";
 import { draftFromAnswers, draftToInput, emptyDraft, validateDraft, type FormDraft } from "@/lib/formDraft";
 import { cn } from "@/lib/utils";
-import { FormFieldInput, formInputCn } from "./FormFieldInput";
+import { composeTemplatesApi } from "@/lib/composeTemplates-api";
+import { FormFieldInput, formInputCn, type FieldPicker } from "./FormFieldInput";
+import { formFieldPickerItems } from "./formFieldPicker";
 
 /// v0.1.52 — dialogs for ticket forms. Fill = a fresh form from a template
 /// (picked via `::`), Edit = a new version of a saved form, View = the latest
@@ -43,6 +45,7 @@ function FormBody({
   errors,
   ticketId,
   disabled,
+  picker,
 }: {
   fields: FormField[];
   draft: FormDraft;
@@ -50,6 +53,7 @@ function FormBody({
   errors: Record<string, string>;
   ticketId: string | null;
   disabled?: boolean;
+  picker?: FieldPicker;
 }) {
   return (
     <div className="sd-form-body grid grid-cols-2 gap-x-4 gap-y-4">
@@ -61,6 +65,7 @@ function FormBody({
           ticketId={ticketId}
           error={errors[f.id]}
           disabled={disabled}
+          picker={picker}
           onChange={(v) => setDraft((d) => ({ ...d, [f.id]: v }))}
         />
       ))}
@@ -108,6 +113,23 @@ export function FormFillDialog({
   const description = target?.mode === "edit"
     ? `Editing saves version ${target.form.version + 1} and adds an internal note with the changes.`
     : template.data?.description || "Saving adds the filled form to the ticket as an internal note.";
+
+  // v0.1.55 — `::` in text fields: this ticket's variables, orders, KB.
+  // Same query key as the composer, so an open composer shares the result.
+  const { user } = useAuth();
+  const tokens = useQuery({
+    queryKey: ["compose-templates", "resolve", { ticketId: target?.ticketId }],
+    queryFn: () => composeTemplatesApi.resolveTokens({ ticketId: target!.ticketId }),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const tokenMap = tokens.data?.tokens;
+  const ordersEnabled = !!user?.adsolutOrdersEnabled;
+  const kbEnabled = !!user?.kbEnabled;
+  const picker = React.useCallback<FieldPicker>(
+    (q) => formFieldPickerItems({ tokens: tokenMap, ordersEnabled, kbEnabled }, q),
+    [tokenMap, ordersEnabled, kbEnabled],
+  );
 
   const [draft, setDraft] = React.useState<FormDraft>({});
   const [errors, setErrors] = React.useState<Record<string, string>>({});
@@ -209,7 +231,7 @@ export function FormFillDialog({
             </div>
           ) : (
             <FormBody fields={fields} draft={draft} setDraft={setDraft} errors={errors}
-              ticketId={target?.ticketId ?? null} disabled={save.isPending} />
+              ticketId={target?.ticketId ?? null} disabled={save.isPending} picker={picker} />
           )}
         </div>
 
@@ -225,7 +247,7 @@ export function FormFillDialog({
           ) : (
             <>
               <span className="hidden text-[11px] text-muted-foreground/60 sm:block">
-                Internal only · Ctrl+Enter to save
+                Internal only · :: in a text field inserts a variable, order or article · Ctrl+Enter to save
               </span>
               <div className="ml-auto flex gap-2">
                 <Button variant="ghost" size="sm" onClick={() => requestClose(false)} disabled={save.isPending}>

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { BookOpen, ClipboardList, FileText, ListChecks, ShoppingCart } from "lucide-react";
+import { BookOpen, Braces, ClipboardList, FileText, ListChecks, ShoppingCart } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /// Items shown in the `::` typeahead. The picker now mixes intake-form
@@ -12,11 +12,12 @@ import { cn } from "@/lib/utils";
 ///   - "template" → insert the template's HTML body inline (no chip)
 ///   - "order"    → insert a clickable order pill
 ///   - "kb"       → insert a hyperlink to the article's public reader page
+///   - "variable" → insert a resolved ticket value as plain text (form fields)
 export type IntakeMentionItem = {
   id: string;
   name: string;
   description?: string | null;
-  kind: "intake" | "template" | "order" | "kb" | "form";
+  kind: "intake" | "template" | "order" | "kb" | "form" | "variable";
   /// Only set for kind = "form": the ticket the fill dialog opens on.
   ticketId?: string;
   /// Only set for kind = "template". The picker hands it through to the
@@ -25,6 +26,8 @@ export type IntakeMentionItem = {
   /// Only set for kind = "kb": the absolute public URL the inserted link
   /// points at (built from the install's public base URL).
   href?: string;
+  /// Only set for kind = "variable": the value inserted as text.
+  text?: string;
 };
 
 export type IntakeMentionListHandle = {
@@ -103,12 +106,14 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
                 : item.kind === "form" ? ListChecks
                 : item.kind === "order" ? ShoppingCart
                 : item.kind === "kb" ? BookOpen
+                : item.kind === "variable" ? Braces
                 : ClipboardList;
             const kindLabel =
               item.kind === "template" ? "Template"
                 : item.kind === "form" ? "Form"
                 : item.kind === "order" ? "Order"
                 : item.kind === "kb" ? "KB article"
+                : item.kind === "variable" ? "Variable"
                 : "Intake";
             return (
               <button

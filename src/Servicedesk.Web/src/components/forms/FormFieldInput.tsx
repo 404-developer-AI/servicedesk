@@ -9,6 +9,9 @@ import { userApi } from "@/lib/ticket-api";
 import { ticketFormsApi, type FormField } from "@/lib/forms-api";
 import { newRowKey, plainTextToHtml, type ArticleDraftRow, type DraftValue } from "@/lib/formDraft";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import type { IntakeMentionItem } from "@/components/intake/IntakeMentionList";
+import { PlainTextPicker } from "./PlainTextPicker";
+import { pickerItemAsText } from "./formFieldPicker";
 import { cn } from "@/lib/utils";
 
 /// v0.1.52 — one input per form field type. Shared by the fill dialog and the
@@ -18,6 +21,9 @@ import { cn } from "@/lib/utils";
 export const formInputCn =
   "sd-form-input w-full rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-hidden transition-colors placeholder:text-muted-foreground/50 focus:border-primary/50 focus:bg-glass-strong disabled:opacity-60";
 
+/// The `::` lookup for text fields; absent in the admin preview.
+export type FieldPicker = (query: string) => Promise<IntakeMentionItem[]>;
+
 type Props = {
   field: FormField;
   value: DraftValue | undefined;
@@ -25,9 +31,10 @@ type Props = {
   ticketId: string | null;
   error?: string;
   disabled?: boolean;
+  picker?: FieldPicker;
 };
 
-export function FormFieldInput({ field, value, onChange, ticketId, error, disabled }: Props) {
+export function FormFieldInput({ field, value, onChange, ticketId, error, disabled, picker }: Props) {
   if (field.type === "SectionHeader") {
     return (
       <div className="sd-form-section col-span-2 pt-3 first:pt-0">
@@ -43,7 +50,7 @@ export function FormFieldInput({ field, value, onChange, ticketId, error, disabl
   }
 
   const id = `ff-${field.id}`;
-  const control = renderControl(field, value, onChange, ticketId, id, !!error, disabled);
+  const control = renderControl(field, value, onChange, ticketId, id, !!error, disabled, picker);
   const inlineLabel = field.type === "Checkbox";
 
   return (
@@ -69,11 +76,20 @@ function renderControl(
   id: string,
   invalid: boolean,
   disabled?: boolean,
+  picker?: FieldPicker,
 ): React.ReactNode {
   const ring = invalid ? "border-rose-500/60 focus:border-rose-500/80" : "";
   const text = value?.kind === "text" ? value.value : "";
   switch (f.type) {
     case "ShortText":
+      if (picker) {
+        return (
+          <PlainTextPicker id={id} type="text" maxLength={500} disabled={disabled} value={text}
+            onValueChange={(v) => onChange({ kind: "text", value: v })}
+            query={picker} toText={pickerItemAsText}
+            className={cn(formInputCn, "h-9", ring)} />
+        );
+      }
       return (
         <input id={id} type="text" maxLength={500} disabled={disabled} value={text}
           onChange={(e) => onChange({ kind: "text", value: e.target.value })}
@@ -82,7 +98,7 @@ function renderControl(
     case "LongText":
       return (
         <LongTextControl id={id} value={value} disabled={disabled} invalid={invalid}
-          onChange={onChange} />
+          onChange={onChange} picker={picker} />
       );
     case "Number":
       return (
@@ -193,12 +209,13 @@ function renderControl(
 /// v0.1.55 — LongText is rich text: the shared editor without uploads (a
 /// form answer has no attachment tray). Order pills and links survive a
 /// re-edit; the server sanitizes the HTML like a ticket note.
-function LongTextControl({ id, value, onChange, disabled, invalid }: {
+function LongTextControl({ id, value, onChange, disabled, invalid, picker }: {
   id: string;
   value: DraftValue | undefined;
   onChange: (v: DraftValue) => void;
   disabled?: boolean;
   invalid: boolean;
+  picker?: FieldPicker;
 }) {
   const editorRef = React.useRef<{ commands: { focus: () => void } } | null>(null);
   const html = value?.kind === "html" ? value.value : value?.kind === "text" ? plainTextToHtml(value.value) : "";
@@ -215,6 +232,7 @@ function LongTextControl({ id, value, onChange, disabled, invalid }: {
         minHeight="96px"
         maxHeight="320px"
         preserveInlineNodes
+        onIntakeQuery={picker}
         onChange={(next) => onChange({ kind: "html", value: next, ...(legacy ? { legacy } : {}) })}
         onEditorReady={(e) => { editorRef.current = e as typeof editorRef.current; }}
       />
