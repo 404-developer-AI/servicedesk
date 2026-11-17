@@ -288,21 +288,7 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         var head = await conn.QuerySingleOrDefaultAsync<TicketHeadRow>(
             new CommandDefinition(headSql, new { id = ticketId }, cancellationToken: ct));
 
-        const string eventsSql = """
-            SELECT event_type        AS EventType,
-                   body_text         AS BodyText,
-                   is_internal       AS IsInternal,
-                   author_user_id    AS AuthorUserId,
-                   author_contact_id AS AuthorContactId,
-                   created_utc       AS CreatedUtc
-              FROM ticket_events
-             WHERE ticket_id = @id
-               AND body_text IS NOT NULL AND body_text <> ''
-             ORDER BY created_utc ASC, id ASC
-             LIMIT 200
-            """;
-        var events = (await conn.QueryAsync<TicketEventRow>(
-            new CommandDefinition(eventsSql, new { id = ticketId }, cancellationToken: ct))).ToList();
+        var events = await LoadContextEventsAsync(conn, ticketId, ct);
 
         var sb = new StringBuilder();
         sb.Append(intro).Append("\n\n");
@@ -318,7 +304,7 @@ public sealed class ClaudeAssistService : IClaudeAssistService
 
         if (events.Count > 0)
         {
-            sb.Append("Conversation and internal notes (oldest first):\n");
+            sb.Append("Conversation, internal notes and replies on those notes (oldest first):\n");
             foreach (var e in events)
             {
                 var who = e.AuthorContactId.HasValue ? "Customer"
@@ -333,6 +319,96 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         }
 
         return Clamp(sb.ToString(), maxChars);
+    }
+
+    /// Text events for the proposal/summary context, oldest first. Replies on
+    /// internal notes/calls join the timeline as internal "NoteReply" rows;
+    /// soft-deleted replies are left out.
+    internal static async Task<List<TicketEventRow>> LoadContextEventsAsync(
+        NpgsqlConnection conn, Guid ticketId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT x.EventType, x.BodyText, x.IsInternal, x.AuthorUserId, x.AuthorContactId, x.CreatedUtc
+              FROM (
+                SELECT event_type        AS EventType,
+                       body_text         AS BodyText,
+                       is_internal       AS IsInternal,
+                       author_user_id    AS AuthorUserId,
+                       author_contact_id AS AuthorContactId,
+                       created_utc       AS CreatedUtc,
+                       id                AS SortId
+                  FROM ticket_events
+                 WHERE ticket_id = @id
+                   AND body_text IS NOT NULL AND body_text <> ''
+                UNION ALL
+                SELECT @replyType, r.body_text, TRUE, r.author_user_id, NULL::uuid, r.created_utc, r.id
+                  FROM ticket_note_replies r
+                  JOIN ticket_events ev ON ev.id = r.root_event_id
+                 WHERE ev.ticket_id = @id
+                   AND r.deleted_utc IS NULL
+                   AND r.body_text <> ''
+              ) x
+             ORDER BY x.CreatedUtc ASC, x.SortId ASC
+             LIMIT 200
+            """;
+        return (await conn.QueryAsync<TicketEventRow>(new CommandDefinition(
+            sql, new { id = ticketId, replyType = ClaudeStatusContext.NoteReplyEventType },
+            cancellationToken: ct))).ToList();
+    }
+
+    /// Timeline rows for the status update in reading order: the newest 500
+    /// (so a very long ticket keeps its recent history), earlier AI briefs
+    /// left out. Replies on internal notes/calls join as internal "NoteReply"
+    /// rows; soft-deleted ones are left out, replies under an earlier AI
+    /// brief are kept because people wrote them.
+    internal static async Task<List<StatusEventRow>> LoadStatusEventsAsync(
+        NpgsqlConnection conn, Guid ticketId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT x.EventType, x.BodyText, x.IsInternal, x.MetadataJson, x.CreatedUtc,
+                   x.AuthorUserId, x.AuthorContactId, x.UserName, x.ContactName
+              FROM (
+                SELECT e.event_type        AS EventType,
+                       e.body_text         AS BodyText,
+                       e.is_internal       AS IsInternal,
+                       e.metadata::text    AS MetadataJson,
+                       e.created_utc       AS CreatedUtc,
+                       e.author_user_id    AS AuthorUserId,
+                       e.author_contact_id AS AuthorContactId,
+                       COALESCE(NULLIF(u.display_name, ''), u.email::text) AS UserName,
+                       NULLIF(TRIM(c.first_name || ' ' || c.last_name), '') AS ContactName,
+                       e.id                AS SortId
+                  FROM ticket_events e
+                  LEFT JOIN users u    ON u.id = e.author_user_id
+                  LEFT JOIN contacts c ON c.id = e.author_contact_id
+                 WHERE e.ticket_id = @id
+                   AND COALESCE(e.metadata->>@aiKey, '') <> @aiValue
+                   AND ((e.body_text IS NOT NULL AND e.body_text <> '')
+                        OR e.event_type = ANY(@changeTypes))
+                UNION ALL
+                SELECT @replyType, r.body_text, TRUE, NULL::text, r.created_utc,
+                       r.author_user_id, NULL::uuid,
+                       COALESCE(NULLIF(ru.display_name, ''), ru.email::text), NULL::text, r.id
+                  FROM ticket_note_replies r
+                  JOIN ticket_events ev ON ev.id = r.root_event_id
+                  LEFT JOIN users ru    ON ru.id = r.author_user_id
+                 WHERE ev.ticket_id = @id
+                   AND r.deleted_utc IS NULL
+                   AND r.body_text <> ''
+              ) x
+             ORDER BY x.CreatedUtc DESC, x.SortId DESC
+             LIMIT 500
+            """;
+        var events = (await conn.QueryAsync<StatusEventRow>(new CommandDefinition(sql, new
+        {
+            id = ticketId,
+            replyType = ClaudeStatusContext.NoteReplyEventType,
+            aiKey = ClaudeStatusContext.AiGeneratedKey,
+            aiValue = ClaudeStatusContext.AiGeneratedStatus,
+            changeTypes = ClaudeStatusContext.ChangeEventTypes,
+        }, cancellationToken: ct))).ToList();
+        events.Reverse();
+        return events;
     }
 
     /// Context for the status update. Unlike the proposal/summary context it
@@ -386,36 +462,7 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         var openItems = (await conn.QueryAsync<StatusChecklistRow>(
             new CommandDefinition(checklistSql, new { id = ticketId }, cancellationToken: ct))).ToList();
 
-        // Newest first so a very long ticket keeps its recent history, then
-        // reversed into reading order.
-        const string eventsSql = """
-            SELECT e.event_type        AS EventType,
-                   e.body_text         AS BodyText,
-                   e.is_internal       AS IsInternal,
-                   e.metadata::text    AS MetadataJson,
-                   e.created_utc       AS CreatedUtc,
-                   e.author_user_id    AS AuthorUserId,
-                   e.author_contact_id AS AuthorContactId,
-                   COALESCE(NULLIF(u.display_name, ''), u.email::text) AS UserName,
-                   NULLIF(TRIM(c.first_name || ' ' || c.last_name), '') AS ContactName
-              FROM ticket_events e
-              LEFT JOIN users u    ON u.id = e.author_user_id
-              LEFT JOIN contacts c ON c.id = e.author_contact_id
-             WHERE e.ticket_id = @id
-               AND COALESCE(e.metadata->>@aiKey, '') <> @aiValue
-               AND ((e.body_text IS NOT NULL AND e.body_text <> '')
-                    OR e.event_type = ANY(@changeTypes))
-             ORDER BY e.created_utc DESC, e.id DESC
-             LIMIT 500
-            """;
-        var events = (await conn.QueryAsync<StatusEventRow>(new CommandDefinition(eventsSql, new
-        {
-            id = ticketId,
-            aiKey = ClaudeStatusContext.AiGeneratedKey,
-            aiValue = ClaudeStatusContext.AiGeneratedStatus,
-            changeTypes = ClaudeStatusContext.ChangeEventTypes,
-        }, cancellationToken: ct))).ToList();
-        events.Reverse();
+        var events = await LoadStatusEventsAsync(conn, ticketId, ct);
 
         var sb = new StringBuilder();
         sb.Append("Here is the ticket to write a status update for. All times are ")
@@ -567,7 +614,7 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         public bool IsRequired { get; set; }
     }
 
-    private sealed class TicketEventRow
+    internal sealed class TicketEventRow
     {
         public string EventType { get; set; } = string.Empty;
         public string? BodyText { get; set; }

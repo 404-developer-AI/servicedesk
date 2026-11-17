@@ -28,6 +28,10 @@ public static class ClaudeStatusContext
     public const string AiGeneratedKey = "aiGenerated";
     public const string AiGeneratedStatus = "status";
 
+    /// Pseudo event type for a reply on an internal note or call in the AI
+    /// context (summary, proposal and status update). Always internal.
+    public const string NoteReplyEventType = "NoteReply";
+
     /// Per-event body cap, same as the proposal/summary context.
     private const int MaxEventChars = 2000;
 

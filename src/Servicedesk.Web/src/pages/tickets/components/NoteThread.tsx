@@ -24,8 +24,6 @@ import {
 /// Visual indent stops here; deeper replies keep this indent and show whom
 /// they answer, so long threads never drift off the card.
 const MAX_INDENT = 3;
-/// Up to this many replies the thread is open by default.
-const AUTO_OPEN = 3;
 
 const EMPTY: NoteThreadData = { replies: [], noteLikes: [], replyLikes: new Map() };
 
@@ -50,7 +48,9 @@ export function NoteThread({
   const thread = data ?? EMPTY;
   const tree = React.useMemo(() => buildReplyTree(thread.replies), [thread.replies]);
   const liveCount = thread.replies.filter((r) => !r.deleted).length;
-  const [open, setOpen] = React.useState(thread.replies.length > 0 && thread.replies.length <= AUTO_OPEN);
+  // Threads are open by default, whatever their length; "Hide replies"
+  // collapses one by hand.
+  const [open, setOpen] = React.useState(true);
   const [composerFor, setComposerFor] = React.useState<number | "note" | null>(null);
 
   React.useEffect(() => {

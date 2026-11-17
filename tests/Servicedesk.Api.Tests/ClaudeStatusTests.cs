@@ -89,6 +89,22 @@ public sealed class ClaudeStatusTests
     }
 
     [Fact]
+    public void Note_reply_line_is_marked_internal()
+    {
+        var line = ClaudeStatusContext.FormatEvent(new StatusEventRow
+        {
+            EventType = ClaudeStatusContext.NoteReplyEventType,
+            BodyText = "Vendor confirmed the licence is on its way.",
+            IsInternal = true,
+            CreatedUtc = Now,
+            AuthorUserId = Guid.NewGuid(),
+            UserName = "Jan",
+        }, TimeZoneInfo.Utc);
+
+        Assert.Equal("[2026-10-30 12:00] Agent Jan — NoteReply (internal): Vendor confirmed the licence is on its way.", line);
+    }
+
+    [Fact]
     public void Times_are_shown_in_the_server_zone()
     {
         var brussels = TimeZoneInfo.FindSystemTimeZoneById("Europe/Brussels");
