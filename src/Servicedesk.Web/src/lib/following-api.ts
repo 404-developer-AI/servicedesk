@@ -15,6 +15,8 @@ export interface FollowedTicket {
   lastSeenUtc: string;
   lastActivityUtc: string;
   hasActivity: boolean;
+  /// v0.1.58 — your own note on why you follow it (plain text), or null.
+  note: string | null;
 }
 
 export interface FollowingResponse {
@@ -32,7 +34,11 @@ export const followingApi = {
   follow: (ticketId: string) => request<void>("PUT", t(ticketId)),
   unfollow: (ticketId: string) => request<void>("DELETE", t(ticketId)),
   seen: (ticketId: string) => request<void>("POST", `${t(ticketId)}/seen`),
+  setNote: (ticketId: string, note: string | null) => request<void>("PUT", `${t(ticketId)}/note`, { note }),
 };
+
+/// Matches the server's FollowNote.MaxLength.
+export const FOLLOW_NOTE_MAX = 500;
 
 /// Optimistic cache edits — the server list is the truth, these only bridge
 /// the gap until the refetch lands.
@@ -46,4 +52,9 @@ export function markedSeen(data: FollowingResponse | undefined, ticketId: string
   if (!data || !data.items.some((i) => i.ticketId === ticketId && i.hasActivity)) return data;
   const items = data.items.map((i) => (i.ticketId === ticketId ? { ...i, hasActivity: false } : i));
   return { ...data, items, activeCount: items.filter((i) => i.hasActivity).length };
+}
+
+export function withNote(data: FollowingResponse | undefined, ticketId: string, note: string | null): FollowingResponse | undefined {
+  if (!data) return data;
+  return { ...data, items: data.items.map((i) => (i.ticketId === ticketId ? { ...i, note } : i)) };
 }

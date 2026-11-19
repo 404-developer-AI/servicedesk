@@ -1,11 +1,12 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ChevronDown, Minus, Package, Plus, Search, Trash2, UserCircle, Users } from "lucide-react";
+import { Check, ChevronDown, Inbox, Minus, Package, Plus, Search, Trash2, UserCircle, Users } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
-import { useServerOffsetMinutes, useServerTimeZone } from "@/hooks/useServerTime";
+import { useServerNowMs, useServerOffsetMinutes, useServerTimeZone } from "@/hooks/useServerTime";
 import { userApi } from "@/lib/ticket-api";
+import { agentQueueApi } from "@/lib/api";
 import { ticketFormsApi, type FormField } from "@/lib/forms-api";
 import { liveOrders, newRowKey, plainTextToHtml, type ArticleDraftRow, type DraftValue } from "@/lib/formDraft";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -130,6 +131,7 @@ function renderControl(
       );
     case "DateTime":
       return <DateTimeControl value={value?.kind === "datetime" ? value.value : null} disabled={disabled}
+        futureOnly={!!f.triggerKey}
         onChange={(v) => onChange({ kind: "datetime", value: v })} />;
     case "Checkbox": {
       const checked = value?.kind === "bool" && value.value;
@@ -206,6 +208,9 @@ function renderControl(
     case "Contact":
       return <ContactControl ticketId={ticketId} value={value?.kind === "ref" ? value.value : null} disabled={disabled}
         invalid={invalid} onChange={(v) => onChange({ kind: "ref", value: v })} />;
+    case "Queue":
+      return <QueueControl value={value?.kind === "ref" ? value.value : null} disabled={disabled} invalid={invalid}
+        onChange={(v) => onChange({ kind: "ref", value: v })} />;
     case "Article":
       return <ArticleRowsControl field={f} ticketId={ticketId} rows={value?.kind === "articles" ? value.value : []}
         disabled={disabled} invalid={invalid} onChange={(rows) => onChange({ kind: "articles", value: rows })} />;
@@ -264,11 +269,18 @@ function CheckBox({ id, checked, onChange }: { id?: string; checked: boolean; on
   );
 }
 
-function DateTimeControl({ value, onChange, disabled }: { value: string | null; onChange: (v: string | null) => void; disabled?: boolean }) {
+/// `futureOnly` (v0.1.58): the field has a trigger key, so a trigger may use
+/// it as the pending till — past days are disabled; the server refuses a new
+/// or changed moment that is not in the future.
+function DateTimeControl({ value, onChange, disabled, futureOnly }: {
+  value: string | null; onChange: (v: string | null) => void; disabled?: boolean; futureOnly?: boolean;
+}) {
   const offset = useServerOffsetMinutes();
   const zone = useServerTimeZone();
+  const nowMs = useServerNowMs();
+  const minUtc = futureOnly && nowMs !== null ? new Date(nowMs).toISOString() : null;
   return (
-    <DateTimePicker value={value} offsetMinutes={offset ?? 0} timeZone={zone} onChange={onChange}
+    <DateTimePicker value={value} offsetMinutes={offset ?? 0} timeZone={zone} onChange={onChange} minUtc={minUtc}
       disabled={disabled} placeholder="Pick date and time" className="w-64" />
   );
 }
@@ -378,6 +390,33 @@ function AgentControl({ value, onChange, disabled, invalid }: {
       }}
       renderItem={(a) => <span className="truncate">{a.email}</span>}
       onPick={(a) => onChange({ id: a.id, name: a.email })}
+      onClear={() => onChange(null)}
+    />
+  );
+}
+
+/// v0.1.58 — the queues the agent filling in the form can access (the same
+/// list as every agent-facing queue picker); the server checks it again.
+function QueueControl({ value, onChange, disabled, invalid }: {
+  value: { id: string; name: string } | null; onChange: (v: { id: string; name: string } | null) => void;
+  disabled?: boolean; invalid?: boolean;
+}) {
+  const queues = useQuery({ queryKey: ["accessible-queues"], queryFn: agentQueueApi.list, staleTime: 60_000 });
+  return (
+    <SearchPicker
+      icon={Inbox}
+      label={value?.name ?? null}
+      placeholder="Choose a queue"
+      disabled={disabled}
+      invalid={invalid}
+      queryKey={["forms", "queue-options", queues.dataUpdatedAt]}
+      load={async (term) => {
+        const list = queues.data ?? (await agentQueueApi.list());
+        const needle = term.toLowerCase();
+        return list.filter((q) => q.isActive && (!needle || q.name.toLowerCase().includes(needle))).slice(0, 50);
+      }}
+      renderItem={(q) => <span className="truncate">{q.name}</span>}
+      onPick={(q) => onChange({ id: q.id, name: q.name })}
       onClear={() => onChange(null)}
     />
   );

@@ -44,7 +44,9 @@ public sealed class NoteThreadDbTests
         var svc = new NoteThreadService(
             new NoteThreadRepository(_db.DataSource), mutations, new TicketHtmlSanitizer(),
             new UserService(_db.DataSource), new NotificationRepository(_db.DataSource), new NullUserNotifier(),
-            mailer, mentions, new NullTicketListNotifier(), new NullAudit(), NullLogger<NoteThreadService>.Instance);
+            mailer, mentions, new NullTicketListNotifier(), new NullAudit(),
+            new Servicedesk.Infrastructure.Mail.Attachments.AttachmentRepository(_db.DataSource),
+            NullLogger<NoteThreadService>.Instance);
         return new World(svc, ticketId, noteId, author, replier, mailer, mentions);
     }
 
@@ -60,6 +62,98 @@ public sealed class NoteThreadDbTests
         return (await c.QueryAsync<(string, Guid, long?)>(
             "SELECT notification_type, user_id, reply_id FROM user_notifications WHERE ticket_id = @ticketId ORDER BY created_utc, id",
             new { ticketId })).ToList();
+    }
+
+    // ---- v0.1.58 — files in replies ------------------------------------
+
+    private Servicedesk.Infrastructure.Mail.Attachments.AttachmentRepository Attachments => new(_db.DataSource);
+
+    private Task<Guid> StageAsync(Guid ticketId, string mime = "image/png", string name = "screenshot.png")
+        => Attachments.CreateUploadedAsync(new Servicedesk.Infrastructure.Mail.Attachments.NewUploadedAttachment(
+            ticketId, "hash-" + Guid.NewGuid().ToString("N"), 1234, mime, name), default);
+
+    private async Task<long?> BoundReplyAsync(Guid attachmentId)
+    {
+        await using var c = await _db.DataSource.OpenConnectionAsync();
+        return await c.ExecuteScalarAsync<long?>("SELECT note_reply_id FROM attachments WHERE id = @attachmentId", new { attachmentId });
+    }
+
+    private async Task<bool> ExistsAsync(Guid attachmentId)
+    {
+        await using var c = await _db.DataSource.OpenConnectionAsync();
+        return await c.ExecuteScalarAsync<bool>("SELECT EXISTS (SELECT 1 FROM attachments WHERE id = @attachmentId)", new { attachmentId });
+    }
+
+    private static NoteReplyInput Html(string html) => new(null, html, null, null);
+
+    [PostgresFact]
+    public async Task A_pasted_screenshot_alone_is_a_reply_and_its_file_is_bound_to_it()
+    {
+        var w = await WorldAsync();
+        var image = await StageAsync(w.TicketId);
+
+        var reply = await w.Service.AddReplyAsync(Actor(w.Replier), w.TicketId, w.NoteId,
+            Html($"<p><img src=\"/api/tickets/{w.TicketId}/attachments/{image}\"></p>"), default);
+
+        Assert.Equal(reply.Id, await BoundReplyAsync(image));
+        // No longer staged: a note or a mail can't take the row over.
+        Assert.Equal(0, await Attachments.ReassignToEventAsync(new[] { image }, w.TicketId, w.NoteId, default));
+        Assert.Equal(reply.Id, await BoundReplyAsync(image));
+        // The notification preview stands in for the missing text.
+        Assert.Contains(await NotificationsAsync(w.TicketId), n => n.ReplyId == reply.Id);
+    }
+
+    [PostgresFact]
+    public async Task Another_tickets_file_in_the_body_is_never_bound()
+    {
+        var w = await WorldAsync();
+        var seed = new DbSeed(_db.DataSource);
+        var (q, s, p) = await seed.TaxonomyAsync();
+        var otherTicket = await seed.TicketAsync("Other", await seed.ContactAsync(), q, s, p);
+        var foreign = await StageAsync(otherTicket);
+
+        await w.Service.AddReplyAsync(Actor(w.Replier), w.TicketId, w.NoteId,
+            Html($"<p>See <img src=\"/api/tickets/{otherTicket}/attachments/{foreign}\"></p>"), default);
+
+        Assert.Null(await BoundReplyAsync(foreign));
+    }
+
+    [PostgresFact]
+    public async Task Editing_binds_new_files_and_removes_the_ones_taken_out()
+    {
+        var w = await WorldAsync();
+        var first = await StageAsync(w.TicketId);
+        var log = await StageAsync(w.TicketId, "text/plain", "server.log");
+        var reply = await w.Service.AddReplyAsync(Actor(w.Replier), w.TicketId, w.NoteId,
+            Html($"<p><img src=\"/api/tickets/{w.TicketId}/attachments/{first}\"></p>"), default);
+
+        await w.Service.EditReplyAsync(Actor(w.Replier), w.TicketId, reply.Id,
+            $"<p><a href=\"/api/tickets/{w.TicketId}/attachments/{log}\">server.log</a></p>", default);
+
+        Assert.False(await ExistsAsync(first));
+        Assert.Equal(reply.Id, await BoundReplyAsync(log));
+    }
+
+    [PostgresFact]
+    public async Task Deleting_a_reply_deletes_its_files()
+    {
+        var w = await WorldAsync();
+        var image = await StageAsync(w.TicketId);
+        var reply = await w.Service.AddReplyAsync(Actor(w.Replier), w.TicketId, w.NoteId,
+            Html($"<p>Error <img src=\"/api/tickets/{w.TicketId}/attachments/{image}\"></p>"), default);
+
+        await w.Service.DeleteReplyAsync(Actor(w.Replier), w.TicketId, reply.Id, default);
+
+        Assert.False(await ExistsAsync(image));
+    }
+
+    [PostgresFact]
+    public async Task An_empty_reply_without_an_image_is_still_refused()
+    {
+        var w = await WorldAsync();
+        var ex = await Assert.ThrowsAsync<NoteThreadRejectedException>(() =>
+            w.Service.AddReplyAsync(Actor(w.Replier), w.TicketId, w.NoteId, Html("<p>   </p>"), default));
+        Assert.Equal(NoteThreadRejectCode.Invalid, ex.Code);
     }
 
     [PostgresFact]

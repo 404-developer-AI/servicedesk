@@ -743,7 +743,7 @@ public sealed class MailIngestServiceTests
             => Task.FromResult(new TriggerScheduledRunResult(null, ChainShouldClear: false));
 
         public Task<TriggerDryRunResult?> DryRunAsync(
-            Guid triggerId, Guid ticketId, CancellationToken ct)
+            Guid triggerId, Guid ticketId, Guid? formId, CancellationToken ct)
             => Task.FromResult<TriggerDryRunResult?>(null);
     }
 }

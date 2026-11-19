@@ -21,6 +21,7 @@ public sealed class TicketFollowAuthorizationTests
     [InlineData("PUT", T + "/follow")]
     [InlineData("DELETE", T + "/follow")]
     [InlineData("POST", T + "/follow/seen")]
+    [InlineData("PUT", T + "/follow/note")]
     public async Task Customers_never_reach_following(string method, string url)
     {
         using var factory = new SecurityBaselineFactory();

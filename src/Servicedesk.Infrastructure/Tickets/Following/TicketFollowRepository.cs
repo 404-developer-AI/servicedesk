@@ -7,7 +7,8 @@ namespace Servicedesk.Infrastructure.Tickets.Following;
 public sealed record FollowedTicket(
     Guid TicketId, long TicketNumber, string Subject,
     string StatusName, string StatusColor, string StatusCategory,
-    DateTime FollowedUtc, DateTime LastSeenUtc, DateTime LastActivityUtc, bool HasActivity);
+    DateTime FollowedUtc, DateTime LastSeenUtc, DateTime LastActivityUtc, bool HasActivity,
+    string? Note = null);
 
 public enum FollowResult { Followed, AlreadyFollowing, LimitReached }
 
@@ -18,6 +19,8 @@ public interface ITicketFollowRepository
     Task<bool> UnfollowAsync(Guid userId, Guid ticketId, CancellationToken ct);
     /// Stamps last_seen_utc = now() (server time). False when not followed.
     Task<bool> MarkSeenAsync(Guid userId, Guid ticketId, CancellationToken ct);
+    /// Sets (or clears, with null) the user's own note. False when not followed.
+    Task<bool> SetNoteAsync(Guid userId, Guid ticketId, string? note, CancellationToken ct);
     /// The followed tickets the user can still see under <paramref name="scope"/>,
     /// tickets with news first, then the most recent activity first.
     Task<IReadOnlyList<FollowedTicket>> ListAsync(Guid userId, QueueAccessScope scope, CancellationToken ct);
@@ -69,6 +72,14 @@ public sealed class TicketFollowRepository : ITicketFollowRepository
             new { userId, ticketId }, cancellationToken: ct)) == 1;
     }
 
+    public async Task<bool> SetNoteAsync(Guid userId, Guid ticketId, string? note, CancellationToken ct)
+    {
+        await using var conn = await _ds.OpenConnectionAsync(ct);
+        return await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE ticket_follows SET note = @note WHERE user_id = @userId AND ticket_id = @ticketId",
+            new { userId, ticketId, note }, cancellationToken: ct)) == 1;
+    }
+
     public async Task<IReadOnlyList<FollowedTicket>> ListAsync(Guid userId, QueueAccessScope scope, CancellationToken ct)
     {
         await using var conn = await _ds.OpenConnectionAsync(ct);
@@ -77,7 +88,8 @@ public sealed class TicketFollowRepository : ITicketFollowRepository
                    s.name AS StatusName, s.color AS StatusColor, s.state_category AS StatusCategory,
                    f.followed_utc AS FollowedUtc, f.last_seen_utc AS LastSeenUtc,
                    a.last_activity AS LastActivityUtc,
-                   (a.last_activity > f.last_seen_utc) AS HasActivity
+                   (a.last_activity > f.last_seen_utc) AS HasActivity,
+                   f.note AS Note
             FROM ticket_follows f
             JOIN tickets t ON t.id = f.ticket_id AND NOT t.is_deleted
             JOIN statuses s ON s.id = t.status_id

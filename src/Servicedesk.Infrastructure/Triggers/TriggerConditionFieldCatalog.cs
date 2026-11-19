@@ -28,8 +28,11 @@ public static class TriggerConditionFieldCatalog
         new(TriggerFieldKeys.ArticleBodyText,   "Article body",       "string"),
         new(TriggerFieldKeys.ArticleIsInternal, "Article is internal","boolean"),
         new(TriggerFieldKeys.ArticleHasAttachments, "Article has attachments", "boolean"),
+        // v0.1.58 — a form save (any form). The editor offers the keyed
+        // fields of the forms as "form.field.<key>" entries next to these.
+        new(TriggerFieldKeys.FormSaveEvent, "Form saved", "form-save-event"),
+        new(TriggerFieldKeys.FormTemplateId, "Form template", "form-template"),
         new(TriggerFieldKeys.FormBackofficeEvent, "Back office form event", "form-event"),
-        new(TriggerFieldKeys.FormTemplateId, "Back office form template", "form-template"),
     };
 }
 

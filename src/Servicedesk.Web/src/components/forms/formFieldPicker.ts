@@ -3,21 +3,18 @@ import { kbApi } from "@/lib/kb-api";
 import { orderMentionItems } from "@/pages/orders/orderMention";
 
 /// v0.1.55 — the `::` lookup inside form text fields (short and long text).
-/// Offers the ticket's variables (contact, company, ticket — the compose
-/// `{{token}}` set, already resolved for this ticket), Adsolut orders and
-/// KB articles. No templates and no forms: a form never nests a form.
+/// Offers Adsolut orders and KB articles. No templates and no forms (a form
+/// never nests a form), and since v0.1.58 no ticket variables either — they
+/// cluttered the list; a template default can still hold `{{tokens}}`.
 /// Every source is enforced server-side (orders: Adsolut Orders flag; KB:
-/// per-user KB access; tokens: queue access on the ticket); the client
-/// checks here only spare a request that would come back 403.
+/// per-user KB access); the client checks here only spare a request that
+/// would come back 403.
 
 export type FormFieldPickerContext = {
-  /// Resolved `{{token}}` → value map for the form's ticket.
-  tokens: Record<string, string> | undefined;
   ordersEnabled: boolean;
   kbEnabled: boolean;
 };
 
-const MAX_VARIABLES = 12;
 const MAX_QUERY = 40;
 
 /// The `::query` that ends at the caret in a plain input, or null. The query
@@ -32,32 +29,6 @@ export function findPickerTrigger(text: string, caret: number): { start: number;
 export function applyPickerInsert(text: string, start: number, caret: number, insert: string): { text: string; caret: number } {
   const next = text.slice(0, start) + insert + text.slice(caret);
   return { text: next, caret: start + insert.length };
-}
-
-/// "{{contact.firstName}}" → "Contact · First name".
-export function tokenLabel(token: string): string {
-  const name = token.replace(/^\{\{\s*|\s*\}\}$/g, "");
-  const [group, ...rest] = name.split(".");
-  const field = rest.join(".").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
-  const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-  return field ? `${cap(group)} · ${cap(field)}` : cap(group);
-}
-
-/// Variables with a value for this ticket, filtered by the typed query.
-export function variableItems(tokens: Record<string, string> | undefined, query: string): IntakeMentionItem[] {
-  const needle = query.trim().toLowerCase();
-  return Object.entries(tokens ?? {})
-    .filter(([, value]) => value.trim() !== "")
-    .map(([token, value]) => ({ token, value, label: tokenLabel(token) }))
-    .filter((v) => !needle || v.label.toLowerCase().includes(needle) || v.value.toLowerCase().includes(needle))
-    .slice(0, MAX_VARIABLES)
-    .map((v) => ({
-      id: v.token,
-      name: v.label,
-      description: v.value,
-      kind: "variable" as const,
-      text: v.value,
-    }));
 }
 
 /// Published KB articles as links to the agent-facing article page (a form
@@ -86,14 +57,12 @@ export async function formFieldPickerItems(ctx: FormFieldPickerContext, query: s
     ctx.ordersEnabled ? orderMentionItems(query) : Promise.resolve([]),
     ctx.kbEnabled ? kbItems(query) : Promise.resolve([]),
   ]);
-  return [...variableItems(ctx.tokens, query), ...orders, ...kb];
+  return [...orders, ...kb];
 }
 
 /// What a picked item becomes in a plain-text (short text) field.
 export function pickerItemAsText(item: IntakeMentionItem): string {
   switch (item.kind) {
-    case "variable":
-      return item.text ?? "";
     case "kb":
       return item.href ? `${item.name} (${item.href})` : item.name;
     default:

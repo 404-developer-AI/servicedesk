@@ -21,6 +21,7 @@ export const FORM_FIELD_TYPES = [
   "Agent",
   "Contact",
   "Article",
+  "Queue",
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
@@ -39,6 +40,7 @@ export const FORM_FIELD_TYPE_LABEL: Record<FormFieldType, string> = {
   Agent: "Agent",
   Contact: "Contact",
   Article: "Articles + quantity",
+  Queue: "Queue",
 };
 
 export const hasOptions = (t: FormFieldType) =>
@@ -63,7 +65,12 @@ export interface FormField {
   minRows?: number | null;
   maxRows?: number | null;
   defaultValue: string;
+  /** v0.1.58 — the name triggers use for this field (a-z, 0-9, _). */
+  triggerKey?: string | null;
 }
+
+/// Same rule as the server (FormTemplateValidator.TriggerKeyPattern).
+export const TRIGGER_KEY_PATTERN = /^[a-z][a-z0-9_]{0,39}$/;
 
 /// Stored (normalized) answer shapes, keyed by field id.
 export type ArticleRowAnswer = { articleId: string; code?: string; name?: string; quantity: number };

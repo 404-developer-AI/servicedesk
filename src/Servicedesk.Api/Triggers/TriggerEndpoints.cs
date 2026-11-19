@@ -149,6 +149,15 @@ public static class TriggerEndpoints
             maxConditionDepth = TriggerValidator.MaxConditionDepth,
         })).WithName("GetTriggerMetadata");
 
+        // v0.1.58 — the keyed form fields (form.field.<key>) the editor offers
+        // as conditions and as "from form field" action values.
+        admin.MapGet("/form-fields", async (
+            Servicedesk.Infrastructure.Forms.IFormTemplateRepository templates, CancellationToken ct) =>
+        {
+            var rows = await templates.ListTriggerFieldsAsync(ct);
+            return Results.Ok(new { items = rows });
+        }).WithName("ListTriggerFormFields");
+
         // Blok 7 — admin test-runner. Evaluates the trigger against a
         // real ticket without committing anything. Per-action results
         // mirror the runtime outcome shape so the UI can re-use the
@@ -159,7 +168,7 @@ public static class TriggerEndpoints
             if (req.TicketId == Guid.Empty)
                 return Results.BadRequest(new { error = "ticketId is required." });
 
-            var result = await service.DryRunAsync(id, req.TicketId, ct);
+            var result = await service.DryRunAsync(id, req.TicketId, req.FormId, ct);
             if (result is null) return Results.NotFound();
 
             return Results.Ok(new
@@ -353,7 +362,9 @@ public static class TriggerEndpoints
 
     public sealed record ActiveToggleInput([property: Required] bool IsActive);
 
-    public sealed record DryRunInput([property: Required] Guid TicketId);
+    /// <paramref name="FormId"/> (v0.1.58, optional): a form on that ticket whose
+    /// answers the dry run uses as a simulated form pass.
+    public sealed record DryRunInput([property: Required] Guid TicketId, Guid? FormId = null);
 
     public sealed record ReorderTriggerItem(Guid Id, Guid? GroupId, int SortOrder);
     public sealed record ReorderTriggersInput(IReadOnlyList<ReorderTriggerItem>? Items);

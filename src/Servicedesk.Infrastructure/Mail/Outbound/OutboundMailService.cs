@@ -167,7 +167,8 @@ public sealed class OutboundMailService : IOutboundMailService
             {
                 if (!rowsById.TryGetValue(attId, out var row)) continue;
                 if (row.OwnerKind != "Ticket" || row.OwnerId != request.TicketId) continue;
-                if (row.EventId is not null) continue;
+                // Bound to an article or (v0.1.58) to a note reply: not staged.
+                if (row.EventId is not null || row.NoteReplyId is not null) continue;
                 if (row.ProcessingState != "Ready" || string.IsNullOrWhiteSpace(row.ContentHash)) continue;
 
                 running += row.SizeBytes;
@@ -731,7 +732,8 @@ public sealed class OutboundMailService : IOutboundMailService
                 && r.TicketId == request.TicketId
                 && row.OwnerKind == "Ticket"
                 && row.OwnerId == request.TicketId
-                && row.EventId is null)
+                && row.EventId is null
+                && row.NoteReplyId is null)
             {
                 if (!ids.Contains(row.Id)) ids.Add(row.Id);
                 resolvedCopies[row.Id] = row.Id;

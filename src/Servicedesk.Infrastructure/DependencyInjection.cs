@@ -637,7 +637,7 @@ public static class DependencyInjection
         services.AddSingleton<TagGroups.ITagGroupRepository, TagGroups.TagGroupRepository>();
         services.AddSingleton<TagGroups.IGroupTagRepository, TagGroups.GroupTagRepository>();
         services.AddSingleton<Realtime.IGroupTagNotifier, Realtime.NullGroupTagNotifier>();
-        services.AddScoped<Forms.IBackofficeFormTriggerRunner, Triggers.BackofficeFormTriggerRunner>();
+        services.AddScoped<Forms.IFormTriggerRunner, Triggers.FormTriggerRunner>();
         // First-open title-review gate matcher + confirmation runner. Called
         // by the ticket detail page's open-gate probe and the confirmation
         // endpoint. Singleton for the same reason as the status-gate service.

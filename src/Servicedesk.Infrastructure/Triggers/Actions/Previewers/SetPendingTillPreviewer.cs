@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Servicedesk.Infrastructure.Forms;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Triggers.Actions;
@@ -26,8 +27,22 @@ internal sealed class SetPendingTillPreviewer : ITriggerActionPreviewer
             return TriggerActionPreviewResult.WouldApply(Kind, new { cleared = true });
         }
 
-        var (target, error) = await SetPendingTillResolver.ResolveAsync(actionJson, ctx, _slaRepository, ct);
-        if (error is not null) return TriggerActionPreviewResult.Failed(Kind, error);
+        DateTime? target;
+        if (FormFieldActionSource.HasFormField(actionJson))
+        {
+            // The Pending-status check is left to the real run: in a dry run
+            // an earlier Set status action of the same trigger is not applied.
+            var source = FormFieldActionSource.Resolve(actionJson, ctx, FormFieldType.DateTime);
+            if (source.Error is not null) return TriggerActionPreviewResult.Failed(Kind, source.Error);
+            if (source.EmptyReason is not null) return TriggerActionPreviewResult.WouldNoOp(Kind, new { reason = source.EmptyReason });
+            target = source.Field!.DateTimeUtc;
+        }
+        else
+        {
+            var (resolved, error) = await SetPendingTillResolver.ResolveAsync(actionJson, ctx, _slaRepository, ct);
+            if (error is not null) return TriggerActionPreviewResult.Failed(Kind, error);
+            target = resolved;
+        }
 
         if (PendingTillRules.IsInPast(target, DateTime.UtcNow))
             return TriggerActionPreviewResult.Failed(Kind, $"Target time {target!.Value:yyyy-MM-ddTHH:mm:ssZ} is in the past; pending-till not set.");

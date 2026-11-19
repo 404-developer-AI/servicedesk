@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { triggerApi, type TriggerDryRunAction, type TriggerDryRunResult } from "@/lib/api";
 import { ticketApi, type TicketPickerItem } from "@/lib/ticket-api";
+import { ticketFormsApi } from "@/lib/forms-api";
+import { formatDateTime } from "@/lib/dateFormat";
+import { useServerTimeZone } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 import { useDebounced } from "@/hooks/useDebounced";
 
@@ -25,6 +28,9 @@ export function TestRunner({ triggerId, dirty }: Props) {
   const [query, setQuery] = React.useState("");
   const [picked, setPicked] = React.useState<TicketPickerItem | null>(null);
   const [result, setResult] = React.useState<TriggerDryRunResult | null>(null);
+  // v0.1.58 — optional: a form on the ticket whose answers simulate a form pass.
+  const [formId, setFormId] = React.useState("");
+  const zone = useServerTimeZone();
 
   const debouncedQuery = useDebounced(query, 200);
 
@@ -35,10 +41,17 @@ export function TestRunner({ triggerId, dirty }: Props) {
     staleTime: 30_000,
   });
 
+  const formsQ = useQuery({
+    queryKey: ["ticket", picked?.id, "forms", "list"],
+    queryFn: () => ticketFormsApi.list(picked!.id),
+    enabled: !!picked,
+    staleTime: 30_000,
+  });
+
   const runM = useMutation({
     mutationFn: () => {
       if (!picked) throw new Error("Pick a ticket first.");
-      return triggerApi.dryRun(triggerId, picked.id);
+      return triggerApi.dryRun(triggerId, picked.id, formId || null);
     },
     onSuccess: (r) => setResult(r),
     onError: () => setResult(null),
@@ -48,6 +61,7 @@ export function TestRunner({ triggerId, dirty }: Props) {
     setPicked(null);
     setQuery("");
     setResult(null);
+    setFormId("");
   }
 
   return (
@@ -115,6 +129,28 @@ export function TestRunner({ triggerId, dirty }: Props) {
           <Button variant="ghost" size="sm" onClick={reset}>
             Change
           </Button>
+        </div>
+      )}
+
+      {/* Form to simulate (form triggers) */}
+      {picked && (formsQ.data ?? []).length > 0 && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">Simulate a form</label>
+          <select
+            value={formId}
+            onChange={(e) => { setFormId(e.target.value); setResult(null); }}
+            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+          >
+            <option value="">No form (ticket trigger)</option>
+            {(formsQ.data ?? []).map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name} · v{f.version} · {formatDateTime(f.updatedUtc, zone)}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-muted-foreground/70">
+            Runs the trigger as if this form was just saved (or, for a back office trigger, as its current back office step), with its answers.
+          </p>
         </div>
       )}
 
@@ -269,4 +305,4 @@ function toneFor(status: TriggerDryRunAction["status"]) {
       };
   }
 }
-
+

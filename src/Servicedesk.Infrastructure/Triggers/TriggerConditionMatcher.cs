@@ -10,7 +10,8 @@ namespace Servicedesk.Infrastructure.Triggers;
 /// Operators implemented in Block 2:
 ///   <c>is</c>, <c>is_not</c>, <c>contains</c>, <c>does_not_contain</c>,
 ///   <c>starts_with</c>, <c>ends_with</c>, <c>has_changed</c>,
-///   <c>contains_one</c>, <c>contains_all</c>.
+///   <c>contains_one</c>, <c>contains_all</c>; v0.1.58 adds <c>is_set</c>,
+///   <c>is_not_set</c>.
 /// Block 3+ extends as needed for working-time, datetime, and regex
 /// operators — the tree-walker is operator-table-driven.
 public sealed class TriggerConditionMatcher : ITriggerConditionMatcher
@@ -88,6 +89,9 @@ public sealed class TriggerConditionMatcher : ITriggerConditionMatcher
         var actual = ResolveField(field, ctx);
         return oper.ToLowerInvariant() switch
         {
+            // v0.1.58 — presence checks (form fields: "the technician is filled in").
+            "is_set" => !string.IsNullOrEmpty(AsString(actual)),
+            "is_not_set" => string.IsNullOrEmpty(AsString(actual)),
             "is" => StringEqualsLoose(actual, value),
             "is_not" => !StringEqualsLoose(actual, value),
             "contains" => StringContains(actual, value),
@@ -127,6 +131,9 @@ public sealed class TriggerConditionMatcher : ITriggerConditionMatcher
             TriggerFieldKeys.ArticleHasAttachments => false, // attachment-aware lookup deferred to a later block
             TriggerFieldKeys.FormBackofficeEvent => ctx.ChangeSet.FormEvent?.Event,
             TriggerFieldKeys.FormTemplateId => ctx.ChangeSet.FormEvent?.TemplateId,
+            TriggerFieldKeys.FormSaveEvent => ctx.ChangeSet.FormEvent?.SaveEvent,
+            _ when TriggerFieldKeys.FormFieldKey(field) is { } key
+                => ctx.ChangeSet.FormEvent?.Fields.GetValueOrDefault(key)?.ConditionValue,
             _ => null,
         };
     }

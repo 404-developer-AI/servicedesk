@@ -29,6 +29,7 @@ public sealed class TriggerService : ITriggerService
     private readonly ITriggerRenderContextFactory _renderFactory;
     private readonly Realtime.ITicketListNotifier _listNotifier;
     private readonly IAdsolutOrderRepository _orders;
+    private readonly Forms.ITicketFormRepository _forms;
     private readonly ILogger<TriggerService> _logger;
 
     public TriggerService(
@@ -43,8 +44,10 @@ public sealed class TriggerService : ITriggerService
         ITriggerRenderContextFactory renderFactory,
         Realtime.ITicketListNotifier listNotifier,
         IAdsolutOrderRepository orders,
+        Forms.ITicketFormRepository forms,
         ILogger<TriggerService> logger)
     {
+        _forms = forms;
         _repo = repo;
         _tickets = tickets;
         _matcher = matcher;
@@ -441,6 +444,7 @@ public sealed class TriggerService : ITriggerService
     public async Task<TriggerDryRunResult?> DryRunAsync(
         Guid triggerId,
         Guid ticketId,
+        Guid? formId,
         CancellationToken ct)
     {
         // Dry-run never enters the loop guard — it doesn't mutate, so it
@@ -469,11 +473,26 @@ public sealed class TriggerService : ITriggerService
                     Actions: Array.Empty<TriggerActionPreviewResult>());
             }
 
+            var changeSet = TriggerChangeSet.Empty;
+            if (formId is Guid fid)
+            {
+                var form = await _forms.GetAsync(fid, ct);
+                if (form is null || form.Summary.TicketId != detail.Id)
+                {
+                    return new TriggerDryRunResult(
+                        Matched: false,
+                        FailureReason: "The selected form does not belong to this ticket.",
+                        Actions: Array.Empty<TriggerActionPreviewResult>());
+                }
+                changeSet = TriggerChangeSet.ForForm(await SimulatedFormEventAsync(
+                    form, _matcher.ReferencedFields(condDoc.RootElement), ct));
+            }
+
             var ctx = new TriggerEvaluationContext(
                 detail.Id,
                 detail,
                 TriggeringEvent: null,
-                TriggerChangeSet.Empty,
+                changeSet,
                 DateTime.UtcNow,
                 trigger.Id)
             {
@@ -517,6 +536,31 @@ public sealed class TriggerService : ITriggerService
             condDoc?.Dispose();
             actionsDoc?.Dispose();
         }
+    }
+
+    /// The form pass a dry run pretends just happened: the form was saved
+    /// (created — every filled keyed field counts as changed) for a save
+    /// trigger, else its current back-office step.
+    private async Task<TriggerFormEvent> SimulatedFormEventAsync(
+        Forms.TicketFormDetail form, IReadOnlySet<string> refs, CancellationToken ct)
+    {
+        var tz = await Health.HealthTimeFormat.ResolveDisplayZoneAsync(_settings, ct);
+        var fields = FormTriggerFields.Build(form.Snapshot, form.Answers, dt => Health.HealthTimeFormat.Local(dt, tz));
+        var isSave = refs.Contains(TriggerFieldKeys.FormSaveEvent);
+        var boEvent = form.Summary.BoStatus == Forms.BackofficeFormStatus.Handled
+            ? Forms.BackofficeFormEventKind.Handled
+            : Forms.BackofficeFormEventKind.Submitted;
+        return new TriggerFormEvent(
+            isSave ? string.Empty : boEvent, form.Summary.Id, form.TemplateId, form.Summary.Name,
+            form.Summary.CreatedByUserId, form.Summary.CreatedByName, ActorUserId: null,
+            form.Summary.BoHandledByName, HandledNote: string.Empty, AnchorEventId: null)
+        {
+            SaveEvent = isSave ? Forms.FormSavedEventKind.Created : null,
+            Fields = fields,
+            ChangedKeys = isSave
+                ? FormTriggerFields.ChangedKeys(form.Snapshot, null, form.Answers)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+        };
     }
 
     /// Returns the trigger_runs outcome it persisted plus the dispatched

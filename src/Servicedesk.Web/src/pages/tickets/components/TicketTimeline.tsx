@@ -72,20 +72,9 @@ import { EventRevisionDialog } from "./EventRevisionDialog";
 import { IntakeSubmissionPanel } from "@/components/intake/IntakeSubmissionPanel";
 import { SplitMailDialog } from "@/components/SplitMailDialog";
 import { formatDuration } from "@/lib/timesheet-api";
-import { NoteBodyHtml } from "@/components/NoteBodyHtml";
+import { TimelineBodyHtml } from "./timelinePreview";
+import { inlineUrl, PreviewContext, usePreview, type PreviewContextValue } from "./timelinePreviewContext";
 import { formatBytes } from "@/lib/format";
-
-type PreviewContextValue = {
-  open: (preview: AttachmentPreview) => void;
-};
-const PreviewContext = React.createContext<PreviewContextValue | null>(null);
-function usePreview() {
-  return React.useContext(PreviewContext);
-}
-
-function inlineUrl(url: string): string {
-  return url.includes("?") ? `${url}&inline=true` : `${url}?inline=true`;
-}
 
 type TicketTimelineProps = {
   ticketId: string;
@@ -95,25 +84,7 @@ type TicketTimelineProps = {
 };
 
 function SafeHtml({ html }: { html: string }) {
-  const preview = usePreview();
-  const onImageClick = React.useCallback(
-    (img: HTMLImageElement, e: React.MouseEvent<HTMLDivElement>) => {
-      if (!preview) return;
-      const src = img.currentSrc || img.src;
-      if (!src) return;
-      e.preventDefault();
-      // Inline images served by the mail-attachment endpoint will already
-      // accept the `inline=true` hint; external images pass through untouched.
-      const url = src.includes("/api/tickets/") ? inlineUrl(src) : src;
-      preview.open({
-        url,
-        mimeType: "image/*",
-        filename: img.alt || "Image",
-      });
-    },
-    [preview],
-  );
-  return <NoteBodyHtml html={html} onImageClick={onImageClick} />;
+  return <TimelineBodyHtml html={html} />;
 }
 
 /// Renders a post body (HTML preferred, plain text fallback) with a

@@ -244,19 +244,19 @@ public sealed class BackofficeFormService : IBackofficeFormService
 }
 
 /// Realtime + trigger fan-out for back-office steps. The trigger pass is
-/// wired in through <see cref="IBackofficeFormTriggerRunner"/>; the realtime
+/// wired in through <see cref="IFormTriggerRunner"/>; the realtime
 /// ping through <see cref="Realtime.IBackofficeFormNotifier"/>.
 public sealed class BackofficeFormEventPublisher : IBackofficeFormEvents
 {
     private readonly Realtime.IBackofficeFormNotifier _notifier;
     private readonly Realtime.ITicketListNotifier _tickets;
-    private readonly IBackofficeFormTriggerRunner _triggers;
+    private readonly IFormTriggerRunner _triggers;
     private readonly ILogger<BackofficeFormEventPublisher> _logger;
 
     public BackofficeFormEventPublisher(
         Realtime.IBackofficeFormNotifier notifier,
         Realtime.ITicketListNotifier tickets,
-        IBackofficeFormTriggerRunner triggers,
+        IFormTriggerRunner triggers,
         ILogger<BackofficeFormEventPublisher> logger)
     {
         _notifier = notifier;
@@ -285,9 +285,34 @@ public sealed class BackofficeFormEventPublisher : IBackofficeFormEvents
     }
 }
 
-/// Runs the action-trigger pass for a back-office form event. Implemented
-/// by the trigger layer (<c>Triggers.BackofficeFormTriggerRunner</c>).
-public interface IBackofficeFormTriggerRunner
+/// v0.1.58 — a filled form was saved (created, or edited into a new version).
+/// <paramref name="Previous"/> = the answers before an edit (null on create),
+/// so the trigger pass can tell which keyed fields changed.
+public sealed record FormSavedEvent(
+    string Kind,
+    Guid FormId,
+    Guid TicketId,
+    Guid? TemplateId,
+    string FormName,
+    Guid? ActorUserId,
+    FormDefinition Snapshot,
+    System.Text.Json.Nodes.JsonObject Answers,
+    System.Text.Json.Nodes.JsonObject? Previous,
+    long EventId);
+
+public static class FormSavedEventKind
+{
+    public const string Created = "created";
+    public const string Updated = "updated";
+
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { Created, Updated };
+}
+
+/// Runs the action-trigger passes for forms: a back-office step
+/// (<see cref="RunAsync"/>) and a form save (<see cref="RunSavedAsync"/>).
+/// Implemented by the trigger layer (<c>Triggers.FormTriggerRunner</c>).
+public interface IFormTriggerRunner
 {
     Task RunAsync(BackofficeFormEvent evt, CancellationToken ct);
+    Task RunSavedAsync(FormSavedEvent evt, CancellationToken ct);
 }

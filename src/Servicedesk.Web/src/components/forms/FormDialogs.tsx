@@ -119,7 +119,7 @@ export function FormFillDialog({
     ? `Editing saves version ${target.form.version + 1} and adds an internal note with the changes.`
     : template.data?.description || "Saving adds the filled form to the ticket as an internal note.";
 
-  // v0.1.55 — `::` in text fields: this ticket's variables, orders, KB.
+  // v0.1.55 — the ticket's resolved variables fill `{{token}}` defaults.
   // Same query key as the composer, so an open composer shares the result.
   const { user } = useAuth();
   const tokens = useQuery({
@@ -132,8 +132,9 @@ export function FormFillDialog({
   const ordersEnabled = !!user?.adsolutOrdersEnabled;
   const kbEnabled = !!user?.kbEnabled;
   const picker = React.useCallback<FieldPicker>(
-    (q) => formFieldPickerItems({ tokens: tokenMap, ordersEnabled, kbEnabled }, q),
-    [tokenMap, ordersEnabled, kbEnabled],
+    // `::` in text fields: orders and KB articles.
+    (q) => formFieldPickerItems({ ordersEnabled, kbEnabled }, q),
+    [ordersEnabled, kbEnabled],
   );
 
   // v0.1.55 — the answers live in the workspace store as soon as they
@@ -387,7 +388,8 @@ function displayValue(f: FormField, v: FormAnswerValue | undefined, zone: string
       return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
     }
     case "Agent":
-    case "Contact": {
+    case "Contact":
+    case "Queue": {
       const r = v as { name?: string; email?: string };
       return r.name && r.email ? `${r.name} · ${r.email}` : r.name || r.email || "";
     }

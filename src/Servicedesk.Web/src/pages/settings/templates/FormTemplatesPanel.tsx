@@ -32,6 +32,7 @@ import {
   GripVertical,
   Hash,
   Heading,
+  Inbox,
   ListChecks,
   ListFilter,
   Package,
@@ -61,6 +62,7 @@ import {
   formApiError,
   formTemplatesApi,
   hasOptions,
+  TRIGGER_KEY_PATTERN,
   type FormField,
   type FormFieldType,
   type FormTemplateSummary,
@@ -89,6 +91,7 @@ const TYPE_ICON: Record<FormFieldType, React.ComponentType<{ className?: string 
   Agent: UserCircle,
   Contact: Users,
   Article: Package,
+  Queue: Inbox,
 };
 
 const TYPE_HINT: Record<FormFieldType, string> = {
@@ -106,6 +109,7 @@ const TYPE_HINT: Record<FormFieldType, string> = {
   Agent: "One of the agents.",
   Contact: "The requester or a contact of the ticket's company.",
   Article: "Adsolut articles with a quantity — contract articles first.",
+  Queue: "One of the queues the agent filling in the form can access.",
 };
 
 const newId = () =>
@@ -537,6 +541,8 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
                           ...f,
                           id: newId(),
                           label: `${f.label} (copy)`,
+                          // Trigger keys are unique per form.
+                          triggerKey: null,
                           options: f.options?.map((o) => ({ ...o, id: newOptionId() })) ?? null,
                         };
                         return [...fs.slice(0, i + 1), copy, ...fs.slice(i + 1)];
@@ -703,6 +709,8 @@ function FieldRow({
             </label>
           </div>
 
+          {!isHeader && <TriggerKeyInput field={f} onChange={onChange} />}
+
           {hasOptions(f.type) && <OptionsEditor field={f} onChange={onChange} />}
 
           {f.type === "Number" && (
@@ -768,6 +776,32 @@ function FieldRow({
         </div>
       )}
     </li>
+  );
+}
+
+/// v0.1.58 — the name triggers use to read this field (conditions such as
+/// "form.field.technician is set", or Set owner / queue / pending till "from
+/// form field"). Optional; a field without one is invisible to triggers.
+function TriggerKeyInput({ field: f, onChange }: { field: FormField; onChange: (p: Partial<FormField>) => void }) {
+  const value = f.triggerKey ?? "";
+  const invalid = value !== "" && !TRIGGER_KEY_PATTERN.test(value);
+  const hint = f.type === "Agent"
+    ? "A trigger can make this agent the ticket owner."
+    : f.type === "Queue"
+      ? "A trigger can move the ticket to this queue."
+      : f.type === "DateTime"
+        ? "A trigger can use this moment as the pending till. Agents can then only pick a moment in the future."
+        : "Triggers can check whether this field is filled in or changed.";
+  return (
+    <label className="block space-y-1">
+      <span className="text-[11px] font-medium text-muted-foreground">Trigger key</span>
+      <input value={value} maxLength={40} spellCheck={false} placeholder="Optional, e.g. technician"
+        onChange={(e) => onChange({ triggerKey: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") || null })}
+        className={cn(formInputCn, "h-9", invalid && "border-rose-500/60")} />
+      <span className={cn("block text-[11px] leading-snug", invalid ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground/70")}>
+        {invalid ? "Start with a letter; use only a-z, 0-9 and _." : hint}
+      </span>
+    </label>
   );
 }
 

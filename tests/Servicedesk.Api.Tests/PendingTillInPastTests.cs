@@ -160,7 +160,7 @@ public sealed class PendingTillInPastTests
     public async Task Trigger_with_a_past_absolute_fails_without_writing()
     {
         // Null-backed mutator: reaching it would throw.
-        var handler = new SetPendingTillHandler(new SystemFieldMutator(null!, null!), null!);
+        var handler = new SetPendingTillHandler(new SystemFieldMutator(null!, null!), null!, null!, null!);
         var action = JsonDocument.Parse("""{ "kind":"set_pending_till", "absolute":"2026-10-13T07:00:00Z" }""").RootElement;
 
         var result = await handler.ApplyAsync(action, TriggerContext(), default);

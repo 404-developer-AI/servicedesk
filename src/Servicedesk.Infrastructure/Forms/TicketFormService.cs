@@ -1,8 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 using Servicedesk.Domain.Tickets;
+using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Health;
+using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Tickets;
@@ -69,6 +72,10 @@ public sealed class TicketFormService : ITicketFormService
     private readonly IAuditLogger _audit;
     private readonly IBackofficeFormEvents _backoffice;
     private readonly IBackofficeFormRepository _backofficeRepo;
+    private readonly IQueueAccessService _queueAccess;
+    private readonly ITaxonomyRepository _taxonomy;
+    private readonly IFormTriggerRunner _formTriggers;
+    private readonly ILogger<TicketFormService> _logger;
 
     public TicketFormService(
         ITicketFormRepository repo,
@@ -79,8 +86,16 @@ public sealed class TicketFormService : ITicketFormService
         ITicketHtmlSanitizer sanitizer,
         IAuditLogger audit,
         IBackofficeFormEvents backoffice,
-        IBackofficeFormRepository backofficeRepo)
+        IBackofficeFormRepository backofficeRepo,
+        IQueueAccessService queueAccess,
+        ITaxonomyRepository taxonomy,
+        IFormTriggerRunner formTriggers,
+        ILogger<TicketFormService> logger)
     {
+        _queueAccess = queueAccess;
+        _taxonomy = taxonomy;
+        _formTriggers = formTriggers;
+        _logger = logger;
         _repo = repo;
         _templates = templates;
         _mutations = mutations;
@@ -167,7 +182,7 @@ public sealed class TicketFormService : ITicketFormService
                 $"A ticket can have at most {settings.MaxPerTicket} forms.");
 
         var snapshot = template.Definition;
-        var normalized = await NormalizeAnswersAsync(snapshot, answers, ticket, settings, ct);
+        var normalized = await NormalizeAnswersAsync(actor, snapshot, answers, null, ticket, settings, ct);
         var searchText = FormRenderer.FlattenForSearch(snapshot, normalized);
 
         var formId = await _repo.CreateAsync(ticketId, template.Id, template.Name, snapshot, normalized, searchText,
@@ -190,6 +205,9 @@ public sealed class TicketFormService : ITicketFormService
         await AuditAsync(actor, "ticket.form.created", ticketId,
             new { formId, templateId = template.Id, template.Name, answeredFields = normalized.Count,
                   sendToBackoffice = template.SendToBackoffice }, ct);
+
+        await RunSavedTriggersAsync(FormSavedEventKind.Created, formId, ticketId, template.Id, template.Name,
+            actor, snapshot, normalized, null, eventId, ct);
 
         if (template.SendToBackoffice)
             await PublishBackofficeAsync(BackofficeFormEventKind.Submitted, formId, actor, ct);
@@ -217,7 +235,7 @@ public sealed class TicketFormService : ITicketFormService
         if (form.Summary.Version != expectedVersion)
             throw VersionConflict();
 
-        var normalized = await NormalizeAnswersAsync(form.Snapshot, answers, ticket, settings, ct);
+        var normalized = await NormalizeAnswersAsync(actor, form.Snapshot, answers, form.Answers, ticket, settings, ct);
         var changed = FormRenderer.ChangedFields(form.Snapshot, form.Answers, normalized);
         if (changed.Count == 0)
             throw new FormRejectedException(FormRejectCode.Invalid, "Nothing changed.");
@@ -233,6 +251,9 @@ public sealed class TicketFormService : ITicketFormService
 
         await AuditAsync(actor, "ticket.form.updated", ticket.Id,
             new { formId, form.Summary.Name, version = newVersion, changedFields = changed.Count }, ct);
+
+        await RunSavedTriggersAsync(FormSavedEventKind.Updated, formId, ticket.Id, form.TemplateId, form.Summary.Name,
+            actor, form.Snapshot, normalized, form.Answers, eventId, ct);
 
         // A handled back-office form that changes goes back to Open.
         if (update.PreviousBoStatus is not null)
@@ -305,12 +326,44 @@ public sealed class TicketFormService : ITicketFormService
         return await _repo.SearchCompanyContactsAsync(ticket.CompanyId, ticket.RequesterContactId, term, 30, ct);
     }
 
+    /// v0.1.58 — the trigger pass for a saved form (created / updated). Best
+    /// effort like the back-office pass: the form and its note are committed,
+    /// so a failing trigger is logged and never undoes the save.
+    private async Task RunSavedTriggersAsync(
+        string kind, Guid formId, Guid ticketId, Guid? templateId, string formName, TicketMutationActor actor,
+        FormDefinition snapshot, JsonObject answers, JsonObject? previous, long eventId, CancellationToken ct)
+    {
+        try
+        {
+            await _formTriggers.RunSavedAsync(new FormSavedEvent(
+                kind, formId, ticketId, templateId, formName, actor.UserId,
+                snapshot, answers, previous, eventId), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Form trigger pass failed for form {FormId}.", formId);
+        }
+    }
+
     private async Task<JsonObject> NormalizeAnswersAsync(
-        FormDefinition def, JsonObject? answers, Ticket ticket, FormRuntimeSettings settings, CancellationToken ct)
+        TicketMutationActor actor, FormDefinition def, JsonObject? answers, JsonObject? previous,
+        Ticket ticket, FormRuntimeSettings settings, CancellationToken ct)
     {
         FormAnswerValidator.ParsedAnswers parsed;
         try { parsed = FormAnswerValidator.Parse(def, answers, settings, _sanitizer.Sanitize); }
         catch (FormAnswerException ex) { throw new FormRejectedException(FormRejectCode.Invalid, ex.Message, ex.FieldId); }
+
+        // A date a trigger can use (pending till from a form field) must be in
+        // the future — but only when it is new or changed, so a form whose
+        // intervention already took place can still be corrected later.
+        if (FormAnswerValidator.TriggerDateInPast(def, parsed, previous, DateTime.UtcNow) is { } past)
+            throw new FormRejectedException(FormRejectCode.Invalid,
+                $"'{past.Label}': the date and time must be in the future.", past.Id);
+
+        var queues = parsed.References.QueueIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await ResolveQueuesAsync(await _queueAccess.GetScopeAsync(actor.UserId, actor.Role, ct),
+                parsed.References.QueueIds, id => _taxonomy.GetQueueAsync(id, ct));
 
         var agents = await _repo.ResolveAgentsAsync(parsed.References.AgentIds.ToList(), ct);
         if (agents.Count != parsed.References.AgentIds.Count)
@@ -323,7 +376,23 @@ public sealed class TicketFormService : ITicketFormService
         if (articles.Count != parsed.References.ArticleIds.Count)
             throw new FormRejectedException(FormRejectCode.Invalid, "A selected article no longer exists.");
 
-        return FormAnswerValidator.Build(def, parsed, new FormResolvedReferences(agents, contacts, articles));
+        return FormAnswerValidator.Build(def, parsed, new FormResolvedReferences(agents, contacts, articles) { Queues = queues });
+    }
+
+    /// Queue fields: only active queues the person filling in the form can
+    /// access (a trigger may move the ticket there, so this is the boundary).
+    internal static async Task<Dictionary<Guid, string>> ResolveQueuesAsync(
+        QueueAccessScope scope, IEnumerable<Guid> ids, Func<Guid, Task<Domain.Taxonomy.Queue?>> load)
+    {
+        var queues = new Dictionary<Guid, string>();
+        foreach (var qid in ids)
+        {
+            var q = scope.CanSee(qid) ? await load(qid) : null;
+            if (q is null || !q.IsActive)
+                throw new FormRejectedException(FormRejectCode.Invalid, "A selected queue is not available to you.");
+            queues[qid] = q.Name;
+        }
+        return queues;
     }
 
     private async Task<long> WriteNoteAsync(

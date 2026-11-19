@@ -23,6 +23,12 @@ import type {
   Category,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  FORM_FIELD_CONDITION_TYPE,
+  FORM_FIELD_PREFIX,
+  formFieldConditionEntries,
+  useTriggerFormFields,
+} from "./formFields";
 
 type Props = {
   value: ConditionGroup;
@@ -44,6 +50,12 @@ const SENDER_OPTIONS = [
   { value: "Customer", label: "Customer" },
   { value: "Agent", label: "Agent" },
   { value: "System", label: "System" },
+];
+
+/// v0.1.58 — form saves (the `form.save_event` field), any form.
+const FORM_SAVE_EVENT_OPTIONS = [
+  { value: "created", label: "Filled in (new form)" },
+  { value: "updated", label: "Edited (new version)" },
 ];
 
 /// v0.1.54 — back office form events (the `form.backoffice_event` field).
@@ -79,6 +91,17 @@ export function ConditionsEditor({
   onExpertChange,
   taxonomies,
 }: Props) {
+  // v0.1.58 — keyed form fields join the catalog as `form.field.<key>`.
+  const formFields = useTriggerFormFields();
+  const allFields = React.useMemo(
+    () => [...fields, ...formFieldConditionEntries(formFields)],
+    [fields, formFields],
+  );
+  const usesFormField = React.useMemo(() => referencesFormField(value), [value]);
+  const hasPassCondition = React.useMemo(
+    () => referencesField(value, "form.save_event") || referencesField(value, "form.backoffice_event"),
+    [value],
+  );
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -100,7 +123,7 @@ export function ConditionsEditor({
           onChange={onChange}
           depth={0}
           maxDepth={maxDepth}
-          fields={fields}
+          fields={allFields}
           operators={operators}
           taxonomies={taxonomies}
           isRoot
@@ -109,13 +132,27 @@ export function ConditionsEditor({
         <SimpleList
           group={value}
           onChange={onChange}
-          fields={fields}
+          fields={allFields}
           operators={operators}
           taxonomies={taxonomies}
         />
       )}
+      {usesFormField && !hasPassCondition && (
+        <p className="text-xs text-amber-700 dark:text-amber-300">
+          A form field is only known when a form triggers the run. Add a "Form saved" (or "Back office form event")
+          condition so the trigger runs when the form is saved.
+        </p>
+      )}
     </div>
   );
+}
+
+function referencesField(node: ConditionNode, key: string): boolean {
+  return isGroup(node) ? node.items.some((n) => referencesField(n, key)) : node.field === key;
+}
+
+function referencesFormField(node: ConditionNode): boolean {
+  return isGroup(node) ? node.items.some(referencesFormField) : node.field.startsWith(FORM_FIELD_PREFIX);
 }
 
 function SimpleList({
@@ -353,10 +390,13 @@ function LeafRow({
   taxonomies: Props["taxonomies"];
 }) {
   const fieldDef = fields.find((f) => f.key === leaf.field);
-  const fieldType = fieldDef?.type ?? "string";
+  // A form field whose key no longer exists on any template still renders
+  // as a form field (and stays selectable) instead of falling back to text.
+  const isFormField = leaf.field.startsWith(FORM_FIELD_PREFIX);
+  const fieldType = fieldDef?.type ?? (isFormField ? FORM_FIELD_CONDITION_TYPE : "string");
   const allowsHasChanged =
     fieldType !== "boolean" && fieldType !== "tags"
-    && fieldType !== "form-event" && fieldType !== "form-template";
+    && fieldType !== "form-event" && fieldType !== "form-template" && fieldType !== "form-save-event";
 
   // Filter operator list to those that semantically apply to the field
   // type. The matcher is permissive (unknown operator = false), so this
@@ -364,6 +404,9 @@ function LeafRow({
   // on a status field and wonder why it never matches.
   const applicableOps = React.useMemo(() => {
     return operators.filter((op) => {
+      // Form fields: filled in or not, and whether this save changed them.
+      if (fieldType === FORM_FIELD_CONDITION_TYPE) return op === "is_set" || op === "is_not_set" || op === "has_changed";
+      if (op === "is_set" || op === "is_not_set") return false;
       if (op === "has_changed") return allowsHasChanged;
       if (op === "contains_one" || op === "contains_all") return fieldType === "tags";
       if (op === "starts_with" || op === "ends_with" || op === "contains" || op === "does_not_contain") {
@@ -375,9 +418,12 @@ function LeafRow({
 
   function setField(field: string) {
     const def = fields.find((f) => f.key === field);
+    const formField = def?.type === FORM_FIELD_CONDITION_TYPE;
+    const wasFormField = fieldType === FORM_FIELD_CONDITION_TYPE;
     onChange({
       field,
-      operator: leaf.operator,
+      // Form fields only know is set / is not set / has changed.
+      operator: formField && !wasFormField ? "is_set" : !formField && wasFormField ? "is" : leaf.operator,
       // Reset value type when switching field type, otherwise an admin
       // would get garbage in the DB (e.g. a guid stored where a tag-array
       // is expected). Boolean defaults to "true" so the matcher can read
@@ -398,6 +444,9 @@ function LeafRow({
         {fields.map((f) => (
           <option key={f.key} value={f.key}>{f.label}</option>
         ))}
+        {!fieldDef && isFormField && (
+          <option value={leaf.field}>Form field: {leaf.field.slice(FORM_FIELD_PREFIX.length)} (not on any form)</option>
+        )}
       </select>
       <select
         value={leaf.operator}
@@ -408,7 +457,7 @@ function LeafRow({
           <option key={o} value={o}>{prettifyOp(o)}</option>
         ))}
       </select>
-      {leaf.operator !== "has_changed" && (
+      {leaf.operator !== "has_changed" && leaf.operator !== "is_set" && leaf.operator !== "is_not_set" && (
         <ValueInput
           fieldType={fieldType}
           value={leaf.value}
@@ -529,6 +578,20 @@ function ValueInput({
       </select>
     );
   }
+  if (fieldType === "form-save-event") {
+    return (
+      <select
+        value={typeof value === "string" ? value : ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+      >
+        <option value="">—</option>
+        {FORM_SAVE_EVENT_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    );
+  }
   if (fieldType === "form-template") {
     return <FormTemplateValueInput value={typeof value === "string" ? value : ""} onChange={onChange} />;
   }
@@ -563,12 +626,12 @@ function ValueInput({
   );
 }
 
-/// Back office form template picker: only templates marked "Send to back
-/// office" ever produce a form event, so only those are offered (a saved
-/// value pointing at another template is kept and shown as such).
+/// Form template picker. Every template produces "Form saved" passes
+/// (v0.1.58); only templates marked "Send to back office" also produce back
+/// office events, which the label says.
 function FormTemplateValueInput({ value, onChange }: { value: string; onChange: (v: ConditionLeaf["value"]) => void }) {
   const q = useQuery({ queryKey: ["form-templates", "list"], queryFn: formTemplatesApi.list, staleTime: 60_000 });
-  const marked = (q.data ?? []).filter((t) => t.sendToBackoffice || t.id === value);
+  const marked = q.data ?? [];
   return (
     <select
       value={value}
@@ -577,7 +640,7 @@ function FormTemplateValueInput({ value, onChange }: { value: string; onChange: 
     >
       <option value="">—</option>
       {marked.map((t) => (
-        <option key={t.id} value={t.id}>{t.name}{t.sendToBackoffice ? "" : " (not sent to back office)"}</option>
+        <option key={t.id} value={t.id}>{t.name}{t.sendToBackoffice ? " · back office" : ""}{t.isActive ? "" : " (inactive)"}</option>
       ))}
     </select>
   );

@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CornerDownRight, MessageSquareReply, Pencil, ThumbsUp, Trash2 } from "lucide-react";
 import { RichTextEditor, splitMentionIds } from "@/components/RichTextEditor";
-import { SafeHtml } from "@/components/SafeHtml";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useAuth } from "@/auth/authStore";
 import { useServerTimeZone } from "@/hooks/useServerTime";
@@ -11,6 +10,8 @@ import { formatDateTime } from "@/lib/dateFormat";
 import { errorMessage } from "@/lib/http";
 import { mentionApi } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
+import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
+import { TimelineBodyHtml } from "./timelinePreview";
 import {
   buildReplyTree,
   noteThreadApi,
@@ -26,6 +27,10 @@ import {
 const MAX_INDENT = 3;
 
 const EMPTY: NoteThreadData = { replies: [], noteLikes: [], replyLikes: new Map() };
+
+/// v0.1.58 — a reply may be just a pasted screenshot.
+const isEmptyReply = (html: string) =>
+  html.replace(/<[^>]*>/g, "").trim().length === 0 && !/<img\b/i.test(html);
 
 const localPart = (email: string | null | undefined) => (email ? email.split("@")[0] : "someone");
 
@@ -152,7 +157,7 @@ function ReplyItem({
         ) : editing ? (
           <ReplyEditor ticketId={ticketId} reply={r} onDone={() => setEditing(false)} />
         ) : (
-          <SafeHtml html={r.bodyHtml} className="rich-prose-sm mt-1 text-sm" />
+          <TimelineBodyHtml html={r.bodyHtml} className="sd-note-reply-body rich-prose rich-prose-sm mt-1 text-sm" />
         )}
 
         {!r.deleted && !editing && (
@@ -240,6 +245,10 @@ function ReplyComposer({
   const qc = useQueryClient();
   const [html, setHtml] = React.useState("");
   const [mentions, setMentions] = React.useState<string[]>([]);
+  // v0.1.58 — paste / drop / paperclip: images inline, other files as a
+  // download link. The body is the source of truth; the server binds the
+  // files it references to the reply on save.
+  const uploads = useAttachmentUploads(ticketId);
   const send = useMutation({
     mutationFn: () => {
       const { userIds, groupIds } = splitMentionIds(mentions);
@@ -256,26 +265,30 @@ function ReplyComposer({
     },
     onError: (e) => toast.error(errorMessage(e, "Could not send the reply")),
   });
-  const empty = html.replace(/<[^>]*>/g, "").trim().length === 0;
+  const empty = isEmptyReply(html);
+  const blocked = empty || send.isPending || uploads.hasPending;
 
   return (
     <div className="sd-reply-composer mt-1.5 space-y-1.5"
       onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !empty && !send.isPending) {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !blocked) {
           e.preventDefault();
           send.mutate();
         } else if (e.key === "Escape") onDone();
       }}>
       <RichTextEditor content="" onChange={setHtml} minHeight="44px" maxHeight="200px" autoFocus
-        placeholder={parentReplyId ? "Write a reply…" : "Reply to this note… (@@ to tag)"}
-        onMentionQuery={(q) => mentionApi.search(q)} onMentionsChange={setMentions} />
+        placeholder={parentReplyId ? "Write a reply… (paste a screenshot or drop a file)" : "Reply to this note… (@@ to tag, paste a screenshot or drop a file)"}
+        onMentionQuery={(q) => mentionApi.search(q)} onMentionsChange={setMentions}
+        onUploadFile={uploads.upload} linkNonImageUploads />
       <div className="flex items-center justify-end gap-2">
-        <span className="mr-auto text-[10px] text-muted-foreground/70">Ctrl+Enter to send</span>
+        <span className="mr-auto text-[10px] text-muted-foreground/70">
+          {uploads.hasPending ? "Uploading…" : "Ctrl+Enter to send"}
+        </span>
         <button type="button" onClick={onDone}
           className="rounded-md px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-glass-hover">
           Cancel
         </button>
-        <button type="button" onClick={() => send.mutate()} disabled={empty || send.isPending}
+        <button type="button" onClick={() => send.mutate()} disabled={blocked}
           className="rounded-md border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/25 disabled:opacity-50">
           {send.isPending ? "Sending…" : "Reply"}
         </button>
@@ -287,6 +300,7 @@ function ReplyComposer({
 function ReplyEditor({ ticketId, reply, onDone }: { ticketId: string; reply: NoteReply; onDone: () => void }) {
   const qc = useQueryClient();
   const [html, setHtml] = React.useState(reply.bodyHtml);
+  const uploads = useAttachmentUploads(ticketId);
   const save = useMutation({
     mutationFn: () => noteThreadApi.edit(ticketId, reply.id, html),
     onSuccess: () => {
@@ -297,11 +311,12 @@ function ReplyEditor({ ticketId, reply, onDone }: { ticketId: string; reply: Not
   });
   return (
     <div className="mt-1 space-y-1.5">
-      <RichTextEditor content={reply.bodyHtml} onChange={setHtml} minHeight="44px" maxHeight="200px" autoFocus preserveInlineNodes />
+      <RichTextEditor content={reply.bodyHtml} onChange={setHtml} minHeight="44px" maxHeight="200px" autoFocus preserveInlineNodes
+        onUploadFile={uploads.upload} linkNonImageUploads />
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onDone}
           className="rounded-md px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-glass-hover">Cancel</button>
-        <button type="button" onClick={() => save.mutate()} disabled={save.isPending}
+        <button type="button" onClick={() => save.mutate()} disabled={save.isPending || uploads.hasPending || isEmptyReply(html)}
           className="rounded-md border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/25 disabled:opacity-50">
           {save.isPending ? "Saving…" : "Save"}
         </button>

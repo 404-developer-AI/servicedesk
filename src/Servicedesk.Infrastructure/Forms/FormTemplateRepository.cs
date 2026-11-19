@@ -15,7 +15,13 @@ public interface IFormTemplateRepository
     /// Active templates whose queue scope is empty (all queues) or contains
     /// <paramref name="queueId"/> — the "::" picker for one ticket.
     Task<IReadOnlyList<FormTemplateSummary>> ListAvailableForQueueAsync(Guid queueId, CancellationToken ct);
+    /// v0.1.58 — every field with a trigger key, per template (the trigger
+    /// editor's form-field pickers). Admin configuration only.
+    Task<IReadOnlyList<FormTriggerFieldInfo>> ListTriggerFieldsAsync(CancellationToken ct);
 }
+
+public sealed record FormTriggerFieldInfo(
+    Guid TemplateId, string TemplateName, bool TemplateIsActive, string Key, string Label, string Type);
 
 /// v0.1.52 — Dapper repository for <c>form_templates</c>.
 public sealed class FormTemplateRepository : IFormTemplateRepository
@@ -55,6 +61,24 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
              ORDER BY lower(name), id
             """, new { queueId }, cancellationToken: ct));
         return rows.Select(ToSummary).ToList();
+    }
+
+    public async Task<IReadOnlyList<FormTriggerFieldInfo>> ListTriggerFieldsAsync(CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<FormTriggerFieldInfo>(new CommandDefinition("""
+            SELECT t.id                 AS TemplateId,
+                   t.name               AS TemplateName,
+                   t.is_active          AS TemplateIsActive,
+                   f.value->>'triggerKey' AS Key,
+                   COALESCE(f.value->>'label', '') AS Label,
+                   COALESCE(f.value->>'type', '')  AS Type
+            FROM form_templates t
+            CROSS JOIN LATERAL jsonb_array_elements(t.definition->'fields') AS f(value)
+            WHERE COALESCE(f.value->>'triggerKey', '') <> ''
+            ORDER BY t.is_active DESC, lower(t.name), t.id, f.value->>'triggerKey'
+            """, cancellationToken: ct));
+        return rows.ToList();
     }
 
     public async Task<FormTemplateDetail?> GetAsync(Guid id, CancellationToken ct)

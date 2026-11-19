@@ -121,6 +121,7 @@ export function emptyDraft(fields: FormField[], tokens?: Record<string, string>)
         break;
       case "Agent":
       case "Contact":
+      case "Queue":
         d[f.id] = { kind: "ref", value: null };
         break;
       case "DateTime":
@@ -163,6 +164,7 @@ export function draftFromAnswers(fields: FormField[], answers: FormAnswers): For
         break;
       case "Agent":
       case "Contact":
+      case "Queue":
         d[f.id] = { kind: "ref", value: typeof v === "object" && !Array.isArray(v) ? (v as RefAnswer) : null };
         break;
       case "DateTime":
@@ -267,6 +269,7 @@ function fieldSchema(f: FormField): z.ZodType<DraftValue> {
       return z.custom<DraftValue>((v) => !req || !!(v as { value: string | null }).value, { message: "Required." });
     case "Agent":
     case "Contact":
+    case "Queue":
       return z.custom<DraftValue>((v) => !req || !!(v as { value: RefAnswer | null }).value, { message: "Required." });
     case "Article":
       return z.custom<DraftValue>((v) => {

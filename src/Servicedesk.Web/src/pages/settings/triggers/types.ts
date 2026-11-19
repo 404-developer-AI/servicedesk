@@ -32,6 +32,8 @@ export const EMPTY_AND_GROUP: ConditionGroup = { op: "AND", items: [] };
 // pending-till elapses. UI restricts the picker to time:reminder
 // triggers; the BE accepts any UUID and trusts the FK.
 export type SetPendingTillAction =
+  /** v0.1.58 — the moment from a form's date & time field (`form_field` = its trigger key). */
+  | { kind: "set_pending_till"; mode: "formField"; form_field: string; next_trigger_id?: string | null }
   | { kind: "set_pending_till"; mode: "absolute"; value: string; next_trigger_id?: string | null }
   | { kind: "set_pending_till"; mode: "relative"; value: string; next_trigger_id?: string | null }
   | { kind: "set_pending_till"; mode: "clear" }
@@ -163,10 +165,12 @@ export type TitleReviewAction = {
 };
 
 export type TriggerAction =
-  | { kind: "set_queue"; queue_id: string }
+  // v0.1.58 — `form_field` set = take the value from that keyed form field
+  // (a Queue / Agent field) instead of the fixed id.
+  | { kind: "set_queue"; queue_id: string; form_field?: string | null }
   | { kind: "set_priority"; priority_id: string }
   | { kind: "set_status"; status_id: string }
-  | { kind: "set_owner"; user_id: string | null }
+  | { kind: "set_owner"; user_id: string | null; form_field?: string | null }
   | SetPendingTillAction
   | { kind: "add_internal_note"; body_html: string }
   | { kind: "add_public_note"; body_html: string }
@@ -329,12 +333,15 @@ export function blankActionForKind(kind: KnownActionKind): TriggerAction {
 /// reads top-level `absolute` / `relative` / `businessDays` / `clear`.
 export function actionToBackend(action: TriggerAction): Record<string, unknown> {
   if (action.kind === "__unknown") return action.raw;
+  if ((action.kind === "set_queue" || action.kind === "set_owner") && action.form_field != null)
+    return { kind: action.kind, form_field: action.form_field };
   if (action.kind !== "set_pending_till") return action as unknown as Record<string, unknown>;
   if (action.mode === "clear") return { kind: "set_pending_till", clear: true };
   const chain = action.next_trigger_id
     ? { nextTriggerId: action.next_trigger_id }
     : {};
   switch (action.mode) {
+    case "formField": return { kind: "set_pending_till", form_field: action.form_field, ...chain };
     case "absolute": return { kind: "set_pending_till", absolute: action.value, ...chain };
     case "relative": return { kind: "set_pending_till", relative: action.value, ...chain };
     case "businessDays":
@@ -380,11 +387,18 @@ export function actionFromBackend(raw: any): TriggerAction {
       message: typeof raw.message === "string" ? raw.message : "",
     };
   }
+  if ((raw.kind === "set_queue" || raw.kind === "set_owner") && typeof raw.form_field === "string") {
+    return raw.kind === "set_queue"
+      ? { kind: "set_queue", queue_id: "", form_field: raw.form_field }
+      : { kind: "set_owner", user_id: null, form_field: raw.form_field };
+  }
   if (raw.kind !== "set_pending_till") return raw as TriggerAction;
   if (raw.clear === true) return { kind: "set_pending_till", mode: "clear" };
   const chain: { next_trigger_id?: string | null } = typeof raw.nextTriggerId === "string"
     ? { next_trigger_id: raw.nextTriggerId }
     : {};
+  if (typeof raw.form_field === "string")
+    return { kind: "set_pending_till", mode: "formField", form_field: raw.form_field, ...chain };
   if (typeof raw.absolute === "string")
     return { kind: "set_pending_till", mode: "absolute", value: raw.absolute, ...chain };
   if (typeof raw.relative === "string")

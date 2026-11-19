@@ -234,6 +234,7 @@ public class TriggerSchedulerTests
             new FakeRenderFactory(),
             new Servicedesk.Infrastructure.Realtime.NullTicketListNotifier(),
             new TestInfrastructure.FakeAdsolutOrderRepository(),
+            null!,
             NullLogger<TriggerService>.Instance);
     }
 

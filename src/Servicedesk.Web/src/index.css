@@ -715,11 +715,38 @@
    wraps "anywhere" (fine for mail bodies), which lets a long answer squeeze
    the label column down to one letter per line. Labels keep a readable
    minimum and break between words only; long answers wrap instead. */
-.rich-prose p:has(> .sd-form-pill) + table td:first-child {
+.rich-prose p:has(> .sd-form-pill) + table > tbody > tr > td:first-child {
   min-width: 9rem;
   max-width: 16rem;
   padding-right: 1rem;
   overflow-wrap: break-word;
+}
+/* v0.1.58 — an Articles answer inside a form note: one row per article
+   (quantity · code · name) instead of one long "; "-joined line. */
+.rich-prose table.sd-form-articles {
+  display: table;
+  width: auto;
+  margin: 0;
+  border-collapse: collapse;
+}
+.rich-prose table.sd-form-articles td {
+  padding: 0.15rem 0.75rem 0.15rem 0;
+  border: 0;
+  border-bottom: 1px solid hsl(var(--glass-border));
+  vertical-align: baseline;
+}
+.rich-prose table.sd-form-articles tr:last-child td {
+  border-bottom: 0;
+}
+.rich-prose table.sd-form-articles td.sd-form-articles-qty {
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.rich-prose table.sd-form-articles td.sd-form-articles-code {
+  white-space: nowrap;
+  color: hsl(var(--muted-foreground));
 }
 
 /* v0.1.33 — placeholder for an external image in a mail / note / KB body
@@ -911,6 +938,25 @@
 .rich-prose-sm p {
   margin: 0.5em 0;
 }
+/* v0.1.58 — files in a note reply: a pasted screenshot stays a compact
+   preview inside the thread (open it full size via the image link), other
+   files read as links. Theme tokens only, flat in Steaan. */
+.sd-note-reply-body img {
+  display: block;
+  max-width: 100%;
+  max-height: 16rem;
+  width: auto;
+  height: auto;
+  margin: 0.4em 0;
+  border-radius: 0.375rem;
+  border: 1px solid hsl(var(--glass-border));
+}
+.sd-note-reply-body a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Dimmed modifier for historical content (event revision snapshots). */
 .rich-prose-dim {
   color: hsl(var(--foreground) / 0.7);

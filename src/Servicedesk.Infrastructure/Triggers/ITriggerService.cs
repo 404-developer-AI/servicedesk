@@ -63,9 +63,14 @@ public interface ITriggerService
     /// row is written. Returns null when the trigger or ticket is not
     /// found; otherwise returns a diff-shape that the UI renders as
     /// "this is what would happen on this ticket".
+    /// v0.1.58 — <paramref name="formId"/> (a form on that ticket) simulates
+    /// a form pass with that form's answers: a save (<c>created</c>) for a
+    /// trigger with a <c>form.save_event</c> condition, else the form's
+    /// back-office step.
     Task<TriggerDryRunResult?> DryRunAsync(
         Guid triggerId,
         Guid ticketId,
+        Guid? formId,
         CancellationToken ct);
 }
 

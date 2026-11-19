@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Eye, X } from "lucide-react";
+import { Eye, NotebookPen, X } from "lucide-react";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ import {
   type FollowedTicket, type FollowingResponse,
 } from "@/lib/following-api";
 import { PulseDot } from "@/shell/PulseDot";
+import { FollowNoteHoverCard } from "@/components/following/FollowNoteHoverCard";
 
 /// The shared Following query — the sidebar block and the Follow button in
 /// the ticket header read the same cache entry.
@@ -146,7 +147,9 @@ function FollowingPanel({ items, loading }: { items: FollowedTicket[]; loading: 
       ) : (
         <div className="max-h-[360px] divide-y divide-glass overflow-y-auto">
           {items.map((t) => (
-            <div key={t.ticketId}
+            // v0.1.58 — hovering a row shows your note on it (or "Add a note").
+            <FollowNoteHoverCard key={t.ticketId} ticketId={t.ticketId} note={t.note} side="right" align="start">
+            <div
               className={cn("flex items-start gap-2 px-3 py-2 transition-colors hover:bg-glass-hover", t.hasActivity && "bg-primary/5")}>
               <button type="button" onClick={() => open(t)} className="flex min-w-0 flex-1 items-start gap-2 text-left"
                 title={t.hasActivity ? "Something happened since you last opened this ticket" : "No news since you last opened this ticket"}>
@@ -162,6 +165,9 @@ function FollowingPanel({ items, loading }: { items: FollowedTicket[]; loading: 
                       style={colorPillStyle(t.statusColor || "#6b7280", theme)}>
                       {t.statusName}
                     </span>
+                    {t.note ? (
+                      <NotebookPen className="h-3 w-3 shrink-0 text-muted-foreground/70" aria-label="Has a note" />
+                    ) : null}
                   </div>
                   <div className={cn("mt-0.5 truncate text-xs",
                     t.hasActivity ? "font-semibold text-foreground" : "text-muted-foreground")}>
@@ -179,6 +185,7 @@ function FollowingPanel({ items, loading }: { items: FollowedTicket[]; loading: 
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
+            </FollowNoteHoverCard>
           ))}
         </div>
       )}

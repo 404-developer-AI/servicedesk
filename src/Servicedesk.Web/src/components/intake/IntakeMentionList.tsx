@@ -40,17 +40,27 @@ export type IntakeMentionListProps = {
   /// The picker forwards the full item so the Tiptap suggestion plugin can
   /// branch on `kind` and skip the chip-flow for templates.
   command: (props: IntakeMentionItem) => void;
+  /// Extra classes, e.g. a max height that fits the space a popover has.
+  className?: string;
 };
 
 /// Typeahead popover for the `::` Tiptap extension. Shared by intake-form
 /// templates and compose templates; the row badge tells them apart.
 export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, IntakeMentionListProps>(
-  function IntakeMentionList({ items, loading, command }, ref) {
+  function IntakeMentionList({ items, loading, command, className }, ref) {
     const [selectedIndex, setSelectedIndex] = React.useState(0);
+    const listRef = React.useRef<HTMLDivElement>(null);
 
     React.useEffect(() => {
       setSelectedIndex(0);
     }, [items]);
+
+    // Arrow keys through a list taller than the popup keep the row in view.
+    React.useEffect(() => {
+      listRef.current
+        ?.querySelector<HTMLElement>(`[data-index="${selectedIndex}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    }, [selectedIndex]);
 
     const selectItem = React.useCallback(
       (index: number) => {
@@ -82,13 +92,21 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
 
     return (
       <div
+        ref={listRef}
         className={cn(
-          "min-w-[min(40rem,90vw)] max-w-[min(56rem,90vw)] max-h-72 overflow-auto",
+          "min-w-[min(40rem,90vw)] max-w-[min(56rem,90vw)] max-h-72 overflow-auto overscroll-contain",
           "rounded-(--radius) border border-glass",
           "bg-popover/95 backdrop-blur-xl shadow-2xl",
           "py-1 text-sm",
+          className,
         )}
         role="listbox"
+        // v0.1.58 — inside a modal (the form fill dialog) the scroll lock
+        // swallows wheel and touch scrolling on anything outside the dialog,
+        // which a portalled popover is. Stopping the event here lets the list
+        // scroll; overscroll-contain keeps the page behind it still.
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
       >
         {loading && items.length === 0 ? (
           <div className="px-3 py-2 text-xs text-muted-foreground/70">
@@ -120,6 +138,7 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
                 key={`${item.kind}:${item.id}`}
                 type="button"
                 role="option"
+                data-index={i}
                 aria-selected={isSelected}
                 onMouseDown={(e) => {
                   e.preventDefault();

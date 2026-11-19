@@ -24,11 +24,14 @@ public static class FormFieldType
     public const string Agent = "Agent";
     public const string Contact = "Contact";
     public const string Article = "Article";
+    /// v0.1.58 — a queue the filler has access to (stored as {"id","name"});
+    /// a trigger can move the ticket there (set_queue from a form field).
+    public const string Queue = "Queue";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         SectionHeader, ShortText, LongText, Number, Dropdown, MultiSelect, Checkbox,
-        CheckboxGroup, Date, DateTime, Duration, Agent, Contact, Article,
+        CheckboxGroup, Date, DateTime, Duration, Agent, Contact, Article, Queue,
     };
 
     public static bool HasOptions(string type) => type is Dropdown or MultiSelect or CheckboxGroup;
@@ -118,6 +121,14 @@ public sealed class FormField
     /// (Dropdown = option id, Checkbox = "true"). Never trusted as an answer.
     [JsonPropertyName("defaultValue")]
     public string DefaultValue { get; set; } = string.Empty;
+
+    /// v0.1.58 — optional name triggers use to address this field
+    /// (<c>form.field.&lt;key&gt;</c> conditions, actions that take their value
+    /// from a form field). Unique within a template, lowercase slug; null =
+    /// triggers cannot see the field. Frozen with the snapshot like the rest
+    /// of the definition, so a form filled before a key was added has none.
+    [JsonPropertyName("triggerKey")]
+    public string? TriggerKey { get; set; }
 }
 
 public sealed class FormFieldOption
@@ -154,6 +165,7 @@ public static class FormLimits
     public const int HardMaxArticleRows = 500;
     public const int HardMaxLongText = 20_000;
     public const int HardMaxPerTicket = 200;
+    public const int TriggerKeyMax = 40;
     public const decimal HardMaxArticleQuantity = 10_000_000m;
 }
 
@@ -184,6 +196,7 @@ public static class FormTemplateValidator
             return $"A form can have at most {maxFields} fields (Settings → Tickets → Forms).";
 
         var ids = new HashSet<Guid>();
+        var triggerKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var f in def.Fields)
         {
             if (f is null) return "Invalid field.";
@@ -204,6 +217,17 @@ public static class FormTemplateValidator
             {
                 f.Required = false;
                 f.Width = "full";
+            }
+
+            f.TriggerKey = string.IsNullOrWhiteSpace(f.TriggerKey) || f.Type == FormFieldType.SectionHeader
+                ? null
+                : f.TriggerKey.Trim().ToLowerInvariant();
+            if (f.TriggerKey is not null)
+            {
+                if (!TriggerKeyPattern.IsMatch(f.TriggerKey))
+                    return $"'{Truncate(f.Label, 40)}': the trigger key may only contain a-z, 0-9 and _, must start with a letter and be at most {FormLimits.TriggerKeyMax} characters.";
+                if (!triggerKeys.Add(f.TriggerKey))
+                    return $"The trigger key '{f.TriggerKey}' is used twice.";
             }
 
             if (FormFieldType.HasOptions(f.Type))
@@ -292,6 +316,10 @@ public static class FormTemplateValidator
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 
+    /// Same shape the trigger condition key <c>form.field.&lt;key&gt;</c> accepts.
+    public static readonly System.Text.RegularExpressions.Regex TriggerKeyPattern =
+        new(@"^[a-z][a-z0-9_]{0,39}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     private static readonly System.Text.RegularExpressions.Regex TokenPattern =
         new(@"\{\{\s*([\w.]+)\s*\}\}", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
@@ -317,14 +345,21 @@ public sealed record FormOrderRef(Guid Id, string Label);
 public sealed record FormReferenceSet(
     IReadOnlySet<Guid> AgentIds,
     IReadOnlySet<Guid> ContactIds,
-    IReadOnlySet<Guid> ArticleIds);
+    IReadOnlySet<Guid> ArticleIds)
+{
+    /// Queue fields; resolved against the filler's own queue access.
+    public IReadOnlySet<Guid> QueueIds { get; init; } = new HashSet<Guid>();
+}
 
 /// Resolved display data for references (written into the stored answer so
 /// history keeps the name an agent saw, even after a rename).
 public sealed record FormResolvedReferences(
     IReadOnlyDictionary<Guid, string> Agents,
     IReadOnlyDictionary<Guid, (string Name, string Email)> Contacts,
-    IReadOnlyDictionary<Guid, (string Code, string Name)> Articles);
+    IReadOnlyDictionary<Guid, (string Code, string Name)> Articles)
+{
+    public IReadOnlyDictionary<Guid, string> Queues { get; init; } = new Dictionary<Guid, string>();
+}
 
 public sealed class FormAnswerException : Exception
 {
@@ -388,6 +423,7 @@ public static class FormAnswerValidator
         var agents = new HashSet<Guid>();
         var contacts = new HashSet<Guid>();
         var articles = new HashSet<Guid>();
+        var queues = new HashSet<Guid>();
 
         foreach (var f in def.Fields)
         {
@@ -403,12 +439,13 @@ public static class FormAnswerValidator
             {
                 case RefValue r when f.Type == FormFieldType.Agent: agents.Add(r.Id); break;
                 case RefValue r when f.Type == FormFieldType.Contact: contacts.Add(r.Id); break;
+                case RefValue r when f.Type == FormFieldType.Queue: queues.Add(r.Id); break;
                 case ArticleRowsValue a: foreach (var row in a.Rows) articles.Add(row.ArticleId); break;
             }
             values[f.Id] = parsed;
         }
 
-        return new ParsedAnswers(values, new FormReferenceSet(agents, contacts, articles));
+        return new ParsedAnswers(values, new FormReferenceSet(agents, contacts, articles) { QueueIds = queues });
     }
 
     /// Returns null for "no answer" (empty string, empty list, null).
@@ -549,6 +586,7 @@ public static class FormAnswerValidator
             }
             case FormFieldType.Agent:
             case FormFieldType.Contact:
+            case FormFieldType.Queue:
             {
                 var s = ReadString(node) ?? throw Bad("expected a selection.");
                 if (s.Length == 0) return null;
@@ -583,6 +621,27 @@ public static class FormAnswerValidator
             }
         }
         throw Bad("unsupported field.");
+    }
+
+    /// v0.1.58 — the first DateTime field with a trigger key whose answer is
+    /// new or changed (vs <paramref name="previous"/>, the stored answers of an
+    /// edit) and not after <paramref name="nowUtc"/>; null when none. A
+    /// trigger may use such a date as the pending-till, which is never set in
+    /// the past — so the agent hears about it while filling in the form.
+    public static FormField? TriggerDateInPast(FormDefinition def, ParsedAnswers parsed, JsonObject? previous, DateTime nowUtc)
+    {
+        foreach (var f in def.Fields)
+        {
+            if (f.Type != FormFieldType.DateTime || f.TriggerKey is null) continue;
+            if (!parsed.Values.TryGetValue(f.Id, out var v) || v is not DateTimeValue dt) continue;
+            if (previous?[f.Id.ToString()] is JsonValue pv && pv.GetValueKind() == System.Text.Json.JsonValueKind.String
+                && DateTimeOffset.TryParse(pv.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal, out var before)
+                && before.UtcDateTime == dt.Value.UtcDateTime)
+                continue;
+            if (dt.Value.UtcDateTime <= nowUtc) return f;
+        }
+        return null;
     }
 
     /// Hard cap on the raw HTML of a rich-text answer: markup around the
@@ -635,6 +694,11 @@ public static class FormAnswerValidator
                 {
                     ["id"] = r.Id.ToString(),
                     ["name"] = refs.Agents[r.Id],
+                },
+                RefValue r when f.Type == FormFieldType.Queue => new JsonObject
+                {
+                    ["id"] = r.Id.ToString(),
+                    ["name"] = refs.Queues[r.Id],
                 },
                 RefValue r => new JsonObject
                 {
@@ -710,6 +774,7 @@ public static class FormRenderer
                     return $"{m / 60}:{m % 60:00}";
                 }
                 case FormFieldType.Agent:
+                case FormFieldType.Queue:
                     return v["name"]?.GetValue<string>() ?? string.Empty;
                 case FormFieldType.Contact:
                 {
@@ -760,6 +825,7 @@ public static class FormRenderer
     {
         if (display.Length == 0) return "—";
         if (f.Type == FormFieldType.LongText && RichHtml(v) is { } html) return html;
+        if (f.Type == FormFieldType.Article && v is JsonArray rows && rows.Count > 0) return ArticleTableHtml(rows);
         if (f.Type != FormFieldType.ShortText) return Lines(display);
         var orders = ShortTextOrders(v);
         if (orders.Count == 0) return E(display);
@@ -787,6 +853,34 @@ public static class FormRenderer
         sb.Append(E(display[pos..]));
         return sb.ToString();
     }
+
+    /// v0.1.58 — articles as a small table, one row per article (quantity ·
+    /// code · name), instead of one long "; "-joined line. Styled by
+    /// <c>.sd-form-articles</c>; every value encoded.
+    internal static string ArticleTableHtml(JsonArray rows)
+    {
+        var sb = new StringBuilder("<table class=\"sd-form-articles\"><tbody>");
+        foreach (var r in rows)
+        {
+            if (r is not JsonObject o) continue;
+            var qty = o["quantity"] is { } qn && FormAnswerValidator.TryReadDecimal(qn, out var q) ? FormatQty(q) : string.Empty;
+            sb.Append("<tr><td class=\"sd-form-articles-qty\">").Append(E(qty)).Append(" ×</td>")
+              .Append("<td class=\"sd-form-articles-code\">").Append(E(Str(o["code"]))).Append("</td>")
+              .Append("<td>").Append(E(Str(o["name"]))).Append("</td></tr>");
+        }
+        return sb.Append("</tbody></table>").ToString();
+    }
+
+    /// Articles one per line — the readable form of an article answer in an
+    /// update note's "old → new" cell.
+    private static string ArticleLines(JsonNode? v)
+        => v is JsonArray rows && rows.Count > 0
+            ? string.Join("\n", rows.OfType<JsonObject>().Select(o =>
+                $"{(o["quantity"] is { } qn && FormAnswerValidator.TryReadDecimal(qn, out var q) ? FormatQty(q) : "")} × {Str(o["code"])} {Str(o["name"])}".Trim()))
+            : string.Empty;
+
+    private static string Str(JsonNode? n)
+        => n is JsonValue v && v.GetValueKind() == System.Text.Json.JsonValueKind.String ? v.GetValue<string>() : string.Empty;
 
     public static string FormatQty(decimal q) => q.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
 
@@ -823,8 +917,10 @@ public static class FormRenderer
                 // Plain text on the old side (a pill there would re-link an
                 // order the agent removed); a short text's new side keeps its
                 // order pills so an order added on edit is linked too.
-                var before = DisplayValue(f, previous?[key], formatDateTime);
-                var after = f.Type == FormFieldType.ShortText ? CellHtml(f, answers[key], now) : Lines(now.Length == 0 ? "—" : now);
+                var before = f.Type == FormFieldType.Article ? ArticleLines(previous?[key]) : DisplayValue(f, previous?[key], formatDateTime);
+                var after = f.Type == FormFieldType.ShortText ? CellHtml(f, answers[key], now)
+                    : f.Type == FormFieldType.Article ? Lines(ArticleLines(answers[key]) is { Length: > 0 } al ? al : "—")
+                    : Lines(now.Length == 0 ? "—" : now);
                 cell = $"{Lines(before.Length == 0 ? "—" : before)} → {after}";
             }
             else

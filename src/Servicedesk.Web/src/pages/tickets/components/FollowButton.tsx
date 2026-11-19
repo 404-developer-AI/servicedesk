@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { errorMessage } from "@/lib/http";
 import { getConnection } from "@/hooks/usePresence";
 import { useFollowing } from "@/shell/FollowingWidget";
+import { FollowNoteHoverCard } from "@/components/following/FollowNoteHoverCard";
 import { FOLLOWING_KEY, followingApi, markedSeen, withoutTicket, type FollowingResponse } from "@/lib/following-api";
 
 /// v0.1.54 — square Follow toggle next to the ticket number (tinted
@@ -14,10 +15,14 @@ import { FOLLOWING_KEY, followingApi, markedSeen, withoutTicket, type FollowingR
 /// open and again shortly after every TicketUpdated, so changes made while
 /// you look at it (your own included) never light up the Following dot.
 /// A background tab or unfocused window never marks anything seen.
+/// v0.1.58 — following opens a note field right away ("why?"); hovering the
+/// button of a followed ticket shows (and edits) that note.
 export function FollowButton({ ticketId }: { ticketId: string }) {
   const qc = useQueryClient();
   const { data } = useFollowing();
-  const following = !!data?.items.some((i) => i.ticketId === ticketId);
+  const item = data?.items.find((i) => i.ticketId === ticketId);
+  const following = !!item;
+  const [editRequest, setEditRequest] = React.useState(0);
 
   const markSeen = React.useCallback(() => {
     qc.setQueryData<FollowingResponse>(FOLLOWING_KEY, (old) => markedSeen(old, ticketId));
@@ -70,20 +75,29 @@ export function FollowButton({ ticketId }: { ticketId: string }) {
     onMutate: () => {
       if (following) qc.setQueryData<FollowingResponse>(FOLLOWING_KEY, (old) => withoutTicket(old, ticketId));
     },
-    onSuccess: () => toast.success(following ? "Stopped following this ticket" : "Following this ticket"),
+    onSuccess: () => {
+      if (following) {
+        toast.success("Stopped following this ticket");
+      } else {
+        toast.success("Following this ticket");
+        setEditRequest((n) => n + 1);
+      }
+    },
     onError: (e) => toast.error(errorMessage(e, following ? "Could not unfollow the ticket" : "Could not follow the ticket")),
     onSettled: () => void qc.invalidateQueries({ queryKey: FOLLOWING_KEY }),
   });
 
   return (
+    <FollowNoteHoverCard ticketId={ticketId} note={item?.note ?? null} enabled={following} editRequest={editRequest}>
     <button
       type="button"
       onClick={() => toggle.mutate()}
       disabled={toggle.isPending || !data}
       aria-pressed={following}
       aria-label={following ? "Unfollow this ticket" : "Follow this ticket"}
+      // A followed ticket shows its note card on hover instead of a tooltip.
       title={following
-        ? "Following — click to unfollow"
+        ? undefined
         : "Follow this ticket: it shows up under Following and gets a red dot when something happens"}
       className={cn(
         "sd-follow-button flex h-6 w-6 shrink-0 items-center justify-center rounded border transition-colors disabled:opacity-60",
@@ -94,5 +108,6 @@ export function FollowButton({ ticketId }: { ticketId: string }) {
     >
       <Eye className="h-3.5 w-3.5" />
     </button>
+    </FollowNoteHoverCard>
   );
 }

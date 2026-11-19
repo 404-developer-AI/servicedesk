@@ -4068,6 +4068,16 @@ export type TriggerMetadata = {
   maxConditionDepth: number;
 };
 
+/// v0.1.58 — a form field with a trigger key (`form.field.<key>`), per template.
+export type TriggerFormField = {
+  templateId: string;
+  templateName: string;
+  templateIsActive: boolean;
+  key: string;
+  label: string;
+  type: string;
+};
+
 export type TriggerRun = {
   id: string;
   triggerId: string;
@@ -4124,8 +4134,11 @@ export const triggerApi = {
     const tail = qs.toString() ? `?${qs.toString()}` : "";
     return request<TriggerRunPage>("GET", `/api/admin/triggers/${id}/runs${tail}`);
   },
-  dryRun: (id: string, ticketId: string) =>
-    request<TriggerDryRunResult>("POST", `/api/admin/triggers/${id}/dry-run`, { ticketId }),
+  /** `formId` (optional): simulate a form pass with that form's answers. */
+  dryRun: (id: string, ticketId: string, formId?: string | null) =>
+    request<TriggerDryRunResult>("POST", `/api/admin/triggers/${id}/dry-run`, { ticketId, formId: formId ?? null }),
+  formFields: () =>
+    request<{ items: TriggerFormField[] }>("GET", "/api/admin/triggers/form-fields").then((r) => r.items),
   reorder: (items: TriggerPlacement[]) =>
     request<void>("POST", "/api/admin/triggers/reorder", { items }),
 };

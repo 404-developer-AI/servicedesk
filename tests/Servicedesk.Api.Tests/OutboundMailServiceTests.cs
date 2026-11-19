@@ -856,6 +856,7 @@ public sealed class OutboundMailServiceTests
                 IsInline: false, ContentId: null, ProcessingState: "Ready", EventId: null);
             return Task.FromResult(id);
         }
+        public Task SyncNoteReplyAttachmentsAsync(Guid ticketId, long replyId, IReadOnlyCollection<Guid> referencedIds, CancellationToken ct) => Task.CompletedTask;
         public Task<int> ReassignToEventAsync(IReadOnlyList<Guid> ids, Guid ticketId, long eventId, CancellationToken ct) => Task.FromResult(0);
         public Task<int> ReassignToMailAsync(IReadOnlyList<AttachmentReassignToMail> assignments, Guid ticketId, Guid mailMessageId, long ticketEventId, CancellationToken ct)
         {
@@ -1016,7 +1017,7 @@ public sealed class OutboundMailServiceTests
             => Task.FromResult(new TriggerScheduledRunResult(null, ChainShouldClear: false));
 
         public Task<TriggerDryRunResult?> DryRunAsync(
-            Guid triggerId, Guid ticketId, CancellationToken ct)
+            Guid triggerId, Guid ticketId, Guid? formId, CancellationToken ct)
             => Task.FromResult<TriggerDryRunResult?>(null);
     }
 

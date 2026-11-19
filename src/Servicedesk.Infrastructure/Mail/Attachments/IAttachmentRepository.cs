@@ -67,6 +67,13 @@ public interface IAttachmentRepository
     /// existing <c>event_id</c> — prevents an attacker who knows another
     /// ticket's attachment ids from re-parenting them onto their own ticket.
     /// Returns the number of rows actually re-assigned.
+    /// v0.1.58 — makes the reply's files exactly the ones its body
+    /// references: staged uploads on this ticket that the body names are
+    /// bound to the reply (same ownership guard as <see cref="ReassignToEventAsync"/>),
+    /// rows bound to the reply that the body no longer names are deleted.
+    /// An empty list removes every file of the reply (reply deleted).
+    Task SyncNoteReplyAttachmentsAsync(Guid ticketId, long replyId, IReadOnlyCollection<Guid> referencedIds, CancellationToken ct);
+
     Task<int> ReassignToEventAsync(IReadOnlyList<Guid> attachmentIds, Guid ticketId, long eventId, CancellationToken ct);
 
     /// Move a batch of staged attachments onto a mail-message row + stamp the
@@ -131,7 +138,8 @@ public sealed record AttachmentRow(
     bool IsInline,
     string? ContentId,
     string ProcessingState,
-    long? EventId = null);
+    long? EventId = null,
+    long? NoteReplyId = null);
 
 public sealed record NewUploadedAttachment(
     Guid TicketId,

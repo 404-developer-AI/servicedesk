@@ -34,6 +34,7 @@ import { AgentPicker } from "@/components/AgentPicker";
 import { CompanyPicker } from "@/components/CompanyPicker";
 import { ContactPicker } from "@/components/ContactPicker";
 import { cn } from "@/lib/utils";
+import { formFieldKeysOfType, formFieldOptionLabel, useTriggerFormFields } from "./formFields";
 
 type Props = {
   value: TriggerAction[];
@@ -281,17 +282,29 @@ function ActionForm({
       );
     case "set_queue":
       return (
-        <FieldRow label="Queue">
-          <NativeSelect
-            value={action.queue_id}
-            onChange={(v) => onChange({ ...action, queue_id: v })}
-          >
-            <option value="">— Select —</option>
-            {taxonomies.queues.map((q) => (
-              <option key={q.id} value={q.id}>{q.name}</option>
-            ))}
-          </NativeSelect>
-        </FieldRow>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <ValueSourceSelect
+            fromForm={action.form_field != null}
+            onChange={(fromForm) => onChange({ kind: "set_queue", queue_id: "", form_field: fromForm ? "" : null })}
+          />
+          {action.form_field != null ? (
+            <FormFieldKeySelect type="Queue" label="Queue field" className="sm:col-span-2"
+              value={action.form_field} onChange={(v) => onChange({ ...action, form_field: v })}
+              hint="The queue the agent picked on the form (only queues that agent can access)." />
+          ) : (
+            <FieldRow label="Queue" className="sm:col-span-2">
+              <NativeSelect
+                value={action.queue_id}
+                onChange={(v) => onChange({ ...action, queue_id: v })}
+              >
+                <option value="">— Select —</option>
+                {taxonomies.queues.map((q) => (
+                  <option key={q.id} value={q.id}>{q.name}</option>
+                ))}
+              </NativeSelect>
+            </FieldRow>
+          )}
+        </div>
       );
     case "set_priority":
       return (
@@ -341,21 +354,36 @@ function ActionForm({
     }
     case "set_owner":
       return (
-        <FieldRow label="Owner">
-          <input
-            type="text"
-            placeholder="agent user-id (Guid) — leave empty to clear"
-            value={action.user_id ?? ""}
-            onChange={(e) =>
-              onChange({ ...action, user_id: e.target.value.trim() || null })
-            }
-            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <ValueSourceSelect
+            fromForm={action.form_field != null}
+            onChange={(fromForm) => onChange({ kind: "set_owner", user_id: null, form_field: fromForm ? "" : null })}
           />
-        </FieldRow>
+          {action.form_field != null ? (
+            <FormFieldKeySelect type="Agent" label="Agent field" className="sm:col-span-2"
+              value={action.form_field} onChange={(v) => onChange({ ...action, form_field: v })}
+              hint="The agent picked on the form. Skipped (and logged) when that agent cannot open the ticket's queue." />
+          ) : (
+            <FieldRow label="Owner" className="sm:col-span-2">
+              <input
+                type="text"
+                placeholder="agent user-id (Guid) — leave empty to clear"
+                value={action.user_id ?? ""}
+                onChange={(e) =>
+                  onChange({ ...action, user_id: e.target.value.trim() || null })
+                }
+                className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
+              />
+            </FieldRow>
+          )}
+        </div>
       );
     case "set_pending_till": {
-      const onModeChange = (next: "absolute" | "relative" | "businessDays" | "clear") => {
+      const onModeChange = (next: "formField" | "absolute" | "relative" | "businessDays" | "clear") => {
         switch (next) {
+          case "formField":
+            onChange({ kind: "set_pending_till", mode: "formField", form_field: "" });
+            break;
           case "absolute":
             onChange({ kind: "set_pending_till", mode: "absolute", value: "" });
             break;
@@ -380,14 +408,20 @@ function ActionForm({
           <FieldRow label="Mode">
             <NativeSelect
               value={action.mode}
-              onChange={(v) => onModeChange(v as "absolute" | "relative" | "businessDays" | "clear")}
+              onChange={(v) => onModeChange(v as "formField" | "absolute" | "relative" | "businessDays" | "clear")}
             >
+              <option value="formField">From a form field (date &amp; time)</option>
               <option value="relative">Relative (ISO 8601 duration)</option>
               <option value="businessDays">Business days at fixed time</option>
               <option value="absolute">Absolute (ISO 8601)</option>
               <option value="clear">Clear</option>
             </NativeSelect>
           </FieldRow>
+          {action.mode === "formField" && (
+            <FormFieldKeySelect type="DateTime" label="Date & time field" className="sm:col-span-2"
+              value={action.form_field} onChange={(v) => onChange({ ...action, form_field: v })}
+              hint="Needs a Pending status on the ticket: put a Set status action before this one." />
+          )}
           {action.mode === "absolute" && (
             <FieldRow label="Timestamp" className="sm:col-span-2">
               <input
@@ -1015,6 +1049,49 @@ function CreateLinkedTicketFields({
         )}
       </div>
     </div>
+  );
+}
+
+/// v0.1.58 — fixed value or the value an agent filled in on the form.
+function ValueSourceSelect({ fromForm, onChange }: { fromForm: boolean; onChange: (fromForm: boolean) => void }) {
+  return (
+    <FieldRow label="Value">
+      <NativeSelect value={fromForm ? "form" : "fixed"} onChange={(v) => onChange(v === "form")}>
+        <option value="fixed">Fixed</option>
+        <option value="form">From a form field</option>
+      </NativeSelect>
+    </FieldRow>
+  );
+}
+
+/// The keyed form fields of `type` across all templates (Settings → Templates
+/// → Forms → field → Trigger key). A saved key no template has any more stays
+/// selectable and is flagged.
+function FormFieldKeySelect({ type, label, value, onChange, hint, className }: {
+  type: "Agent" | "Queue" | "DateTime";
+  label: string;
+  value: string;
+  onChange: (key: string) => void;
+  hint: string;
+  className?: string;
+}) {
+  const options = formFieldKeysOfType(useTriggerFormFields(), type);
+  const known = options.some((o) => o.key === value);
+  return (
+    <FieldRow label={label} className={className}>
+      <NativeSelect value={value} onChange={onChange}>
+        <option value="">— Select —</option>
+        {options.map((o) => (
+          <option key={o.key} value={o.key}>{formFieldOptionLabel(o)}</option>
+        ))}
+        {value && !known && <option value={value}>{value} (not on any form)</option>}
+      </NativeSelect>
+      <p className="mt-1 text-[11px] text-muted-foreground/70">
+        {options.length === 0
+          ? `No form has a ${type === "DateTime" ? "date & time" : type.toLowerCase()} field with a trigger key yet. Add one in Settings → Templates → Forms.`
+          : hint}
+      </p>
+    </FieldRow>
   );
 }
 

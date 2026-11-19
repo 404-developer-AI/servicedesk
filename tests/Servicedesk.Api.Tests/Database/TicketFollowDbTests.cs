@@ -165,6 +165,70 @@ public sealed class TicketFollowDbTests
     }
 
     [PostgresFact]
+    public async Task A_note_is_stored_on_the_own_follow_only()
+    {
+        var w = await WorldAsync();
+        var other = await w.Seed.UserAsync("Agent");
+        var t = await w.Seed.TicketAsync("Waiting on the supplier", w.Contact, w.Queue, w.Status, w.Priority);
+        await Repo.FollowAsync(w.User, t, 200, default);
+        await Repo.FollowAsync(other, t, 200, default);
+
+        Assert.True(await Repo.SetNoteAsync(w.User, t, "Check the delivery date on Friday", default));
+
+        Assert.Equal("Check the delivery date on Friday", (await RowAsync(w.User, t, w.Queue)).Note);
+        Assert.Null((await RowAsync(other, t, w.Queue)).Note);
+
+        Assert.True(await Repo.SetNoteAsync(w.User, t, null, default));
+        Assert.Null((await RowAsync(w.User, t, w.Queue)).Note);
+    }
+
+    [PostgresFact]
+    public async Task A_note_needs_a_follow_and_a_note_is_not_news()
+    {
+        var w = await WorldAsync();
+        var t = await w.Seed.TicketAsync("Not followed yet", w.Contact, w.Queue, w.Status, w.Priority);
+        Assert.False(await Repo.SetNoteAsync(w.User, t, "Too early", default));
+
+        await Repo.FollowAsync(w.User, t, 200, default);
+        await BackdateTicketAsync(t);
+        await BackdateSeenAsync(w.User, t);
+        await Repo.SetNoteAsync(w.User, t, "Personal reminder", default);
+        Assert.False((await RowAsync(w.User, t, w.Queue)).HasActivity);
+    }
+
+    [PostgresFact]
+    public async Task The_database_refuses_an_overlong_note()
+    {
+        var w = await WorldAsync();
+        var t = await w.Seed.TicketAsync("Long note", w.Contact, w.Queue, w.Status, w.Priority);
+        await Repo.FollowAsync(w.User, t, 200, default);
+
+        await Assert.ThrowsAsync<Npgsql.PostgresException>(() =>
+            Repo.SetNoteAsync(w.User, t, new string('x', FollowNote.MaxLength + 1), default));
+    }
+
+    [PostgresFact]
+    public async Task A_merge_carries_the_note_unless_the_target_already_has_one()
+    {
+        var w = await WorldAsync();
+        var other = await w.Seed.UserAsync("Agent");
+        var source = await w.Seed.TicketAsync("Duplicate", w.Contact, w.Queue, w.Status, w.Priority);
+        var target = await w.Seed.TicketAsync("Original", w.Contact, w.Queue, w.Status, w.Priority);
+        await Repo.FollowAsync(w.User, source, 200, default);
+        await Repo.FollowAsync(w.User, target, 200, default);
+        await Repo.FollowAsync(other, source, 200, default);
+        await Repo.SetNoteAsync(w.User, source, "Source note", default);
+        await Repo.SetNoteAsync(w.User, target, "Target note", default);
+        await Repo.SetNoteAsync(other, source, "Only on the source", default);
+
+        var result = await new TicketRepository(_db.DataSource).MergeAsync(source, target, w.User, true, default);
+        Assert.True(result!.Success);
+
+        Assert.Equal("Target note", (await RowAsync(w.User, target, w.Queue)).Note);
+        Assert.Equal("Only on the source", (await RowAsync(other, target, w.Queue)).Note);
+    }
+
+    [PostgresFact]
     public async Task Deleting_the_ticket_removes_its_follows()
     {
         var w = await WorldAsync();

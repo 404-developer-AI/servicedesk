@@ -245,6 +245,7 @@ public sealed class KbPublicEndpointsTests
             throw new NotImplementedException();
         public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct) =>
             throw new NotImplementedException();
+        public Task SyncNoteReplyAttachmentsAsync(Guid ticketId, long replyId, IReadOnlyCollection<Guid> referencedIds, CancellationToken ct) => Task.CompletedTask;
         public Task<int> ReassignToEventAsync(IReadOnlyList<Guid> attachmentIds, Guid ticketId, long eventId, CancellationToken ct) =>
             throw new NotImplementedException();
         public Task<int> ReassignToMailAsync(IReadOnlyList<AttachmentReassignToMail> assignments, Guid ticketId, Guid mailMessageId, long ticketEventId, CancellationToken ct) =>

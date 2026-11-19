@@ -100,12 +100,17 @@ public sealed class TriggerRenderContextFactory : ITriggerRenderContextFactory
             ["article.subject"] = articleSubject ?? ticket.Subject,
 
             ["form.name"] = ctx.ChangeSet.FormEvent?.FormName,
-            ["form.event"] = ctx.ChangeSet.FormEvent?.Event,
+            // A save pass reports created / updated, a back-office pass its step.
+            ["form.event"] = ctx.ChangeSet.FormEvent?.SaveEvent ?? ctx.ChangeSet.FormEvent?.Event,
             ["form.submitted_by"] = ctx.ChangeSet.FormEvent?.SubmittedByName,
             ["form.handled_by"] = ctx.ChangeSet.FormEvent?.HandledByName,
             ["form.handled_note"] = ctx.ChangeSet.FormEvent?.HandledNote,
+            // A save pass links the form on its ticket (any form); a
+            // back-office pass the work-list entry.
             ["form.url"] = ctx.ChangeSet.FormEvent is { } fe
-                ? $"{publicBaseUrl}/backoffice-forms?form={fe.FormId}"
+                ? fe.IsSavePass
+                    ? $"{publicBaseUrl}/tickets/{ticket.Number}?form={fe.FormId}"
+                    : $"{publicBaseUrl}/backoffice-forms?form={fe.FormId}"
                 : null,
 
             ["config.app.name"] = "Servicedesk",
@@ -123,6 +128,17 @@ public sealed class TriggerRenderContextFactory : ITriggerRenderContextFactory
             ["ticket.closed_utc"] = ticket.ClosedUtc,
             ["article.created_utc"] = ctx.TriggeringEvent?.CreatedUtc,
         };
+
+        // v0.1.58 — #{form.field.<key>} (the value as text) and, for a date
+        // and time field, #{dt(form.field.<key>, "format")}.
+        if (ctx.ChangeSet.FormEvent is { } formEvent)
+        {
+            foreach (var (key, field) in formEvent.Fields)
+            {
+                s[TriggerFieldKeys.FormField(key)] = field.Display;
+                if (field.DateTimeUtc is { } fieldUtc) dt[TriggerFieldKeys.FormField(key)] = fieldUtc;
+            }
+        }
 
         var culture = ResolveCulture(triggerLocale);
         var timezone = string.IsNullOrWhiteSpace(triggerTimeZone) ? null : triggerTimeZone;

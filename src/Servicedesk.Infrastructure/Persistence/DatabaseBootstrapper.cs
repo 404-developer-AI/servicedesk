@@ -6877,6 +6877,24 @@ public sealed class DatabaseBootstrapper : IHostedService
             PRIMARY KEY (user_id, ticket_id)
         );
         CREATE INDEX IF NOT EXISTS ix_ticket_follows_ticket ON ticket_follows (ticket_id);
+
+        -- v0.1.58 — a personal note on a follow ("why am I watching this?"),
+        -- plain text, only ever read back by its own user.
+        ALTER TABLE ticket_follows ADD COLUMN IF NOT EXISTS note TEXT NULL;
+        ALTER TABLE ticket_follows DROP CONSTRAINT IF EXISTS chk_ticket_follows_note_len;
+        ALTER TABLE ticket_follows ADD CONSTRAINT chk_ticket_follows_note_len
+            CHECK (note IS NULL OR char_length(note) <= 500);
+
+        -- v0.1.58 — files in a note reply (pasted screenshots inline, other
+        -- files as a download link). An upload is staged on the ticket like
+        -- any composer upload, then bound to its reply on save: owner stays
+        -- ('Ticket', ticket id), event_id stays NULL, note_reply_id is set.
+        -- Bound rows are no longer "staged" for any other path (note / mail
+        -- re-binding, retention sweep); deleting the reply removes them.
+        ALTER TABLE attachments ADD COLUMN IF NOT EXISTS note_reply_id BIGINT NULL
+            REFERENCES ticket_note_replies(id) ON DELETE CASCADE;
+        CREATE INDEX IF NOT EXISTS ix_attachments_note_reply
+            ON attachments (note_reply_id) WHERE note_reply_id IS NOT NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

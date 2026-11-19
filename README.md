@@ -15,10 +15,10 @@ A self-hosted helpdesk for IT service teams. One install per organisation, on a 
 - Mail to your support mailbox becomes a ticket; replies thread back onto it, in both directions.
 - Note, Mail and Call buttons on every ticket — internal notes, outgoing mail and logged phone calls, each with its own templates.
 - Checklists per ticket (from admin templates) that can block closing until the required steps are done.
-- Interactive forms (text, choices, dates, agents, contacts, articles with quantities) that agents fill in from the composer; saved as an internal note, versioned, and listed in the ticket's side panel.
+- Interactive forms (text, choices, dates, agents, contacts, queues, articles with quantities) that agents fill in from the composer; saved as an internal note, versioned, and listed in the ticket's side panel. Triggers can act on a saved form — for example move the ticket to the queue, owner and date filled in on it.
 - Reply to and like internal notes, with threaded replies and notifications for the author.
 - Group tags: @@-tag a group of agents; the group shares one tag until a member acknowledges it, or — for groups set to personal acknowledgement — until every member has marked it as read. Hovering a tag in the sidebar shows the full note it sits in.
-- Follow tickets: followed tickets are listed in the sidebar and marked as soon as something happens on them.
+- Follow tickets: followed tickets are listed in the sidebar, marked as soon as something happens on them, and can carry a personal note on why you follow them.
 - A back office work list for forms that need follow-up: pick a form up, mark it handled with a note, and let triggers decide what happens on the ticket.
 - Project tickets that group related tickets, with their logged time rolled up.
 - Triggers, SLA targets, call-back and research flags, merge and split, and bulk actions on many tickets at once.

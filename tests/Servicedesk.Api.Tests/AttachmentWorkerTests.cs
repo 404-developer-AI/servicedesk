@@ -198,6 +198,7 @@ public sealed class AttachmentWorkerTests
         public Task<IReadOnlyList<AttachmentRow>> ListByEventAsync(long eventId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<AttachmentRow>>(Rows.Values.Where(r => r.EventId == eventId).ToList());
         public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct) => throw new NotImplementedException();
+        public Task SyncNoteReplyAttachmentsAsync(Guid ticketId, long replyId, IReadOnlyCollection<Guid> referencedIds, CancellationToken ct) => Task.CompletedTask;
         public Task<int> ReassignToEventAsync(IReadOnlyList<Guid> ids, Guid ticketId, long eventId, CancellationToken ct) => throw new NotImplementedException();
         public Task<int> ReassignToMailAsync(IReadOnlyList<AttachmentReassignToMail> assignments, Guid ticketId, Guid mailMessageId, long ticketEventId, CancellationToken ct) => throw new NotImplementedException();
         public Task<Guid> CreateForKbArticleAsync(NewKbArticleAttachment input, CancellationToken ct) => throw new NotImplementedException();

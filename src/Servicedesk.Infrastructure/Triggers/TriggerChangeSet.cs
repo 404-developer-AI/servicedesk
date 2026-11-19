@@ -20,26 +20,37 @@ public sealed record TriggerChangeSet(
     /// creation path sets it.
     public bool IsTicketCreation { get; init; }
 
-    /// v0.1.54 — set only on a back-office form pass (a form was submitted
-    /// to, handled by or reopened on the Back office forms list). Form
-    /// triggers (those referencing a <c>form.*</c> field) run only on such a
-    /// pass, and such a pass runs only form triggers — see
+    /// Set only on a form pass: a back-office step (v0.1.54 — a form was
+    /// submitted to, handled by or reopened on the Back office forms list) or
+    /// a form save (v0.1.58 — <see cref="TriggerFormEvent.SaveEvent"/> set).
+    /// Form triggers (those referencing a <c>form.*</c> field) run only on
+    /// such a pass, and such a pass runs only form triggers — see
     /// <see cref="TriggerFieldKeys.IsFormField"/>.
     public TriggerFormEvent? FormEvent { get; init; }
 
     /// Form triggers run only on form passes and form passes run only form
-    /// triggers. <paramref name="referencedFields"/> = the trigger's condition fields.
+    /// triggers. Among form triggers, those referencing
+    /// <see cref="TriggerFieldKeys.FormSaveEvent"/> run only on save passes,
+    /// every other form trigger only on back-office passes — so a trigger
+    /// that only names a template never fires twice for one save.
+    /// <paramref name="referencedFields"/> = the trigger's condition fields.
     public bool RunsTriggerReferencing(IReadOnlySet<string> referencedFields)
-        => referencedFields.Any(TriggerFieldKeys.IsFormField) == (FormEvent is not null);
+    {
+        if (!referencedFields.Any(TriggerFieldKeys.IsFormField)) return FormEvent is null;
+        if (FormEvent is null) return false;
+        return referencedFields.Contains(TriggerFieldKeys.FormSaveEvent) == FormEvent.IsSavePass;
+    }
 
     public static TriggerChangeSet ForForm(TriggerFormEvent evt)
-        => new(new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                TriggerFieldKeys.FormBackofficeEvent, TriggerFieldKeys.FormTemplateId,
-            }, ArticleAdded: false)
+    {
+        var changed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            FormEvent = evt,
+            evt.IsSavePass ? TriggerFieldKeys.FormSaveEvent : TriggerFieldKeys.FormBackofficeEvent,
+            TriggerFieldKeys.FormTemplateId,
         };
+        foreach (var key in evt.ChangedKeys) changed.Add(TriggerFieldKeys.FormField(key));
+        return new(changed, ArticleAdded: false) { FormEvent = evt };
+    }
 
     public static readonly TriggerChangeSet Empty = new(new HashSet<string>(), false);
 
@@ -116,10 +127,24 @@ public static class TriggerFieldKeys
     public const string FormBackofficeEvent = "form.backoffice_event";
     public const string FormTemplateId = "form.template.id";
 
+    /// v0.1.58 — a filled form was saved: <c>created</c> or <c>updated</c>.
+    public const string FormSaveEvent = "form.save_event";
+
+    /// v0.1.58 — <c>form.field.&lt;trigger key&gt;</c>: a form field an admin
+    /// gave a trigger key (<see cref="Forms.FormField.TriggerKey"/>).
+    public const string FormFieldPrefix = "form.field.";
+
+    public static string FormField(string triggerKey) => FormFieldPrefix + triggerKey;
+
+    /// The trigger key of a <c>form.field.*</c> condition key, else null.
+    public static string? FormFieldKey(string key)
+        => key.StartsWith(FormFieldPrefix, StringComparison.OrdinalIgnoreCase) ? key[FormFieldPrefix.Length..] : null;
+
     public static bool IsFormField(string key) => key.StartsWith("form.", StringComparison.OrdinalIgnoreCase);
 }
 
-/// The back-office form step a form pass is about. <see cref="AnchorEventId"/>
+/// The form step a form pass is about: a back-office step (<see cref="Event"/>)
+/// or, when <see cref="SaveEvent"/> is set, a form save. <see cref="AnchorEventId"/>
 /// is the form's latest note on the ticket — what a notify_agent bell points at.
 public sealed record TriggerFormEvent(
     string Event,
@@ -131,4 +156,32 @@ public sealed record TriggerFormEvent(
     Guid? ActorUserId,
     string? HandledByName,
     string HandledNote,
-    long? AnchorEventId);
+    long? AnchorEventId)
+{
+    /// v0.1.58 — <c>created</c> / <c>updated</c> on a save pass; null on a
+    /// back-office pass.
+    public string? SaveEvent { get; init; }
+
+    public bool IsSavePass => SaveEvent is not null;
+
+    /// The form's fields that have a trigger key, by key — empty ones
+    /// included (so an action can tell "empty" from "not on this form").
+    public IReadOnlyDictionary<string, TriggerFormField> Fields { get; init; }
+        = new Dictionary<string, TriggerFormField>(StringComparer.OrdinalIgnoreCase);
+
+    /// Keys whose value this save changed (every filled key on create; empty
+    /// on a back-office pass). Feeds <c>has_changed</c> on <c>form.field.*</c>.
+    public IReadOnlySet<string> ChangedKeys { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+}
+
+/// One keyed form field as a trigger sees it. <see cref="RefId"/> = the agent /
+/// contact / queue id of a reference field; <see cref="DateTimeUtc"/> = the
+/// moment of a DateTime field; <see cref="Display"/> = the value as text (what
+/// <c>#{form.field.&lt;key&gt;}</c> renders, and what text conditions compare).
+public sealed record TriggerFormField(string Type, string Label, string Display, Guid? RefId, DateTime? DateTimeUtc)
+{
+    public bool IsEmpty => Display.Length == 0 && RefId is null && DateTimeUtc is null;
+
+    /// What the condition matcher compares: the id for references, else the text.
+    public string? ConditionValue => IsEmpty ? null : RefId?.ToString() ?? Display;
+}

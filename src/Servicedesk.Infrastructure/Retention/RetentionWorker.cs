@@ -267,6 +267,7 @@ public sealed class RetentionWorker : BackgroundService
               FROM attachments
              WHERE owner_kind = 'Ticket'
                AND event_id IS NULL
+               AND note_reply_id IS NULL
                AND created_utc < @Cutoff
                AND (@AfterUtc::timestamptz IS NULL OR (created_utc, id) > (@AfterUtc, @AfterId))
              ORDER BY created_utc, id
@@ -319,6 +320,7 @@ public sealed class RetentionWorker : BackgroundService
              WHERE id = ANY(@Ids)
                AND owner_kind = 'Ticket'
                AND event_id IS NULL
+               AND note_reply_id IS NULL
                AND created_utc < @Cutoff
             """;
 

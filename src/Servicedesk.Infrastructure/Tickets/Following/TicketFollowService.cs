@@ -3,7 +3,7 @@ using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Tickets.Following;
 
-public enum TicketFollowRejectCode { NotFound, LimitReached }
+public enum TicketFollowRejectCode { NotFound, LimitReached, InvalidNote }
 
 public sealed class TicketFollowRejectedException : Exception
 {
@@ -21,6 +21,29 @@ public interface ITicketFollowService
     Task<bool> UnfollowAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct);
     /// Clears the "news" marker. A no-op when the ticket is not followed.
     Task<bool> MarkSeenAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct);
+    /// Sets the caller's personal note on a ticket they follow (empty clears
+    /// it). Needs queue access; NotFound when not followed, InvalidNote when
+    /// longer than <see cref="FollowNote.MaxLength"/>.
+    Task SetNoteAsync(TicketMutationActor actor, Guid ticketId, string? note, CancellationToken ct);
+}
+
+/// v0.1.58 — the personal note on a follow: plain text, trimmed, line
+/// breaks kept, other control characters dropped; empty means no note.
+public static class FollowNote
+{
+    public const int MaxLength = 500;
+
+    /// The stored form of <paramref name="raw"/>, or null for "no note".
+    public static string? Normalize(string? raw)
+    {
+        if (raw is null) return null;
+        var text = raw.Replace("\r\n", "\n").Replace('\r', '\n');
+        var sb = new System.Text.StringBuilder(text.Length);
+        foreach (var ch in text)
+            if (ch == '\n' || !char.IsControl(ch)) sb.Append(ch);
+        var result = sb.ToString().Trim();
+        return result.Length == 0 ? null : result;
+    }
 }
 
 /// v0.1.54 — following tickets (see <see cref="TicketFollowRepository"/>).
@@ -70,4 +93,17 @@ public sealed class TicketFollowService : ITicketFollowService
 
     public Task<bool> MarkSeenAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct)
         => _repo.MarkSeenAsync(actor.UserId, ticketId, ct);
+
+    public async Task SetNoteAsync(TicketMutationActor actor, Guid ticketId, string? note, CancellationToken ct)
+    {
+        var normalized = FollowNote.Normalize(note);
+        if (normalized is { Length: > FollowNote.MaxLength })
+            throw new TicketFollowRejectedException(TicketFollowRejectCode.InvalidNote,
+                $"A follow note can be at most {FollowNote.MaxLength} characters.");
+
+        var access = await _mutations.PrecheckAccessAsync(actor, ticketId, ct);
+        if (access.Check != TicketMutationCheck.Ok || access.Ticket is null
+            || !await _repo.SetNoteAsync(actor.UserId, ticketId, normalized, ct))
+            throw new TicketFollowRejectedException(TicketFollowRejectCode.NotFound, "Not found.");
+    }
 }

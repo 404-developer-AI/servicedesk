@@ -1,6 +1,9 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml;
+using Servicedesk.Infrastructure.Forms;
+using Servicedesk.Infrastructure.Persistence.Taxonomy;
+using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Tickets;
 
@@ -10,11 +13,16 @@ internal sealed class SetPendingTillHandler : ITriggerActionHandler
 {
     private readonly SystemFieldMutator _mutator;
     private readonly ISlaRepository _slaRepository;
+    private readonly ITicketRepository _tickets;
+    private readonly ITaxonomyRepository _taxonomy;
 
-    public SetPendingTillHandler(SystemFieldMutator mutator, ISlaRepository slaRepository)
+    public SetPendingTillHandler(
+        SystemFieldMutator mutator, ISlaRepository slaRepository, ITicketRepository tickets, ITaxonomyRepository taxonomy)
     {
         _mutator = mutator;
         _slaRepository = slaRepository;
+        _tickets = tickets;
+        _taxonomy = taxonomy;
     }
 
     public string Kind => "set_pending_till";
@@ -40,9 +48,26 @@ internal sealed class SetPendingTillHandler : ITriggerActionHandler
                 : TriggerActionResult.Failed(Kind, "Ticket vanished mid-update.");
         }
 
-        var (parsed, parseError) = await ResolveTargetUtcAsync(actionJson, ctx, ct);
-        if (parseError is not null) return TriggerActionResult.Failed(Kind, parseError);
-        var target = parsed!.Value;
+        DateTime target;
+        if (FormFieldActionSource.HasFormField(actionJson))
+        {
+            // v0.1.58 — the moment an agent filled in on the form.
+            var source = FormFieldActionSource.Resolve(actionJson, ctx, FormFieldType.DateTime);
+            if (source.Error is not null) return TriggerActionResult.Failed(Kind, source.Error);
+            if (source.EmptyReason is not null) return TriggerActionResult.NoOp(Kind, new { reason = source.EmptyReason });
+            // A pending-till only lives on a Pending ticket (the invariant
+            // every status writer keeps). Fresh read: a Set status action
+            // earlier in this trigger is what normally gets it there.
+            if (await PendingStatusCheck.ReasonNotPendingAsync(_tickets, _taxonomy, ctx.TicketId, ct) is { } notPending)
+                return TriggerActionResult.Failed(Kind, notPending);
+            target = source.Field!.DateTimeUtc!.Value;
+        }
+        else
+        {
+            var (parsed, parseError) = await ResolveTargetUtcAsync(actionJson, ctx, ct);
+            if (parseError is not null) return TriggerActionResult.Failed(Kind, parseError);
+            target = parsed!.Value;
+        }
 
         // Read the wall clock here, not from ctx.UtcNow — ctx.UtcNow is
         // captured at trigger-pass start and a slow earlier action in the
@@ -72,6 +97,22 @@ internal sealed class SetPendingTillHandler : ITriggerActionHandler
     internal async Task<(DateTime? Target, string? Error)> ResolveTargetUtcAsync(
         JsonElement actionJson, TriggerEvaluationContext ctx, CancellationToken ct)
         => await SetPendingTillResolver.ResolveAsync(actionJson, ctx, _slaRepository, ct);
+}
+
+/// v0.1.58 — why a ticket cannot take a pending-till from a form field right
+/// now (its status is not in the Pending category), or null when it can.
+internal static class PendingStatusCheck
+{
+    public static async Task<string?> ReasonNotPendingAsync(
+        ITicketRepository tickets, ITaxonomyRepository taxonomy, Guid ticketId, CancellationToken ct)
+    {
+        var ticket = await tickets.GetCoreAsync(ticketId, ct);
+        if (ticket is null) return "Ticket vanished mid-update.";
+        var status = await taxonomy.GetStatusAsync(ticket.StatusId, ct);
+        return status is not null && string.Equals(status.StateCategory, "Pending", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : $"The ticket's status ({status?.Name ?? "unknown"}) is not a Pending status. Put a 'Set status' action with a Pending status before 'Set pending till'.";
+    }
 }
 
 /// Pure resolver shared between handler + previewer. Static + stateless

@@ -21,6 +21,7 @@ public static class TriggerValidator
         "starts_with", "ends_with",
         "has_changed",
         "contains_one", "contains_all",
+        "is_set", "is_not_set",
     };
 
     /// Action kinds the dispatcher currently has a handler for. The
@@ -110,6 +111,9 @@ public static class TriggerValidator
 
         var condError = ValidateConditionsJson(conditionsJson);
         if (condError is not null) return ValidationResult.Fail(condError);
+
+        var formError = ValidateFormUsage(conditionsJson, actionsJson);
+        if (formError is not null) return ValidationResult.Fail(formError);
 
         // Gate triggers must own exactly one prompt_confirm action; the
         // matcher API + ticket-PATCH enforcement both assume a single
@@ -292,6 +296,29 @@ public static class TriggerValidator
         }
     }
 
+    /// v0.1.58 — form fields only exist on a form pass. A trigger that reads
+    /// one (a <c>form.field.*</c> condition, or an action value taken from a
+    /// form field) must say which pass it belongs to: <c>form.save_event</c>
+    /// (a form save) or <c>form.backoffice_event</c> (a back-office step).
+    /// Without either it would silently never see the field it relies on.
+    private static string? ValidateFormUsage(string conditionsJson, string actionsJson)
+    {
+        IReadOnlySet<string> refs;
+        try
+        {
+            using var doc = JsonDocument.Parse(conditionsJson);
+            refs = new TriggerConditionMatcher().ReferencedFields(doc.RootElement);
+        }
+        catch (JsonException) { return null; } // reported by the conditions check
+
+        var readsField = refs.Any(r => TriggerFieldKeys.FormFieldKey(r) is not null)
+                         || FormFieldActionSource.AnyActionUsesFormField(actionsJson);
+        if (!readsField) return null;
+        if (refs.Contains(TriggerFieldKeys.FormSaveEvent) || refs.Contains(TriggerFieldKeys.FormBackofficeEvent))
+            return null;
+        return "This trigger uses a form field. Add a 'Form saved' or 'Back office form event' condition so it knows when to run.";
+    }
+
     private static string? ValidateConditionsJson(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -338,6 +365,9 @@ public static class TriggerValidator
             return "Leaf condition is missing 'operator'.";
         if (!ConditionOperators.Contains(lop.GetString() ?? string.Empty))
             return $"Unknown condition operator '{lop.GetString()}'.";
+        if (TriggerFieldKeys.FormFieldKey(field.GetString()!) is { } key
+            && !Forms.FormTemplateValidator.TriggerKeyPattern.IsMatch(key))
+            return $"'{field.GetString()}' is not a valid form field (trigger keys use a-z, 0-9 and _).";
         return null;
     }
 
@@ -386,12 +416,15 @@ public static class TriggerValidator
         switch (kind)
         {
             case "set_queue":
+                // v0.1.58 — either a fixed queue or the queue picked in a form field.
+                if (FormFieldActionSource.HasFormField(action)) return FormFieldActionSource.Validate(action);
                 return RequireGuid(action, "queue_id");
             case "set_priority":
                 return RequireGuid(action, "priority_id");
             case "set_status":
                 return RequireGuid(action, "status_id");
             case "set_owner":
+                if (FormFieldActionSource.HasFormField(action)) return FormFieldActionSource.Validate(action);
                 // user_id may be explicit null (clear) but the property
                 // itself must be present so the handler's clear-vs-malformed
                 // discrimination stays meaningful.
@@ -810,6 +843,9 @@ public static class TriggerValidator
         var hasClear = action.TryGetProperty("clear", out var clearEl)
             && clearEl.ValueKind == JsonValueKind.True;
         if (hasClear) return null;
+
+        if (FormFieldActionSource.HasFormField(action))
+            return FormFieldActionSource.Validate(action) ?? ValidateNextTriggerId(action);
 
         if (HasNonEmptyString(action, "absolute"))
         {

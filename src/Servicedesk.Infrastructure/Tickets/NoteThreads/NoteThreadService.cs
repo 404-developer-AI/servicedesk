@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.KnowledgeBase;
+using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Realtime;
 
@@ -22,6 +23,35 @@ public sealed class NoteThreadRejectedException(string code, string message) : E
 
 public sealed record NoteReplyInput(
     long? ParentReplyId, string? BodyHtml, IReadOnlyList<Guid>? MentionedUserIds, IReadOnlyList<Guid>? MentionedGroupIds);
+
+/// v0.1.58 — the files a reply body references: this ticket's attachment
+/// download URLs (images inline, other files as links). Only ids on the
+/// reply's own ticket count; binding re-checks ownership in SQL.
+public static class ReplyAttachmentRefs
+{
+    private static readonly System.Text.RegularExpressions.Regex AttachmentUrl = new(
+        @"/api/tickets/(?<t>[0-9a-fA-F-]{36})/attachments/(?<a>[0-9a-fA-F-]{36})",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static readonly System.Text.RegularExpressions.Regex ImgTag = new(
+        @"<img\b[^>]*\bsrc\s*=",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    public static IReadOnlyList<Guid> Extract(string html, Guid ticketId)
+    {
+        var ids = new List<Guid>();
+        foreach (System.Text.RegularExpressions.Match m in AttachmentUrl.Matches(html ?? string.Empty))
+        {
+            if (Guid.TryParse(m.Groups["t"].Value, out var t) && t == ticketId
+                && Guid.TryParse(m.Groups["a"].Value, out var a) && !ids.Contains(a))
+                ids.Add(a);
+        }
+        return ids;
+    }
+
+    public static bool HasImage(string html) => ImgTag.IsMatch(html ?? string.Empty);
+}
 
 public interface INoteThreadService
 {
@@ -57,14 +87,16 @@ public sealed class NoteThreadService : INoteThreadService
     private readonly IMentionNotificationService _mentions;
     private readonly ITicketListNotifier _tickets;
     private readonly IAuditLogger _audit;
+    private readonly IAttachmentRepository _attachments;
     private readonly ILogger<NoteThreadService> _logger;
 
     public NoteThreadService(
         INoteThreadRepository repo, ITicketMutationService mutations, ITicketHtmlSanitizer sanitizer,
         IUserService users, INotificationRepository notifications, IUserNotifier pusher,
         INotificationMailer mailer, IMentionNotificationService mentions, ITicketListNotifier tickets,
-        IAuditLogger audit, ILogger<NoteThreadService> logger)
+        IAuditLogger audit, IAttachmentRepository attachments, ILogger<NoteThreadService> logger)
     {
+        _attachments = attachments;
         _repo = repo;
         _mutations = mutations;
         _sanitizer = sanitizer;
@@ -118,6 +150,7 @@ public sealed class NoteThreadService : INoteThreadService
 
         var id = await _repo.CreateReplyAsync(eventId, parent?.Id, (parent?.Depth ?? 0) + 1, actor.UserId, html, text,
             new { mentionedUserIds = mentioned, mentionedGroupIds = groups }, ct);
+        await _attachments.SyncNoteReplyAttachmentsAsync(ticketId, id, ReplyAttachmentRefs.Extract(html, ticketId), ct);
         var reply = await _repo.GetReplyAsync(ticketId, id, ct) ?? throw NotFound();
 
         await AuditAsync(actor, "ticket.note.reply.created", ticketId,
@@ -156,6 +189,7 @@ public sealed class NoteThreadService : INoteThreadService
             throw new NoteThreadRejectedException(NoteThreadRejectCode.Forbidden, "You can only edit your own replies.");
         var (html, text) = Clean(bodyHtml);
         if (!await _repo.UpdateReplyAsync(replyId, html, text, ct)) throw NotFound();
+        await _attachments.SyncNoteReplyAttachmentsAsync(ticketId, replyId, ReplyAttachmentRefs.Extract(html, ticketId), ct);
         await AuditAsync(actor, "ticket.note.reply.edited", ticketId, new { replyId, eventId = reply.RootEventId }, ct);
         await PushAsync(ticketId, ct);
         return await _repo.GetReplyAsync(ticketId, replyId, ct) ?? throw NotFound();
@@ -169,6 +203,8 @@ public sealed class NoteThreadService : INoteThreadService
         if (reply.AuthorUserId != actor.UserId && !IsAdmin(actor))
             throw new NoteThreadRejectedException(NoteThreadRejectCode.Forbidden, "You can only delete your own replies.");
         await _repo.SoftDeleteReplyAsync(replyId, actor.UserId, ct);
+        // v0.1.58 — the reply's files go with it (a screenshot can be sensitive).
+        await _attachments.SyncNoteReplyAttachmentsAsync(ticketId, replyId, Array.Empty<Guid>(), ct);
         await AuditAsync(actor, "ticket.note.reply.deleted", ticketId,
             new { replyId, eventId = reply.RootEventId, byAdmin = reply.AuthorUserId != actor.UserId }, ct);
         await PushAsync(ticketId, ct);
@@ -261,7 +297,8 @@ public sealed class NoteThreadService : INoteThreadService
     {
         var html = (_sanitizer.Sanitize(bodyHtml ?? string.Empty) ?? string.Empty).Trim();
         var text = KbBodyStripper.HtmlToText(html).Trim();
-        if (text.Length == 0)
+        // v0.1.58 — a pasted screenshot alone is a valid reply.
+        if (text.Length == 0 && !ReplyAttachmentRefs.HasImage(html))
             throw new NoteThreadRejectedException(NoteThreadRejectCode.Invalid, "A reply can't be empty.");
         if (text.Length > MaxTextLength)
             throw new NoteThreadRejectedException(NoteThreadRejectCode.Invalid, $"A reply can be at most {MaxTextLength} characters.");
@@ -271,6 +308,7 @@ public sealed class NoteThreadService : INoteThreadService
     private static string Preview(string text)
     {
         var t = (text ?? string.Empty).Trim();
+        if (t.Length == 0) return "[Image]";
         return t.Length <= 200 ? t : t[..199] + "…";
     }
 

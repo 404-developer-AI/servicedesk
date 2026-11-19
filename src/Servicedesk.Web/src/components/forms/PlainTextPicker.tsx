@@ -118,7 +118,10 @@ export const PlainTextPicker = React.forwardRef<HTMLInputElement, Props>(functio
         onCloseAutoFocus={(e) => e.preventDefault()}
         onInteractOutside={(e) => { if (e.target === inputRef.current) e.preventDefault(); }}
       >
-        <IntakeMentionList ref={listRef} items={items} loading={loading} command={pick} />
+        {/* Never taller than the room the popover has, so the last row is
+            always reachable by scrolling. */}
+        <IntakeMentionList ref={listRef} items={items} loading={loading} command={pick}
+          className="max-h-[min(18rem,calc(var(--radix-popover-content-available-height)-0.5rem))]" />
       </PopoverContent>
     </Popover>
   );

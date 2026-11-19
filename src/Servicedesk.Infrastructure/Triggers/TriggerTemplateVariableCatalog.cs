@@ -34,12 +34,15 @@ public static class TriggerTemplateVariableCatalog
         new("agent.name",               "Confirming agent",   "string", "agent@example.com"),
         new("agent.email",              "Confirming agent email", "string", "agent@example.com"),
         // Back office form triggers only (empty on other passes).
-        new("form.name",                "Back office form name",          "string", "Licence request"),
-        new("form.event",               "Back office form event",         "string", "handled"),
+        new("form.name",                "Form name",                      "string", "Licence request"),
+        new("form.event",               "Form event (created, updated, handled, …)", "string", "handled"),
         new("form.submitted_by",        "Form filled in by",              "string", "Alex Example"),
         new("form.handled_by",          "Form handled by",                "string", "Sam Example"),
         new("form.handled_note",        "Back office note",               "string", "Contract updated in the CRM"),
-        new("form.url",                 "Back office form deep-link",     "string", "https://servicedesk.example/backoffice-forms?form=…"),
+        new("form.url",                 "Form deep-link",                 "string", "https://servicedesk.example/tickets/1234?form=…"),
+        // v0.1.58 — replace "key" with a field's trigger key, e.g.
+        // #{form.field.technician}; a date & time field also works in #{dt(…)}.
+        new("form.field.key",           "Form field (by trigger key)",    "string", "Sam Example"),
         new("config.app.name",          "App name",           "string", "Servicedesk"),
         new("config.app.public_base_url","Public base URL",   "string", "https://servicedesk.example"),
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Servicedesk.Infrastructure.Forms;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 
 namespace Servicedesk.Infrastructure.Triggers.Actions.Previewers;
@@ -13,14 +14,22 @@ internal sealed class SetQueuePreviewer : ITriggerActionPreviewer
 
     public async Task<TriggerActionPreviewResult> PreviewAsync(JsonElement actionJson, TriggerEvaluationContext ctx, CancellationToken ct)
     {
-        if (!ActionJson.TryReadGuid(actionJson, "queue_id", out var newQueueId))
+        Guid newQueueId;
+        if (FormFieldActionSource.HasFormField(actionJson))
+        {
+            var source = FormFieldActionSource.Resolve(actionJson, ctx, FormFieldType.Queue);
+            if (source.Error is not null) return TriggerActionPreviewResult.Failed(Kind, source.Error);
+            if (source.EmptyReason is not null) return TriggerActionPreviewResult.WouldNoOp(Kind, new { reason = source.EmptyReason });
+            newQueueId = source.Field!.RefId!.Value;
+        }
+        else if (!ActionJson.TryReadGuid(actionJson, "queue_id", out newQueueId))
             return TriggerActionPreviewResult.Failed(Kind, "Action is missing required string 'queue_id'.");
 
         if (ctx.Ticket.QueueId == newQueueId)
             return TriggerActionPreviewResult.WouldNoOp(Kind, new { column = "queue_id", reason = "already_at_target" });
 
         var to = await _taxonomy.GetQueueAsync(newQueueId, ct);
-        if (to is null)
+        if (to is null || (FormFieldActionSource.HasFormField(actionJson) && !to.IsActive))
             return TriggerActionPreviewResult.Failed(Kind, $"Target queue {newQueueId} not found.");
 
         var from = await _taxonomy.GetQueueAsync(ctx.Ticket.QueueId, ct);

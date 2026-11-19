@@ -24,7 +24,7 @@ public class TriggerDryRunTests
         var repo = new FakeRepo();
         var service = Build(repo, new FakePreview(), new FakeMatcher(true), new FakeTickets());
 
-        var result = await service.DryRunAsync(Guid.NewGuid(), Guid.NewGuid(), CancellationToken.None);
+        var result = await service.DryRunAsync(Guid.NewGuid(), Guid.NewGuid(), null, CancellationToken.None);
 
         Assert.Null(result);
         Assert.Empty(repo.Recorded);
@@ -38,7 +38,7 @@ public class TriggerDryRunTests
         var repo = new FakeRepo(trigger);
         var service = Build(repo, new FakePreview(), new FakeMatcher(true), new FakeTickets());
 
-        var result = await service.DryRunAsync(trigger.Id, Guid.NewGuid(), CancellationToken.None);
+        var result = await service.DryRunAsync(trigger.Id, Guid.NewGuid(), null, CancellationToken.None);
 
         Assert.Null(result);
         Assert.Empty(repo.Recorded);
@@ -53,7 +53,7 @@ public class TriggerDryRunTests
         var preview = new FakePreview();
         var service = Build(repo, preview, new FakeMatcher(false), new FakeTickets(SeedTicket(ticketId)));
 
-        var result = await service.DryRunAsync(trigger.Id, ticketId, CancellationToken.None);
+        var result = await service.DryRunAsync(trigger.Id, ticketId, null, CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.False(result!.Matched);
@@ -79,7 +79,7 @@ public class TriggerDryRunTests
         });
         var service = Build(repo, preview, new FakeMatcher(true), new FakeTickets(SeedTicket(ticketId)));
 
-        var result = await service.DryRunAsync(trigger.Id, ticketId, CancellationToken.None);
+        var result = await service.DryRunAsync(trigger.Id, ticketId, null, CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.True(result!.Matched);
@@ -99,7 +99,7 @@ public class TriggerDryRunTests
         var repo = new FakeRepo(trigger);
         var service = Build(repo, new FakePreview(), new FakeMatcher(true), new FakeTickets(SeedTicket(ticketId)));
 
-        var result = await service.DryRunAsync(trigger.Id, ticketId, CancellationToken.None);
+        var result = await service.DryRunAsync(trigger.Id, ticketId, null, CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.False(result!.Matched);
@@ -124,6 +124,7 @@ public class TriggerDryRunTests
             new FakeRenderFactory(),
             new Servicedesk.Infrastructure.Realtime.NullTicketListNotifier(),
             new TestInfrastructure.FakeAdsolutOrderRepository(),
+            null!,
             NullLogger<TriggerService>.Instance);
 
     private static TriggerRow MakeTrigger(string conditionsJson = "{\"op\":\"AND\",\"items\":[]}", string actionsJson = "[]")

@@ -32,6 +32,7 @@ public static class TicketFollowEndpoints
                     lastSeenUtc = i.LastSeenUtc,
                     lastActivityUtc = i.LastActivityUtc,
                     hasActivity = i.HasActivity,
+                    note = i.Note,
                 }),
             });
         })
@@ -69,6 +70,25 @@ public static class TicketFollowEndpoints
             return Results.NoContent();
         }).WithName("UnfollowTicket");
 
+        // v0.1.58 — the caller's personal note on a followed ticket.
+        group.MapPut("/note", async (Guid ticketId, FollowNoteInput input, HttpContext http, ITicketFollowService svc,
+            IHubContext<UserNotificationHub> hub, CancellationToken ct) =>
+        {
+            var actor = TicketEndpoints.ResolveMutationActor(http);
+            try
+            {
+                await svc.SetNoteAsync(actor, ticketId, input.Note, ct);
+            }
+            catch (TicketFollowRejectedException ex)
+            {
+                return ex.Code == TicketFollowRejectCode.InvalidNote
+                    ? Results.BadRequest(new { error = ex.Message })
+                    : Results.NotFound();
+            }
+            await PushChangedAsync(hub, actor.UserId, ct);
+            return Results.NoContent();
+        }).WithName("SetFollowedTicketNote");
+
         group.MapPost("/seen", async (Guid ticketId, HttpContext http, ITicketFollowService svc, CancellationToken ct) =>
         {
             await svc.MarkSeenAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, ct);
@@ -77,6 +97,8 @@ public static class TicketFollowEndpoints
 
         return app;
     }
+
+    public sealed record FollowNoteInput(string? Note);
 
     private static Task PushChangedAsync(IHubContext<UserNotificationHub> hub, Guid userId, CancellationToken ct)
         => hub.Clients.Group($"user:{userId}").SendAsync("FollowingChanged", ct);

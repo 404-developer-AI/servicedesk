@@ -16,7 +16,8 @@ public sealed class AttachmentRepository : IAttachmentRepository
                is_inline         AS IsInline,
                content_id        AS ContentId,
                processing_state  AS ProcessingState,
-               event_id          AS EventId
+               event_id          AS EventId,
+               note_reply_id     AS NoteReplyId
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -282,11 +283,41 @@ public sealed class AttachmentRepository : IAttachmentRepository
                AND owner_kind = 'Ticket'
                AND owner_id   = @ticketId
                AND event_id IS NULL
+               AND note_reply_id IS NULL
                AND processing_state = 'Ready'
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.ExecuteAsync(new CommandDefinition(sql,
             new { ids = attachmentIds.ToArray(), ticketId, eventId }, cancellationToken: ct));
+    }
+
+    public async Task SyncNoteReplyAttachmentsAsync(Guid ticketId, long replyId, IReadOnlyCollection<Guid> referencedIds, CancellationToken ct)
+    {
+        var ids = referencedIds.Distinct().ToArray();
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        if (ids.Length > 0)
+        {
+            await conn.ExecuteAsync(new CommandDefinition("""
+                UPDATE attachments
+                   SET note_reply_id = @replyId
+                 WHERE id = ANY(@ids)
+                   AND owner_kind = 'Ticket'
+                   AND owner_id   = @ticketId
+                   AND event_id IS NULL
+                   AND note_reply_id IS NULL
+                   AND processing_state = 'Ready'
+                """, new { ids, ticketId, replyId }, tx, cancellationToken: ct));
+        }
+        // The blob stays: the store is content-addressed (see RetentionWorker).
+        await conn.ExecuteAsync(new CommandDefinition("""
+            DELETE FROM attachments
+             WHERE note_reply_id = @replyId
+               AND owner_kind = 'Ticket'
+               AND owner_id   = @ticketId
+               AND NOT (id = ANY(@ids))
+            """, new { ids, ticketId, replyId }, tx, cancellationToken: ct));
+        await tx.CommitAsync(ct);
     }
 
     public async Task<int> ReassignToMailAsync(IReadOnlyList<AttachmentReassignToMail> assignments, Guid ticketId, Guid mailMessageId, long ticketEventId, CancellationToken ct)
@@ -308,6 +339,7 @@ public sealed class AttachmentRepository : IAttachmentRepository
              WHERE id = $5
                AND owner_kind = 'Ticket'
                AND owner_id   = $6
+               AND note_reply_id IS NULL
                AND processing_state = 'Ready'
             """;
         // v0.1.25 — still one UPDATE per row (same statement, same guards),
