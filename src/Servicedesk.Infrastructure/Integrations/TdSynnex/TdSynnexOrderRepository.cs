@@ -404,8 +404,10 @@ public sealed class TdSynnexOrderRepository : ITdSynnexOrderRepository
                    count(*) FILTER (WHERE status IN ('OPEN','INVESTIGATION','SHIPPING')
                                       AND first_ship_date >= @today::date
                                       AND first_ship_date < @weekEnd::date)::int AS DueThisWeek,
+                   -- TD SYNNEX's own modification date: an order that was
+                   -- already completed when first synced counts too.
                    count(*) FILTER (WHERE status = 'COMPLETED'
-                                      AND last_changed_utc >= @since)::int AS CompletedLast30Days,
+                                      AND COALESCE(order_modified_utc, last_changed_utc) >= @since)::int AS CompletedLast30Days,
                    COALESCE(sum(total_net) FILTER (WHERE status IN ('OPEN','INVESTIGATION','SHIPPING')), 0) AS OpenValue,
                    (SELECT currency FROM tdsynnex_orders WHERE currency IS NOT NULL
                      GROUP BY currency ORDER BY count(*) DESC LIMIT 1) AS Currency
