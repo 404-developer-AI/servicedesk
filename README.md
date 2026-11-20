@@ -40,6 +40,7 @@ A self-hosted helpdesk for IT service teams. One install per organisation, on a 
 **Integrations** (each optional and off by default)
 - Microsoft 365 — mail (Microsoft Graph) and single sign-on for staff.
 - Accounting sync (Wolters Kluwer Adsolut), Telavox call pop-ups and caller name lookup in the Telavox app, Tactical RMM assets, and a one-time import from Zammad.
+- TD SYNNEX order tracking: open orders, expected ship dates and deliveries on an Order Management page, linked to tickets; a change on a linked order can run triggers.
 
 **Administration**
 - Everything tunable lives on a searchable Settings page — no config files to edit.

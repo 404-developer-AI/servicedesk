@@ -30,6 +30,8 @@ import adsolutLogo from "@/assets/integrations/adsolut.ico";
 import claudeLogo from "@/assets/integrations/claude.svg";
 import microsoftLogo from "@/assets/integrations/microsoft.svg";
 import sophosLogo from "@/assets/integrations/sophos.svg";
+import tdsynnexLogo from "@/assets/integrations/tdsynnex.svg";
+import { tdSynnexAdminApi } from "@/lib/order-management-api";
 import telavoxLogo from "@/assets/integrations/telavox.svg";
 import trmmLogo from "@/assets/integrations/trmm.png";
 import veeamLogo from "@/assets/integrations/veeam.svg";
@@ -167,6 +169,11 @@ export function IntegrationsSettingsPage() {
     queryFn: () => sophosAdminApi.status(),
     staleTime: 30_000,
   });
+  const tdSynnexStatus = useQuery({
+    queryKey: ["integrations", "tdsynnex", "status"] as const,
+    queryFn: () => tdSynnexAdminApi.status(),
+    staleTime: 30_000,
+  });
   const veeamStatus = useQuery({
     queryKey: ["integrations", "veeam", "status"] as const,
     queryFn: () => veeamAdminApi.status(),
@@ -185,6 +192,8 @@ export function IntegrationsSettingsPage() {
   const m365StatusTile = m365TileStatus(m365Status.data?.state);
   const sophosStatusTile = sophosTileStatus(sophosStatus.data?.state);
   const veeamStatusTile = veeamTileStatus(veeamStatus.data?.state);
+  // Same three states as Sophos (disabled / not-configured / ready).
+  const tdSynnexStatusTile = sophosTileStatus(tdSynnexStatus.data?.state);
   const claudeStatusTile = claudeTileStatus(claudeStatus.data?.state);
   const tilesConfigured = [
     adsolutTileStatus,
@@ -194,9 +203,10 @@ export function IntegrationsSettingsPage() {
     m365StatusTile,
     sophosStatusTile,
     veeamStatusTile,
+    tdSynnexStatusTile,
     claudeStatusTile,
   ].filter((s) => s === "online" || s === "warning").length;
-  const totalCount = 8;
+  const totalCount = 9;
   const noneConfigured = tilesConfigured === 0;
   const connectedCount = tilesConfigured;
 
@@ -300,6 +310,13 @@ export function IntegrationsSettingsPage() {
           variant="icon"
           status={veeamStatusTile}
           onClick={() => navigate({ to: "/settings/integrations/veeam" })}
+        />
+        <IntegrationTile
+          name="TD SYNNEX"
+          logo={tdsynnexLogo}
+          variant="icon"
+          status={tdSynnexStatusTile}
+          onClick={() => navigate({ to: "/settings/integrations/tdsynnex" })}
         />
         <IntegrationTile
           name="Claude AI"

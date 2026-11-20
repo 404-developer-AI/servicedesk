@@ -60,6 +60,11 @@ public static class ProtectedSecretKeys
     public const string SophosClientId = "Sophos.ClientId";
     public const string SophosClientSecret = "Sophos.ClientSecret";
 
+    /// v0.1.59 — TD SYNNEX EU Resellers API (Order Management). OAuth2
+    /// client-credentials pair from the TD SYNNEX API Credential center.
+    public const string TdSynnexClientId = "TdSynnex.ClientId";
+    public const string TdSynnexClientSecret = "TdSynnex.ClientSecret";
+
     /// Veeam backup matching. Password of the Veeam Service Provider Console
     /// (VSPC) API account used for the OAuth2 password grant. One install-wide
     /// credential; the username + base URL are non-secret settings.

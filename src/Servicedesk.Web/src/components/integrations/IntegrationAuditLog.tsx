@@ -16,6 +16,7 @@ import {
   type IntegrationAuditOutcome,
   type IntegrationAuditPage,
 } from "@/lib/api";
+import { tdSynnexAdminApi } from "@/lib/order-management-api";
 import { cn } from "@/lib/utils";
 
 const OUTCOME_TONE: Record<IntegrationAuditOutcome, { dot: string; text: string; label: string }> = {
@@ -41,7 +42,7 @@ type Props = {
   /** Which integration to query. Each backend exposes its own /audit
    * endpoint scoped to its `integration_audit.integration` column, so
    * the dispatch lives here. */
-  integration: "adsolut" | "telavox" | "zammad" | "trmm" | "m365" | "sophos" | "veeam";
+  integration: "adsolut" | "telavox" | "zammad" | "trmm" | "m365" | "sophos" | "veeam" | "tdsynnex";
 };
 
 export function IntegrationAuditLog({ integration }: Props) {
@@ -71,6 +72,8 @@ export function IntegrationAuditLog({ integration }: Props) {
           return sophosAdminApi.auditLog(cursor, PAGE_SIZE);
         case "veeam":
           return veeamAdminApi.auditLog(cursor, PAGE_SIZE);
+        case "tdsynnex":
+          return tdSynnexAdminApi.auditLog(cursor, PAGE_SIZE);
       }
     },
     getNextPageParam: (last) => last.nextCursor ?? null,

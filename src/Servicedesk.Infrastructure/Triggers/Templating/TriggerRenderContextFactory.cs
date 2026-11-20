@@ -113,6 +113,17 @@ public sealed class TriggerRenderContextFactory : ITriggerRenderContextFactory
                     : $"{publicBaseUrl}/backoffice-forms?form={fe.FormId}"
                 : null,
 
+            ["order.number"] = ctx.ChangeSet.OrderEvent?.OrderNumber,
+            ["order.customer_po"] = ctx.ChangeSet.OrderEvent?.CustomerOrderNumber,
+            ["order.status"] = ctx.ChangeSet.OrderEvent?.Status,
+            ["order.previous_status"] = ctx.ChangeSet.OrderEvent?.PreviousStatus,
+            ["order.changes"] = ctx.ChangeSet.OrderEvent?.Summary,
+            ["order.eta"] = ctx.ChangeSet.OrderEvent?.EtaDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+            ["order.ship_to"] = ctx.ChangeSet.OrderEvent?.ShipToName,
+            ["order.url"] = ctx.ChangeSet.OrderEvent is { } oe
+                ? $"{publicBaseUrl}/order-management?order={oe.OrderId}"
+                : null,
+
             ["config.app.name"] = "Servicedesk",
             ["config.app.public_base_url"] = publicBaseUrl,
         };

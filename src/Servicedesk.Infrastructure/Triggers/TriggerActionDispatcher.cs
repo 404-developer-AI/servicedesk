@@ -42,6 +42,14 @@ public sealed class TriggerActionDispatcher : ITriggerActionDispatcher
                 continue;
             }
 
+            // v0.1.59 — an order pass never reaches the customer, whatever
+            // the stored trigger says (the validator rejects it on save too).
+            if (ctx.ChangeSet.OrderEvent is not null && TriggerValidator.CustomerFacingActionKinds.Contains(kind))
+            {
+                results.Add(TriggerActionResult.Failed(kind, "Customer-facing actions are not allowed on a linked-order trigger."));
+                continue;
+            }
+
             if (!_handlers.TryGetValue(kind, out var handler))
             {
                 _logger.LogWarning("Trigger action kind '{Kind}' has no registered handler — skipping.", kind);

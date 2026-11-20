@@ -33,6 +33,10 @@ public static class TriggerConditionFieldCatalog
         new(TriggerFieldKeys.FormSaveEvent, "Form saved", "form-save-event"),
         new(TriggerFieldKeys.FormTemplateId, "Form template", "form-template"),
         new(TriggerFieldKeys.FormBackofficeEvent, "Back office form event", "form-event"),
+        // v0.1.59 — a linked TD SYNNEX order changed (Order Management).
+        new(TriggerFieldKeys.OrderChange, "Linked order changed", "order-change"),
+        new(TriggerFieldKeys.OrderStatus, "Linked order status", "order-status"),
+        new(TriggerFieldKeys.OrderIsLate, "Linked order is late", "boolean"),
     };
 }
 

@@ -366,6 +366,23 @@ public static class DependencyInjection
             Servicedesk.Infrastructure.Integrations.Sophos.SophosSyncService>();
         services.AddHostedService<Servicedesk.Infrastructure.Integrations.Sophos.SophosSyncWorker>();
 
+        // v0.1.59 — Order Management: TD SYNNEX EU Resellers API order mirror.
+        // Client-credentials pair in protected_secrets; the api client is a
+        // singleton so its token cache survives ticks. A detected order change
+        // runs the order trigger pass on every linked ticket (fan-out).
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.TdSynnex.ITdSynnexApiClient,
+            Servicedesk.Infrastructure.Integrations.TdSynnex.TdSynnexApiClient>();
+        services.AddHttpClient(Servicedesk.Infrastructure.Integrations.TdSynnex.TdSynnexApiClient.HttpClientName);
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.TdSynnex.ITdSynnexOrderRepository,
+            Servicedesk.Infrastructure.Integrations.TdSynnex.TdSynnexOrderRepository>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.TdSynnex.ITdSynnexOrderEvents,
+            Servicedesk.Infrastructure.Integrations.TdSynnex.TdSynnexOrderEvents>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.TdSynnex.ITdSynnexOrderTicketFanout,
+            Servicedesk.Infrastructure.Integrations.TdSynnex.TdSynnexOrderTicketFanout>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.TdSynnex.ITdSynnexSyncService,
+            Servicedesk.Infrastructure.Integrations.TdSynnex.TdSynnexSyncService>();
+        services.AddHostedService<Servicedesk.Infrastructure.Integrations.TdSynnex.TdSynnexSyncWorker>();
+
         // Veeam backup matching (Veeam Service Provider Console). The VSPC
         // company code (ownerCredentials.userName) bridges to
         // companies.adsolut_number; for each M365-connected company matched in
@@ -807,6 +824,12 @@ public static class DependencyInjection
         // is set (read per-query). Honors the admin's display status filter.
         services.AddSingleton<Servicedesk.Infrastructure.Search.AdsolutOrderSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.AdsolutOrderSearchSource>()));
+
+        // v0.1.59 — TD SYNNEX orders (Order Management). Customer sees zero
+        // hits; Agent/Admin only with their own order_management_enabled flag
+        // (admins included — the flag is the access boundary).
+        services.AddSingleton<Servicedesk.Infrastructure.Search.TdSynnexOrderSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.TdSynnexOrderSearchSource>()));
 
         // Adsolut article-catalogue search-source (Contract Articles). Customer
         // sees zero hits; Agent/Admin see hits only when their own

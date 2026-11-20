@@ -52,6 +52,15 @@ public sealed class FeatureFlagEnforcementTests
     [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/release")]
     [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/handle")]
     [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/reopen")]
+    // order_management_enabled (v0.1.59 — TD SYNNEX orders)
+    [InlineData("GET", "/api/order-management/summary")]
+    [InlineData("GET", "/api/order-management/orders")]
+    [InlineData("GET", "/api/order-management/orders/picker?q=a")]
+    [InlineData("GET", "/api/order-management/orders/00000000-0000-0000-0000-000000000001")]
+    [InlineData("POST", "/api/order-management/sync")]
+    [InlineData("GET", "/api/tickets/00000000-0000-0000-0000-000000000001/tdsynnex-orders")]
+    [InlineData("POST", "/api/tickets/00000000-0000-0000-0000-000000000001/tdsynnex-orders/00000000-0000-0000-0000-000000000002")]
+    [InlineData("DELETE", "/api/tickets/00000000-0000-0000-0000-000000000001/tdsynnex-orders/00000000-0000-0000-0000-000000000002")]
     public async Task Agent_without_flag_gets_403(string method, string url)
     {
         using var factory = new SecurityBaselineFactory();
@@ -145,6 +154,42 @@ public sealed class FeatureFlagEnforcementTests
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/backoffice-forms/counts")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(
             "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/handle", new { note = "x" })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Order_management_needs_its_own_flag_also_for_admins()
+    {
+        using var factory = new SecurityBaselineFactory();
+        var (client, userId) = await ClientAsync(factory, "Admin");
+        factory.Users.AdsolutOrdersEnabled[userId] = true; // the Adsolut orders flag doesn't count
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/order-management/summary")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsync(
+            "/api/tickets/00000000-0000-0000-0000-000000000001/tdsynnex-orders/00000000-0000-0000-0000-000000000002", null)).StatusCode);
+
+        factory.Users.OrderManagementEnabled[userId] = true;
+        Assert.True(await FeatureFlagFilter.IsEnabledAsync(factory.Users, userId, UserFeature.OrderManagement, default));
+        Assert.False(await FeatureFlagFilter.IsEnabledAsync(factory.Users, Guid.NewGuid(), UserFeature.OrderManagement, default));
+    }
+
+    [Fact]
+    public async Task TdSynnex_order_search_gives_zero_hits_without_the_flag()
+    {
+        // null! data source: an unavailable principal must never reach the DB.
+        var src = new TdSynnexOrderSearchSource(null!);
+        var plainAgent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>());
+        var plainAdmin = new SearchPrincipal(Guid.NewGuid(), "Admin", null);
+
+        Assert.False(src.IsAvailableFor(plainAgent));
+        Assert.False(src.IsAvailableFor(plainAdmin)); // the flag is the boundary, admins included
+        Assert.False(src.IsAvailableFor(new SearchPrincipal(Guid.NewGuid(), "Customer", null,
+            new HashSet<string> { SearchFeature.OrderManagement })));
+        var result = await src.SearchAsync(new SearchRequest("I00123", null, 10, 0), plainAgent, default);
+        Assert.Empty(result.Hits);
+        Assert.Equal(0, result.TotalInGroup);
+
+        Assert.True(src.IsAvailableFor(new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>(),
+            new HashSet<string> { SearchFeature.OrderManagement })));
     }
 
     // ---- global search: Assets source follows the same flag -----------------

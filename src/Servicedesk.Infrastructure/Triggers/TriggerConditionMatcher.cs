@@ -132,6 +132,9 @@ public sealed class TriggerConditionMatcher : ITriggerConditionMatcher
             TriggerFieldKeys.FormBackofficeEvent => ctx.ChangeSet.FormEvent?.Event,
             TriggerFieldKeys.FormTemplateId => ctx.ChangeSet.FormEvent?.TemplateId,
             TriggerFieldKeys.FormSaveEvent => ctx.ChangeSet.FormEvent?.SaveEvent,
+            TriggerFieldKeys.OrderChange => ctx.ChangeSet.OrderEvent?.ChangeKinds,
+            TriggerFieldKeys.OrderStatus => ctx.ChangeSet.OrderEvent?.Status,
+            TriggerFieldKeys.OrderIsLate => ctx.ChangeSet.OrderEvent?.IsLate,
             _ when TriggerFieldKeys.FormFieldKey(field) is { } key
                 => ctx.ChangeSet.FormEvent?.Fields.GetValueOrDefault(key)?.ConditionValue,
             _ => null,

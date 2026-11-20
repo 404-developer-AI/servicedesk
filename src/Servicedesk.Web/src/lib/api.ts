@@ -78,6 +78,8 @@ export type AuthUserPayload = {
   adsolutTimesheetEnabled: boolean;
   timesheetBackofficeEnabled: boolean;
   backofficeFormsEnabled: boolean;
+  // v0.1.59 — Order Management (TD SYNNEX orders); server-enforced flag.
+  orderManagementEnabled: boolean;
   adsolutOrdersEnabled: boolean;
   statisticsRead: boolean;
   statisticsWrite: boolean;

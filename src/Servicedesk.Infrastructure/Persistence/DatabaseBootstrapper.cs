@@ -6895,6 +6895,94 @@ public sealed class DatabaseBootstrapper : IHostedService
             REFERENCES ticket_note_replies(id) ON DELETE CASCADE;
         CREATE INDEX IF NOT EXISTS ix_attachments_note_reply
             ON attachments (note_reply_id) WHERE note_reply_id IS NOT NULL;
+
+        -- ===================================================================
+        -- v0.1.59 — Order Management: TD SYNNEX (EU Resellers API) order
+        -- mirror. One row per distributor order; lines + split deliveries are
+        -- kept as JSONB on the order (read whole for the detail view, never
+        -- queried per line). The flat columns serve the dashboard (status,
+        -- ETA, late) and search. snapshot_hash = SHA-256 over the canonical
+        -- tracked state; a differing hash on sync = a change (diff written to
+        -- tdsynnex_order_changes, triggers run on linked tickets).
+        -- Access = the per-user order_management_enabled flag (admins
+        -- included); ticket links stay queue-gated through the ticket.
+        -- ===================================================================
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS order_management_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        CREATE TABLE IF NOT EXISTS tdsynnex_orders (
+            id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            order_number           TEXT NOT NULL UNIQUE,
+            customer_order_number  TEXT NULL,
+            end_user_order_number  TEXT NULL,
+            order_type             TEXT NULL,
+            status                 TEXT NULL,
+            status_detail          TEXT NULL,
+            created_by             TEXT NULL,
+            order_created_utc      TIMESTAMPTZ NULL,
+            order_modified_utc     TIMESTAMPTZ NULL,
+            ship_to_name           TEXT NULL,
+            ship_to_contact        TEXT NULL,
+            ship_to_city           TEXT NULL,
+            ship_to_country        TEXT NULL,
+            total_net              NUMERIC(14,2) NULL,
+            currency               TEXT NULL,
+            line_count             INT NOT NULL DEFAULT 0,
+            quantity_total         NUMERIC(14,2) NOT NULL DEFAULT 0,
+            first_ship_date        DATE NULL,
+            eta_date               DATE NULL,
+            lines                  JSONB NOT NULL DEFAULT '[]'::jsonb,
+            ship_to                JSONB NULL,
+            payment                JSONB NULL,
+            snapshot_hash          BYTEA NULL,
+            search_text            TEXT NOT NULL DEFAULT '',
+            first_seen_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_synced_utc        TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_changed_utc       TIMESTAMPTZ NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_tdsynnex_orders_created
+            ON tdsynnex_orders (order_created_utc DESC NULLS LAST, id DESC);
+        CREATE INDEX IF NOT EXISTS ix_tdsynnex_orders_status_eta
+            ON tdsynnex_orders (status, eta_date);
+        CREATE INDEX IF NOT EXISTS ix_tdsynnex_orders_search
+            ON tdsynnex_orders USING GIN (search_text gin_trgm_ops);
+
+        -- Change history: one row per detected change of an order (never on
+        -- first sight). Read newest-first for the detail + ticket popup.
+        CREATE TABLE IF NOT EXISTS tdsynnex_order_changes (
+            id             BIGSERIAL PRIMARY KEY,
+            order_id       UUID NOT NULL REFERENCES tdsynnex_orders(id) ON DELETE CASCADE,
+            detected_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            summary        TEXT NOT NULL,
+            changes        JSONB NOT NULL DEFAULT '[]'::jsonb
+        );
+        CREATE INDEX IF NOT EXISTS ix_tdsynnex_order_changes_order
+            ON tdsynnex_order_changes (order_id, detected_utc DESC);
+
+        -- Manual ticket ↔ order links (no automatic linking).
+        CREATE TABLE IF NOT EXISTS tdsynnex_ticket_orders (
+            ticket_id        UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            order_id         UUID NOT NULL REFERENCES tdsynnex_orders(id) ON DELETE CASCADE,
+            linked_by_user_id UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+            linked_utc       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (ticket_id, order_id)
+        );
+        CREATE INDEX IF NOT EXISTS ix_tdsynnex_ticket_orders_order
+            ON tdsynnex_ticket_orders (order_id);
+
+        -- Singleton sync bookkeeping (cursor kept apart from the mirror).
+        CREATE TABLE IF NOT EXISTS tdsynnex_sync_state (
+            id                       INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            delta_cursor_utc         TIMESTAMPTZ NULL,
+            last_active_refresh_utc  TIMESTAMPTZ NULL,
+            last_checked_utc         TIMESTAMPTZ NULL,
+            last_success_utc         TIMESTAMPTZ NULL,
+            last_status              TEXT NULL,
+            last_error               TEXT NULL,
+            last_seen                INT NOT NULL DEFAULT 0,
+            last_upserted            INT NOT NULL DEFAULT 0,
+            last_changed             INT NOT NULL DEFAULT 0,
+            duration_ms              INT NOT NULL DEFAULT 0
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;

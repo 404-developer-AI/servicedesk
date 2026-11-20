@@ -30,6 +30,7 @@ public sealed class TriggerService : ITriggerService
     private readonly Realtime.ITicketListNotifier _listNotifier;
     private readonly IAdsolutOrderRepository _orders;
     private readonly Forms.ITicketFormRepository _forms;
+    private readonly Integrations.TdSynnex.ITdSynnexOrderEvents? _orderEvents;
     private readonly ILogger<TriggerService> _logger;
 
     public TriggerService(
@@ -45,8 +46,10 @@ public sealed class TriggerService : ITriggerService
         Realtime.ITicketListNotifier listNotifier,
         IAdsolutOrderRepository orders,
         Forms.ITicketFormRepository forms,
-        ILogger<TriggerService> logger)
+        ILogger<TriggerService> logger,
+        Integrations.TdSynnex.ITdSynnexOrderEvents? orderEvents = null)
     {
+        _orderEvents = orderEvents;
         _forms = forms;
         _repo = repo;
         _tickets = tickets;
@@ -486,6 +489,21 @@ public sealed class TriggerService : ITriggerService
                 }
                 changeSet = TriggerChangeSet.ForForm(await SimulatedFormEventAsync(
                     form, _matcher.ReferencedFields(condDoc.RootElement), ct));
+            }
+            else if (_orderEvents is not null
+                     && _matcher.ReferencedFields(condDoc.RootElement).Any(TriggerFieldKeys.IsOrderField))
+            {
+                // v0.1.59 — a linked-order trigger: pretend the most recently
+                // changed order linked to this ticket just changed again.
+                var simulated = await _orderEvents.SimulateForTicketAsync(detail.Id, ct);
+                if (simulated is null)
+                {
+                    return new TriggerDryRunResult(
+                        Matched: false,
+                        FailureReason: "This ticket has no linked TD SYNNEX order to simulate an order change with.",
+                        Actions: Array.Empty<TriggerActionPreviewResult>());
+                }
+                changeSet = TriggerChangeSet.ForOrder(simulated);
             }
 
             var ctx = new TriggerEvaluationContext(

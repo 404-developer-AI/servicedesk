@@ -31,6 +31,7 @@ export type SearchKind =
   | "portal-accounts"
   | "remote-desktop-notes"
   | "ip-rules"
+  | "tdsynnex-orders"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -60,6 +61,7 @@ export const KIND_LABELS: Record<string, string> = {
   "portal-accounts": "Portal accounts",
   "remote-desktop-notes": "Remote Desktop notes",
   "ip-rules": "IP blocking",
+  "tdsynnex-orders": "TD SYNNEX orders",
 };
 
 export const KIND_ORDER: string[] = [
@@ -89,6 +91,7 @@ export const KIND_ORDER: string[] = [
   "portal-accounts",
   "remote-desktop-notes",
   "ip-rules",
+  "tdsynnex-orders",
 ];
 
 export function labelForKind(kind: string): string {
@@ -170,6 +173,9 @@ export function hitHref(hit: SearchHit): string {
     case "ip-rules":
       // Admin-only source; opens Settings → IP blocking filtered to the address.
       return `/settings/ip-blocking?ip=${encodeURIComponent(hit.entityId)}`;
+    case "tdsynnex-orders":
+      // Opens Order Management with the order's detail panel.
+      return `/order-management?order=${hit.entityId}`;
     default:
       return "#";
   }

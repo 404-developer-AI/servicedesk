@@ -608,6 +608,21 @@ const backofficeFormsRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/backoffice-forms/BackofficeFormsPage"), "BackofficeFormsPage"),
 });
 
+// v0.1.59 — Order Management (TD SYNNEX orders). Agent + Admin role gate plus
+// the per-user `order_management_enabled` flag (via /auth/me); every
+// /api/order-management endpoint re-checks the flag. `?order=<id>` opens one.
+const orderManagementRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/order-management",
+  beforeLoad: (args) => {
+    authGate(["Agent", "Admin"])(args);
+    if (!authedUser()?.orderManagementEnabled) {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: lazyRouteComponent(() => import("@/pages/order-management/OrderManagementPage"), "OrderManagementPage"),
+});
+
 // v0.1.13 — Insights reporting dashboard. Agent + Admin role gate plus the
 // per-user `insights_enabled` flag (server-sourced via /auth/me); every
 // /api/insights endpoint re-checks the flag. Lazy-loaded so the chart library
@@ -953,6 +968,14 @@ const settingsSophosIntegrationRoute = createRoute({
   component: SophosIntegrationPage,
 });
 
+// v0.1.59 — TD SYNNEX (Order Management source). Admin-only: base/token URL,
+// client id + secret, enable toggle, schedule, test, sync and the audit log.
+const settingsTdSynnexIntegrationRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/tdsynnex",
+  component: lazyRouteComponent(() => import("@/pages/settings/TdSynnexIntegrationPage"), "TdSynnexIntegrationPage"),
+});
+
 // Veeam backup matching. Admin-only. Houses the VSPC connection (base URL +
 // username + self-signed-TLS toggle), the password secret, the enable toggle,
 // sync interval, a connection test and the integration_audit reader.
@@ -1226,6 +1249,7 @@ const routeTree = rootRoute.addChildren([
   statisticsRoute,
   insightsRoute,
   backofficeFormsRoute,
+  orderManagementRoute,
   contractsRoute,
   contractArticlesRoute,
   contractsOverviewRoute,
@@ -1263,6 +1287,7 @@ const routeTree = rootRoute.addChildren([
     settingsTrmmIntegrationRoute,
     settingsM365IntegrationRoute,
     settingsSophosIntegrationRoute,
+    settingsTdSynnexIntegrationRoute,
     settingsVeeamIntegrationRoute,
     settingsClaudeIntegrationRoute,
     settingsTicketsRoute,

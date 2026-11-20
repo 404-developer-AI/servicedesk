@@ -433,7 +433,8 @@ public static class AdminUserEndpoints
         bool? ContractsEnabled,
         bool? FeedbackEnabled,
         bool? FeedbackOwnOnly,
-        bool? InsightsEnabled = null);
+        bool? InsightsEnabled = null,
+        bool? OrderManagementEnabled = null);
 
     private static async Task<IResult> UpdateFeatureFlags(
         Guid id,
@@ -464,7 +465,8 @@ public static class AdminUserEndpoints
             request.ContractsEnabled,
             request.FeedbackEnabled,
             request.FeedbackOwnOnly,
-            request.InsightsEnabled);
+            request.InsightsEnabled,
+            request.OrderManagementEnabled);
 
         var result = await admin.UpdateFeatureFlagsAsync(id, update, adminId.Value, ct);
         return result switch
@@ -494,6 +496,7 @@ public static class AdminUserEndpoints
                         feedback_enabled = updated.Row.FeedbackEnabled,
                         feedback_own_only = updated.Row.FeedbackOwnOnly,
                         insights_enabled = updated.Row.InsightsEnabled,
+                        order_management_enabled = updated.Row.OrderManagementEnabled,
                     },
                     body: updated.Row,
                     statusCode: StatusCodes.Status200OK,

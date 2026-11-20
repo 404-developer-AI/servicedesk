@@ -28,17 +28,35 @@ public sealed record TriggerChangeSet(
     /// <see cref="TriggerFieldKeys.IsFormField"/>.
     public TriggerFormEvent? FormEvent { get; init; }
 
-    /// Form triggers run only on form passes and form passes run only form
-    /// triggers. Among form triggers, those referencing
-    /// <see cref="TriggerFieldKeys.FormSaveEvent"/> run only on save passes,
-    /// every other form trigger only on back-office passes — so a trigger
-    /// that only names a template never fires twice for one save.
+    /// v0.1.59 — set only on an order pass: a linked TD SYNNEX order changed
+    /// (Order Management sync). Order triggers (those referencing an
+    /// <c>order.*</c> field) run only on such a pass, and such a pass runs
+    /// only order triggers — see <see cref="TriggerFieldKeys.IsOrderField"/>.
+    public TriggerOrderEvent? OrderEvent { get; init; }
+
+    /// Each special pass runs only its own triggers: form triggers only on
+    /// form passes, order triggers only on order passes, and every other
+    /// trigger only on regular ticket passes. Among form triggers, those
+    /// referencing <see cref="TriggerFieldKeys.FormSaveEvent"/> run only on
+    /// save passes, every other form trigger only on back-office passes — so
+    /// a trigger that only names a template never fires twice for one save.
     /// <paramref name="referencedFields"/> = the trigger's condition fields.
     public bool RunsTriggerReferencing(IReadOnlySet<string> referencedFields)
     {
+        if (referencedFields.Any(TriggerFieldKeys.IsOrderField))
+            return OrderEvent is not null && !referencedFields.Any(TriggerFieldKeys.IsFormField);
+        if (OrderEvent is not null) return false;
         if (!referencedFields.Any(TriggerFieldKeys.IsFormField)) return FormEvent is null;
         if (FormEvent is null) return false;
         return referencedFields.Contains(TriggerFieldKeys.FormSaveEvent) == FormEvent.IsSavePass;
+    }
+
+    public static TriggerChangeSet ForOrder(TriggerOrderEvent evt)
+    {
+        var changed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { TriggerFieldKeys.OrderChange };
+        if (evt.ChangeKinds.Contains(Integrations.TdSynnex.TdSynnexChangeKind.Status))
+            changed.Add(TriggerFieldKeys.OrderStatus);
+        return new(changed, ArticleAdded: false) { OrderEvent = evt };
     }
 
     public static TriggerChangeSet ForForm(TriggerFormEvent evt)
@@ -141,6 +159,32 @@ public static class TriggerFieldKeys
         => key.StartsWith(FormFieldPrefix, StringComparison.OrdinalIgnoreCase) ? key[FormFieldPrefix.Length..] : null;
 
     public static bool IsFormField(string key) => key.StartsWith("form.", StringComparison.OrdinalIgnoreCase);
+
+    /// v0.1.59 — order pass (a linked TD SYNNEX order changed). Values of
+    /// <c>order.change</c> are <see cref="Integrations.TdSynnex.TdSynnexChangeKind"/>.
+    public const string OrderChange = "order.change";
+    public const string OrderStatus = "order.status";
+    public const string OrderIsLate = "order.is_late";
+
+    public static bool IsOrderField(string key) => key.StartsWith("order.", StringComparison.OrdinalIgnoreCase);
+}
+
+/// v0.1.59 — the order change an order pass is about. One pass per linked
+/// ticket per changed order per sync.
+public sealed record TriggerOrderEvent(
+    Guid OrderId,
+    string OrderNumber,
+    string? CustomerOrderNumber,
+    string? Status,
+    string? PreviousStatus,
+    IReadOnlySet<string> ChangeKinds,
+    IReadOnlyList<string> Changes,
+    DateOnly? EtaDate,
+    bool IsLate,
+    string? ShipToName)
+{
+    /// All changes as one line ("Status OPEN → SHIPPING; Line 10 (…): ship date …").
+    public string Summary => string.Join("; ", Changes);
 }
 
 /// The form step a form pass is about: a back-office step (<see cref="Event"/>)

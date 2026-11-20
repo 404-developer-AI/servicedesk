@@ -14,6 +14,7 @@ import {
   Server,
   Receipt,
   ShoppingCart,
+  PackageSearch,
   BarChart3,
   ChartColumnStacked,
   PencilRuler,
@@ -72,7 +73,10 @@ const FLAG_GROUPS: Group[] = [
   },
   {
     title: "Orders",
-    flags: [{ key: "adsolutOrdersEnabled", label: "Orders (Adsolut)", icon: ShoppingCart }],
+    flags: [
+      { key: "adsolutOrdersEnabled", label: "Orders (Adsolut)", icon: ShoppingCart },
+      { key: "orderManagementEnabled", label: "Order Management (TD SYNNEX)", icon: PackageSearch },
+    ],
   },
   {
     title: "Statistics",

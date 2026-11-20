@@ -65,6 +65,26 @@ const FORM_EVENT_OPTIONS = [
   { value: "reopened", label: "Reopened (back on the list)" },
 ];
 
+/// v0.1.59 — what changed on a linked TD SYNNEX order (`order.change`).
+/// Values are the server's TdSynnexChangeKind constants.
+const ORDER_CHANGE_OPTIONS = [
+  { value: "status", label: "Order status" },
+  { value: "ship_date", label: "Expected ship date" },
+  { value: "shipment", label: "Shipment / delivery note" },
+  { value: "invoice", label: "Invoice" },
+  { value: "quantity", label: "Quantity" },
+  { value: "lines", label: "Lines added or removed" },
+];
+
+/// v0.1.59 — TD SYNNEX order statuses (`order.status`).
+const ORDER_STATUS_OPTIONS = [
+  { value: "OPEN", label: "Open" },
+  { value: "INVESTIGATION", label: "Investigation" },
+  { value: "SHIPPING", label: "Shipping" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "REJECTED", label: "Rejected" },
+];
+
 const ARTICLE_TYPE_OPTIONS = [
   { value: "MailReceived", label: "Mail received" },
   { value: "MailSent", label: "Mail sent" },
@@ -396,7 +416,8 @@ function LeafRow({
   const fieldType = fieldDef?.type ?? (isFormField ? FORM_FIELD_CONDITION_TYPE : "string");
   const allowsHasChanged =
     fieldType !== "boolean" && fieldType !== "tags"
-    && fieldType !== "form-event" && fieldType !== "form-template" && fieldType !== "form-save-event";
+    && fieldType !== "form-event" && fieldType !== "form-template" && fieldType !== "form-save-event"
+    && fieldType !== "order-change";
 
   // Filter operator list to those that semantically apply to the field
   // type. The matcher is permissive (unknown operator = false), so this
@@ -408,6 +429,8 @@ function LeafRow({
       if (fieldType === FORM_FIELD_CONDITION_TYPE) return op === "is_set" || op === "is_not_set" || op === "has_changed";
       if (op === "is_set" || op === "is_not_set") return false;
       if (op === "has_changed") return allowsHasChanged;
+      // A linked-order change is a set of change kinds: "contains one / all of".
+      if (fieldType === "order-change") return op === "contains_one" || op === "contains_all";
       if (op === "contains_one" || op === "contains_all") return fieldType === "tags";
       if (op === "starts_with" || op === "ends_with" || op === "contains" || op === "does_not_contain") {
         return fieldType === "string";
@@ -430,7 +453,7 @@ function LeafRow({
       // a non-empty value if the admin never touches the dropdown — the
       // visual <select> picks the first option but a stale empty-string
       // value would otherwise persist into JSONB and never match.
-      value: def?.type === "tags" ? [] : def?.type === "boolean" ? "true" : "",
+      value: def?.type === "tags" || def?.type === "order-change" ? [] : def?.type === "boolean" ? "true" : "",
     });
   }
 
@@ -587,6 +610,46 @@ function ValueInput({
       >
         <option value="">—</option>
         {FORM_SAVE_EVENT_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    );
+  }
+  if (fieldType === "order-change") {
+    const list = Array.isArray(value) ? value : [];
+    return (
+      <div className="flex flex-wrap gap-1">
+        {ORDER_CHANGE_OPTIONS.map((o) => {
+          const on = list.includes(o.value);
+          return (
+            <button
+              key={o.value}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChange(on ? list.filter((v) => v !== o.value) : [...list, o.value])}
+              className={cn(
+                "rounded-md border px-2 py-1 text-xs transition-colors",
+                on
+                  ? "border-primary/50 bg-primary/10 text-foreground"
+                  : "border-glass bg-glass text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+  if (fieldType === "order-status") {
+    return (
+      <select
+        value={typeof value === "string" ? value : ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+      >
+        <option value="">—</option>
+        {ORDER_STATUS_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>

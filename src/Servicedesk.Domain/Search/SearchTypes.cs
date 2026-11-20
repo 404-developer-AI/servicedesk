@@ -47,6 +47,9 @@ public static class SearchSourceKind
     // v0.1.30 - IP block/whitelist rules and open block proposals; hit ->
     // Settings → IP blocking filtered to that address. Admins only.
     public const string IpRules = "ip-rules";
+    // v0.1.59 - TD SYNNEX orders (Order Management); hit -> the dashboard
+    // with the order opened. order_management_enabled holders only.
+    public const string TdSynnexOrders = "tdsynnex-orders";
 }
 
 /// Per-user feature flags that gate availability of certain search sources.
@@ -82,6 +85,9 @@ public static class SearchFeature
 
     /// v0.1.54 — gates the Back office forms source (backoffice_forms_enabled).
     public const string BackofficeForms = "backofficeForms";
+
+    /// v0.1.59 — gates the TD SYNNEX orders source (order_management_enabled).
+    public const string OrderManagement = "orderManagement";
 }
 
 /// Sort order for the full-page search. Parsed from the `sort` query param

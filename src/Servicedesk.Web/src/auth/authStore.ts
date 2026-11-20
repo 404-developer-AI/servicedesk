@@ -40,6 +40,9 @@ export type AuthUser = {
   timesheetBackofficeEnabled: boolean;
   /// Per-user opt-in for the back-office forms feature.
   backofficeFormsEnabled: boolean;
+  /// v0.1.59 — per-user opt-in for Order Management (TD SYNNEX orders,
+  /// ticket order chip). The API enforces it; this only drives the UI.
+  orderManagementEnabled: boolean;
   /// v0.0.59 — per-user opt-in for the Adsolut Orders feature (navbar
   /// overview under Assets, order detail, the ticket "Sync orders" button
   /// and "::" order linking). Surfaces nothing on its own without the

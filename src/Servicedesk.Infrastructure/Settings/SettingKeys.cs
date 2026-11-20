@@ -346,6 +346,39 @@ public static class SettingKeys
         public const string SyncIntervalMinutes = "Sophos.SyncIntervalMinutes";
     }
 
+    /// v0.1.59 — Order Management: TD SYNNEX EU Resellers API order mirror.
+    /// One install-wide OAuth2 client-credentials pair (client id + secret,
+    /// both in protected_secrets). The base URL is a non-secret setting that
+    /// must be an https URL on a tdsynnex.com host (the API client refuses
+    /// anything else — no SSRF via a settings edit).
+    public static class TdSynnex
+    {
+        /// Master kill-switch. Off = the sync worker is dormant and no TD
+        /// SYNNEX API calls are made.
+        public const string Enabled = "TdSynnex.Enabled";
+
+        /// API base URL (e.g. https://api.tdsynnex.com/eu). Blank until the
+        /// admin fills it in from the TD SYNNEX API Credential center.
+        public const string BaseUrl = "TdSynnex.BaseUrl";
+
+        /// Optional token endpoint override. Blank = &lt;BaseUrl&gt;/auth/token.
+        public const string TokenUrl = "TdSynnex.TokenUrl";
+
+        /// Minutes between delta syncs (orders modified since the last pass).
+        public const string SyncIntervalMinutes = "TdSynnex.SyncIntervalMinutes";
+
+        /// How far back (days) the first sync reads orders.
+        public const string InitialSyncDays = "TdSynnex.InitialSyncDays";
+
+        /// Minutes between full re-reads of every not-yet-completed order — a
+        /// safety net in case a ship-date change does not bump the API's
+        /// modification date.
+        public const string ActiveRefreshMinutes = "TdSynnex.ActiveRefreshMinutes";
+
+        /// Days a change-history row is kept.
+        public const string ChangeRetentionDays = "TdSynnex.ChangeRetentionDays";
+    }
+
     /// Adsolut (Wolters Kluwer TAA) OAuth integration. Single-install,
     /// single-administration: one admin authorizes our access to one Adsolut
     /// dossier, all agents in this servicedesk read the synced data. The
@@ -2657,6 +2690,21 @@ public static class SettingDefaults
             "Master kill-switch for the Sophos Central spam-filter matching. When false, no Sophos API calls are made. Flip on once the API client id and secret are configured."),
         new SettingDefault(SettingKeys.Sophos.SyncIntervalMinutes, "360", "int", "Sophos",
             "How often (minutes) the Sophos sync worker re-reads the partner tenant list and the protected mailboxes of Microsoft 365-connected tenants. Floor 60 — set lower and the worker clamps. Unchanged snapshots are detected via a content hash and skip the rewrite, so a shorter interval is cheap."),
+
+        new SettingDefault(SettingKeys.TdSynnex.Enabled, "false", "bool", "TD SYNNEX",
+            "Master kill-switch for the TD SYNNEX order sync (Order Management). When false, no TD SYNNEX API calls are made. Turn on once the base URL, client ID and client secret are configured."),
+        new SettingDefault(SettingKeys.TdSynnex.BaseUrl, "", "string", "TD SYNNEX",
+            "Base URL of the TD SYNNEX EU Resellers API, as shown in the API Credential center (e.g. https://api.tdsynnex.com/eu). Must be https on a tdsynnex.com host. Left blank until configured."),
+        new SettingDefault(SettingKeys.TdSynnex.TokenUrl, "", "string", "TD SYNNEX",
+            "Optional OAuth token endpoint. Leave blank to use <base URL>/auth/token. Must be https on a tdsynnex.com host."),
+        new SettingDefault(SettingKeys.TdSynnex.SyncIntervalMinutes, "30", "int", "TD SYNNEX",
+            "How often (minutes) orders changed since the previous pass are read. Floor 10 — set lower and the worker clamps."),
+        new SettingDefault(SettingKeys.TdSynnex.InitialSyncDays, "90", "int", "TD SYNNEX",
+            "How far back (days) the very first sync reads orders. Later passes only read what changed. Clamped to [1, 730]."),
+        new SettingDefault(SettingKeys.TdSynnex.ActiveRefreshMinutes, "360", "int", "TD SYNNEX",
+            "How often (minutes) every order that is not completed or rejected is re-read in full, in case a ship-date change did not update the order's modification date. Floor 60."),
+        new SettingDefault(SettingKeys.TdSynnex.ChangeRetentionDays, "365", "int", "TD SYNNEX",
+            "How long (days) the change history of an order (status, ship dates, quantities) is kept. Clamped to [30, 3650]."),
 
         new SettingDefault(SettingKeys.Veeam.Enabled, "false", "bool", "Veeam",
             "Master kill-switch for the Veeam backup matching (Veeam Service Provider Console). When false, no Veeam API calls are made. Flip on once the VSPC URL and login are configured."),

@@ -235,6 +235,10 @@ export function Sidebar() {
     if (item.to === "/backoffice-forms" && !user?.backofficeFormsEnabled) {
       return false;
     }
+    // v0.1.59 — Order Management is per-user opt-in (order_management_enabled).
+    if (item.to === "/order-management" && !user?.orderManagementEnabled) {
+      return false;
+    }
     // v0.1.25 — SLA switched off globally (Settings → SLA): no SLA log.
     if (item.to === "/sla-log" && user?.slaEnabled === false) {
       return false;

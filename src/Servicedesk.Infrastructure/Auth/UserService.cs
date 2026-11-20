@@ -116,6 +116,12 @@ public interface IUserService
     /// missing rows.
     Task<bool> GetBackofficeFormsEnabledAsync(Guid userId, CancellationToken ct = default);
 
+    /// v0.1.59 — per-user opt-in for Order Management (TD SYNNEX orders:
+    /// dashboard, ticket links, order chip). The access boundary for the
+    /// whole feature, admins included. Fail-closed default for fakes.
+    Task<bool> GetOrderManagementEnabledAsync(Guid userId, CancellationToken ct = default)
+        => Task.FromResult(false);
+
     /// v0.0.69 — per-user opt-in for viewing the Statistics page (the tiles
     /// assigned to this user). Drives the sidebar nav entry. Returns false
     /// on missing rows.
@@ -177,7 +183,10 @@ public interface IUserService
             await GetStatisticsWriteEnabledAsync(userId, ct),
             await GetContractsEnabledAsync(userId, ct),
             await GetInsightsEnabledAsync(userId, ct),
-            feedback);
+            feedback)
+        {
+            OrderManagementEnabled = await GetOrderManagementEnabledAsync(userId, ct),
+        };
     }
 
     /// Loads the per-user feature flags that gate availability of
@@ -229,7 +238,11 @@ public sealed record UserFeatureFlags(
     bool StatisticsWrite,
     bool ContractsEnabled,
     bool InsightsEnabled,
-    FeedbackAccessInfo Feedback);
+    FeedbackAccessInfo Feedback)
+{
+    /// v0.1.59 — Order Management (TD SYNNEX orders).
+    public bool OrderManagementEnabled { get; init; }
+}
 
 public readonly record struct TimesheetFlags(bool Enabled, bool Manager)
 {
@@ -611,6 +624,15 @@ public sealed class UserService : IUserService
         return value ?? false;
     }
 
+    public async Task<bool> GetOrderManagementEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT order_management_enabled FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
+    }
+
     public async Task<bool> GetStatisticsReadEnabledAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = "SELECT statistics_read FROM users WHERE id = @id";
@@ -676,7 +698,8 @@ public sealed class UserService : IUserService
                    COALESCE(contracts_enabled, FALSE)            AS ContractsEnabled,
                    COALESCE(insights_enabled, FALSE)             AS InsightsEnabled,
                    COALESCE(feedback_enabled, FALSE)             AS FeedbackEnabled,
-                   COALESCE(feedback_own_only, FALSE)            AS FeedbackOwnOnly
+                   COALESCE(feedback_own_only, FALSE)            AS FeedbackOwnOnly,
+                   COALESCE(order_management_enabled, FALSE)     AS OrderManagementEnabled
             FROM users WHERE id = @id
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
@@ -703,7 +726,10 @@ public sealed class UserService : IUserService
             r.StatisticsWrite,
             r.ContractsEnabled,
             r.InsightsEnabled,
-            new FeedbackAccessInfo(r.FeedbackEnabled, r.FeedbackOwnOnly));
+            new FeedbackAccessInfo(r.FeedbackEnabled, r.FeedbackOwnOnly))
+        {
+            OrderManagementEnabled = r.OrderManagementEnabled,
+        };
     }
 
     private sealed class FeatureFlagsRow
@@ -726,6 +752,7 @@ public sealed class UserService : IUserService
         public bool InsightsEnabled { get; set; }
         public bool FeedbackEnabled { get; set; }
         public bool FeedbackOwnOnly { get; set; }
+        public bool OrderManagementEnabled { get; set; }
     }
 
     public async Task<FeedbackAccessInfo> GetFeedbackAccessAsync(Guid userId, CancellationToken ct = default)
@@ -756,7 +783,8 @@ public sealed class UserService : IUserService
                    COALESCE(assets_enabled, FALSE)           AS Assets,
                    COALESCE(feedback_enabled, FALSE)         AS Feedback,
                    COALESCE(feedback_own_only, FALSE)        AS FeedbackOwnOnly,
-                   COALESCE(backoffice_forms_enabled, FALSE) AS BackofficeForms
+                   COALESCE(backoffice_forms_enabled, FALSE) AS BackofficeForms,
+                   COALESCE(order_management_enabled, FALSE) AS OrderManagement
             FROM users WHERE id = @id
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
@@ -770,6 +798,7 @@ public sealed class UserService : IUserService
         if (row.AdsolutTimesheet) set.Add(Domain.Search.SearchFeature.AdsolutTimesheet);
         if (row.Assets) set.Add(Domain.Search.SearchFeature.Assets);
         if (row.BackofficeForms) set.Add(Domain.Search.SearchFeature.BackofficeForms);
+        if (row.OrderManagement) set.Add(Domain.Search.SearchFeature.OrderManagement);
         // Full feedback access wins over own-only; only one feedback feature is
         // ever added so the search source can pick its scope unambiguously.
         if (row.Feedback) set.Add(Domain.Search.SearchFeature.Feedback);
@@ -786,6 +815,7 @@ public sealed class UserService : IUserService
         public bool Feedback { get; set; }
         public bool FeedbackOwnOnly { get; set; }
         public bool BackofficeForms { get; set; }
+        public bool OrderManagement { get; set; }
     }
 }
 

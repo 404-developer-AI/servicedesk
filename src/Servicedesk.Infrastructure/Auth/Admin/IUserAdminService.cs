@@ -165,7 +165,8 @@ public sealed record UserAdminRow(
     bool ContractsEnabled = false,
     bool FeedbackEnabled = false,
     bool FeedbackOwnOnly = false,
-    bool InsightsEnabled = false)
+    bool InsightsEnabled = false,
+    bool OrderManagementEnabled = false)
 {
     /// Per-user Dashboard tile preferences sourced from
     /// `user_dashboard_tiles`. Empty list = no tiles enabled
@@ -288,7 +289,8 @@ public sealed record FeatureFlagsUpdate(
     bool? ContractsEnabled = null,
     bool? FeedbackEnabled = null,
     bool? FeedbackOwnOnly = null,
-    bool? InsightsEnabled = null);
+    bool? InsightsEnabled = null,
+    bool? OrderManagementEnabled = null);
 
 public abstract record UpdateFeatureFlagsResult
 {

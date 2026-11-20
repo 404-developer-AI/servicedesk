@@ -1639,6 +1639,8 @@ export type UserAdminRow = {
   timesheetBackofficeEnabled: boolean;
   // Per-user opt-in for the back-office forms feature.
   backofficeFormsEnabled: boolean;
+  // v0.1.59 — per-user opt-in for Order Management (TD SYNNEX orders).
+  orderManagementEnabled: boolean;
   // v0.0.59 — per-user opt-in for the Adsolut Orders feature.
   adsolutOrdersEnabled: boolean;
   // v0.0.69 — per-user opt-in for the Statistics feature. read = view
@@ -1677,6 +1679,7 @@ export type FeatureFlagsUpdate = Partial<{
   insightsEnabled: boolean;
   feedbackEnabled: boolean;
   feedbackOwnOnly: boolean;
+  orderManagementEnabled: boolean;
 }>;
 
 export type M365PickerUser = {

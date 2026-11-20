@@ -115,6 +115,9 @@ public static class TriggerValidator
         var formError = ValidateFormUsage(conditionsJson, actionsJson);
         if (formError is not null) return ValidationResult.Fail(formError);
 
+        var orderError = ValidateOrderUsage(activatorKind, conditionsJson, actionsJson);
+        if (orderError is not null) return ValidationResult.Fail(orderError);
+
         // Gate triggers must own exactly one prompt_confirm action; the
         // matcher API + ticket-PATCH enforcement both assume a single
         // prompt-payload per matching gate. Multiple prompts on one gate
@@ -317,6 +320,53 @@ public static class TriggerValidator
         if (refs.Contains(TriggerFieldKeys.FormSaveEvent) || refs.Contains(TriggerFieldKeys.FormBackofficeEvent))
             return null;
         return "This trigger uses a form field. Add a 'Form saved' or 'Back office form event' condition so it knows when to run.";
+    }
+
+    /// v0.1.59 — action kinds an order trigger may never use: anything that
+    /// reaches the customer. Distributor order data stays internal. The
+    /// dispatcher enforces the same set at run time.
+    public static readonly IReadOnlySet<string> CustomerFacingActionKinds = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "add_public_note", "repost_as_public_reply", "send_mail", "send_survey",
+    };
+
+    /// v0.1.59 — order fields (<c>order.*</c>) only exist on an order pass,
+    /// which is an action pass: the trigger must be an action trigger, must
+    /// not also be a form trigger, and must not send anything to the customer.
+    private static string? ValidateOrderUsage(string activatorKind, string conditionsJson, string actionsJson)
+    {
+        IReadOnlySet<string> refs;
+        try
+        {
+            using var doc = JsonDocument.Parse(conditionsJson);
+            refs = new TriggerConditionMatcher().ReferencedFields(doc.RootElement);
+        }
+        catch (JsonException) { return null; } // reported by the conditions check
+
+        if (!refs.Any(TriggerFieldKeys.IsOrderField)) return null;
+        if (activatorKind != "action")
+            return "Linked-order conditions only work on action triggers.";
+        if (refs.Any(TriggerFieldKeys.IsFormField))
+            return "A trigger cannot combine linked-order and form conditions — an order change and a form save are separate events.";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(actionsJson);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var a in doc.RootElement.EnumerateArray())
+                {
+                    if (a.ValueKind == JsonValueKind.Object
+                        && a.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.String
+                        && CustomerFacingActionKinds.Contains(k.GetString() ?? string.Empty))
+                    {
+                        return "A linked-order trigger cannot send anything to the customer (mail, public note, survey). Use an internal note or a notification instead.";
+                    }
+                }
+            }
+        }
+        catch (JsonException) { return null; } // reported by the actions check
+        return null;
     }
 
     private static string? ValidateConditionsJson(string json)

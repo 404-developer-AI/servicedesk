@@ -43,6 +43,15 @@ public static class TriggerTemplateVariableCatalog
         // v0.1.58 — replace "key" with a field's trigger key, e.g.
         // #{form.field.technician}; a date & time field also works in #{dt(…)}.
         new("form.field.key",           "Form field (by trigger key)",    "string", "Sam Example"),
+        // v0.1.59 — linked-order triggers only (empty on other passes).
+        new("order.number",             "Order number (TD SYNNEX)",       "string", "I00123456"),
+        new("order.customer_po",        "Order customer PO",              "string", "PO-2026-118"),
+        new("order.status",             "Order status",                   "string", "SHIPPING"),
+        new("order.previous_status",    "Order previous status",          "string", "OPEN"),
+        new("order.changes",            "What changed on the order",      "string", "Status OPEN → SHIPPING; Line 10 (ABC123): ship date 25/11/2026 → 27/11/2026"),
+        new("order.eta",                "Order expected ship date",       "string", "27/11/2026"),
+        new("order.ship_to",            "Order ship-to company",          "string", "Example Ltd"),
+        new("order.url",                "Order deep-link",                "string", "https://servicedesk.example/order-management?order=…"),
         new("config.app.name",          "App name",           "string", "Servicedesk"),
         new("config.app.public_base_url","Public base URL",   "string", "https://servicedesk.example"),
 

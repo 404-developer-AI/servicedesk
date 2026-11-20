@@ -60,6 +60,7 @@ import { TicketFormHost } from "@/components/forms/TicketFormHost";
 import type { TicketFormSummary } from "@/lib/forms-api";
 import { formatBytes } from "@/lib/format";
 import { FollowButton } from "./components/FollowButton";
+import { TicketOrdersButton } from "./components/TicketOrdersButton";
 
 type TicketDetailPageProps = {
   ticketId: string;
@@ -1447,6 +1448,8 @@ function TicketDetailBody({
                   onAttached={(c) => onOpenChecklist(c.id)}
                 />
               )}
+              {/* v0.1.59 — linked TD SYNNEX orders (self-gating on the flag). */}
+              <TicketOrdersButton ticketId={ticketId} />
               <SlaPill ticketId={ticket.id} className="shrink-0 justify-end" />
               <ExportPdfButton ticketId={ticketId} />
             </div>

@@ -13,6 +13,7 @@ import {
   FileSignature,
   MessageSquareText,
   ClipboardCheck,
+  PackageSearch,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -141,6 +142,18 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Forms technicians submitted for back office follow-up — pick one up, handle it and note what was done.",
+    section: "main",
+  },
+  // v0.1.59 — Order Management (TD SYNNEX orders). Role gate Agent+Admin; the
+  // per-user `order_management_enabled` flag is checked in Sidebar.tsx and the
+  // route gate, and /api/order-management enforces it server-side.
+  {
+    label: "Order Management",
+    to: "/order-management",
+    icon: PackageSearch,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Distributor orders from TD SYNNEX — status, expected ship dates, deliveries and the tickets they belong to.",
     section: "main",
   },
   // v0.1.13 — Insights (reporting dashboard). Role gate is Agent+Admin; the

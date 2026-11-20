@@ -13,6 +13,7 @@ public enum UserFeature
     TimesheetBackoffice,
     BackofficeForms,
     Timesheet,
+    OrderManagement,
 }
 
 /// A per-user feature flag is an access boundary, not UI visibility: the
@@ -53,6 +54,7 @@ public static class FeatureFlagFilter
         UserFeature.TimesheetBackoffice => await users.GetTimesheetBackofficeEnabledAsync(userId, ct),
         UserFeature.BackofficeForms => await users.GetBackofficeFormsEnabledAsync(userId, ct),
         UserFeature.Timesheet => (await users.GetTimesheetFlagsAsync(userId, ct)).Enabled,
+        UserFeature.OrderManagement => await users.GetOrderManagementEnabledAsync(userId, ct),
         _ => false,
     };
 }
