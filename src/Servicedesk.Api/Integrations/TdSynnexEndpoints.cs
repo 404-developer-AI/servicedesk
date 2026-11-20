@@ -52,11 +52,13 @@ public static class TdSynnexEndpoints
             clientIdConfigured = hasClientId,
             clientSecretConfigured = hasSecret,
             syncIntervalMinutes = Math.Max(10, await settings.GetAsync<int>(SettingKeys.TdSynnex.SyncIntervalMinutes, ct)),
-            initialSyncDays = Math.Clamp(await settings.GetAsync<int>(SettingKeys.TdSynnex.InitialSyncDays, ct), 1, 730),
+            initialSyncDays = Math.Clamp(await settings.GetAsync<int>(SettingKeys.TdSynnex.InitialSyncDays, ct), 0, 3650),
             activeRefreshMinutes = Math.Max(60, await settings.GetAsync<int>(SettingKeys.TdSynnex.ActiveRefreshMinutes, ct)),
             lastCheckedUtc = sync?.LastCheckedUtc,
             lastSuccessUtc = sync?.LastSuccessUtc,
             lastActiveRefreshUtc = sync?.LastActiveRefreshUtc,
+            historyFromUtc = sync?.HistoryFromUtc,
+            historyComplete = sync?.HistoryComplete ?? false,
             lastStatus = sync?.LastStatus,
             lastError = sync?.LastError,
             lastSeen = sync?.LastSeen ?? 0,
@@ -143,7 +145,7 @@ public static class TdSynnexEndpoints
         if (req.SyncIntervalMinutes is { } si)
             await settings.SetAsync(SettingKeys.TdSynnex.SyncIntervalMinutes, Math.Clamp(si, 10, 1440).ToString(), actor, role, ct);
         if (req.InitialSyncDays is { } d)
-            await settings.SetAsync(SettingKeys.TdSynnex.InitialSyncDays, Math.Clamp(d, 1, 730).ToString(), actor, role, ct);
+            await settings.SetAsync(SettingKeys.TdSynnex.InitialSyncDays, Math.Clamp(d, 0, 3650).ToString(), actor, role, ct);
         if (req.ActiveRefreshMinutes is { } ar)
             await settings.SetAsync(SettingKeys.TdSynnex.ActiveRefreshMinutes, Math.Clamp(ar, 60, 10080).ToString(), actor, role, ct);
         if (baseUrl is not null || tokenUrl is not null) client.InvalidateToken();

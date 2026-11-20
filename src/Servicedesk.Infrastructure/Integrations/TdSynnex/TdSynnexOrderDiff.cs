@@ -36,11 +36,13 @@ public static class TdSynnexOrderDiff
 {
     public static TdSynnexOrderDerived Derive(TdSynnexOrder o)
     {
-        var openDates = o.Lines
-            .SelectMany(l => l.Splits)
-            .Where(s => !s.IsDone && s.ShipDate is not null)
-            .Select(s => s.ShipDate!.Value)
-            .ToList();
+        var openDates = TdSynnexStatus.IsClosed(o.Status)
+            ? new List<DateOnly>()
+            : o.Lines
+                .SelectMany(l => l.Splits)
+                .Where(s => !s.IsDone && s.ShipDate is not null)
+                .Select(s => s.ShipDate!.Value)
+                .ToList();
 
         return new TdSynnexOrderDerived(
             o.Lines.Count,

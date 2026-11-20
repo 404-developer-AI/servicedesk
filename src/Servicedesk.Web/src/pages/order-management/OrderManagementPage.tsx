@@ -249,7 +249,7 @@ export function OrderManagementPage() {
         </div>
       </div>
 
-      <div className="glass-panel flex-1 overflow-hidden">
+      <div className="glass-panel min-h-64 flex-1 overflow-auto">
         {list.isLoading ? (
           <div className="space-y-2 p-4">
             <Skeleton className="h-10 w-full" />
@@ -264,9 +264,9 @@ export function OrderManagementPage() {
             <p className="max-w-md text-sm text-muted-foreground">{q.trim() ? "No orders match this search." : EMPTY_TEXT[bucket]}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div>
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-popover">
                 <tr className="border-b border-glass text-left text-[11px] uppercase tracking-wider text-muted-foreground/70">
                   <SortTh label="Order" k="orderNumber" sort={sort} onSort={toggleSort} className="pl-4" />
                   <SortTh label="Customer PO" k="customerPo" sort={sort} onSort={toggleSort} />

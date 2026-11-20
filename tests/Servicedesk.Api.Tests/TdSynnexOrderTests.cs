@@ -273,4 +273,98 @@ public sealed class TdSynnexOrderTests
         Assert.False(timeTrigger.IsValid);
         Assert.False(mixed.IsValid);
     }
+
+    // ---- history backfill + final orders ---------------------------------
+
+    private static readonly DateTime Now = new(2026, 11, 20, 12, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public void First_pass_reads_the_configured_window()
+    {
+        var plan = TdSynnexSyncService.PlanHistory(new TdSynnexSyncStateRow(), 90, Now);
+
+        Assert.Equal(Now.AddDays(-90), plan.Query!.CreatedFromUtc);
+        Assert.Null(plan.Query.CreatedToUtc);
+        Assert.Equal(Now.AddDays(-90), plan.CoveredFromUtc);
+        Assert.False(plan.Complete);
+    }
+
+    [Fact]
+    public void Zero_days_reads_everything_older_than_what_is_covered_once()
+    {
+        var covered = Now.AddDays(-90);
+        var plan = TdSynnexSyncService.PlanHistory(new TdSynnexSyncStateRow { HistoryFromUtc = covered }, 0, Now);
+
+        Assert.Null(plan.Query!.CreatedFromUtc);          // no lower bound: every order ever
+        Assert.Equal(covered, plan.Query.CreatedToUtc);  // never re-read the covered stretch
+        Assert.True(plan.Complete);
+
+        var after = TdSynnexSyncService.PlanHistory(
+            new TdSynnexSyncStateRow { HistoryFromUtc = covered, HistoryComplete = true }, 0, Now);
+        Assert.Null(after.Query);
+        Assert.True(after.Complete);
+    }
+
+    [Fact]
+    public void A_narrower_or_equal_window_reads_nothing_more()
+    {
+        var state = new TdSynnexSyncStateRow { HistoryFromUtc = Now.AddDays(-365) };
+        var plan = TdSynnexSyncService.PlanHistory(state, 90, Now);
+
+        Assert.Null(plan.Query);
+        Assert.Equal(Now.AddDays(-365), plan.CoveredFromUtc); // coverage is never lost
+        Assert.False(plan.Complete);
+    }
+
+    [Fact]
+    public void Widening_the_window_reads_only_the_missing_stretch()
+    {
+        var state = new TdSynnexSyncStateRow { HistoryFromUtc = Now.AddDays(-90) };
+        var plan = TdSynnexSyncService.PlanHistory(state, 365, Now);
+
+        Assert.Equal(Now.AddDays(-365), plan.Query!.CreatedFromUtc);
+        Assert.Equal(Now.AddDays(-90), plan.Query.CreatedToUtc);
+        Assert.Equal(Now.AddDays(-365), plan.CoveredFromUtc);
+    }
+
+    [Theory]
+    [InlineData("COMPLETED", true)]
+    [InlineData("completed", true)]
+    [InlineData("SHIPPING", false)]
+    [InlineData("REJECTED", false)]
+    public void Only_a_mirrored_completed_order_is_final(string status, bool final)
+    {
+        var stored = new TdSynnexStoredOrder(Guid.NewGuid(), new TdSynnexOrder { OrderNumber = "I1", Status = status }, null);
+        Assert.Equal(final, TdSynnexSyncService.IsFinal(stored));
+        Assert.False(TdSynnexSyncService.IsFinal(null)); // a new order is always applied, even when it arrives completed
+    }
+
+    [Theory]
+    [InlineData("SHIPPED", true)]
+    [InlineData("SHIPPED_WITH_VENDOR", true)]   // drop-shipped by the manufacturer: invoice, no delivery note
+    [InlineData("DELIVERED", true)]
+    [InlineData("WITH_VENDOR", false)]
+    [InlineData("OPEN", false)]
+    public void Split_statuses_seen_live_are_classified(string status, bool done)
+    {
+        Assert.Equal(done, new TdSynnexLineSplit { Status = status }.IsDone);
+    }
+
+    [Fact]
+    public void A_completed_order_has_no_open_ship_date()
+    {
+        var o = Assert.Single(Parse(ExampleOrders).Orders) with { Status = "COMPLETED" };
+        var d = TdSynnexOrderDiff.Derive(o);
+        Assert.Null(d.FirstShipDate);
+        Assert.Null(d.EtaDate);
+    }
+
+    [Fact]
+    public void Orders_url_carries_created_to()
+    {
+        var url = TdSynnexApiClient.BuildOrdersUrl("https://api.tdsynnex.com/eu",
+            new TdSynnexOrderQuery(CreatedToUtc: new DateTime(2026, 8, 22, 12, 0, 0, DateTimeKind.Utc)), 1, 20);
+        Assert.Contains("CreatedTo=2026-08-22T12%3A00%3A00Z", url);
+        Assert.DoesNotContain("CreatedFrom=", url);
+    }
 }

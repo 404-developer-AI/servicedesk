@@ -130,6 +130,22 @@ public sealed class TdSynnexOrderDbTests
     }
 
     [PostgresFact]
+    public async Task Sync_state_keeps_the_history_coverage()
+    {
+        var repo = new TdSynnexOrderRepository(_db.DataSource);
+        var from = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        await repo.SaveSyncStateAsync(new TdSynnexSyncStateRow
+        {
+            DeltaCursorUtc = DateTime.UtcNow, HistoryFromUtc = from, HistoryComplete = true, LastStatus = "ok",
+        }, default);
+
+        var state = await repo.GetSyncStateAsync(default);
+
+        Assert.Equal(from, state!.HistoryFromUtc);
+        Assert.True(state.HistoryComplete);
+    }
+
+    [PostgresFact]
     public async Task Change_history_is_kept_and_purged()
     {
         var repo = new TdSynnexOrderRepository(_db.DataSource);

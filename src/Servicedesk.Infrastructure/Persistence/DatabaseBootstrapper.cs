@@ -6983,6 +6983,21 @@ public sealed class DatabaseBootstrapper : IHostedService
             last_changed             INT NOT NULL DEFAULT 0,
             duration_ms              INT NOT NULL DEFAULT 0
         );
+
+        -- v0.1.60 — history coverage of the order mirror: the earliest order
+        -- creation date already read, and whether every order ever was read
+        -- (TdSynnex.InitialSyncDays = 0). Widening the window reads only the
+        -- missing stretch.
+        ALTER TABLE tdsynnex_sync_state ADD COLUMN IF NOT EXISTS history_from_utc TIMESTAMPTZ NULL;
+        ALTER TABLE tdsynnex_sync_state ADD COLUMN IF NOT EXISTS history_complete BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- v0.1.60 — a completed / rejected order has no open ship date. Rows
+        -- mirrored before this rule (and before SHIPPED_WITH_VENDOR counted
+        -- as shipped) kept one; completed orders are never re-applied, so
+        -- clear it once here. Idempotent, touches only stale rows.
+        UPDATE tdsynnex_orders SET first_ship_date = NULL, eta_date = NULL
+         WHERE status IN ('COMPLETED','REJECTED')
+           AND (first_ship_date IS NOT NULL OR eta_date IS NOT NULL);
         """;
 
     private readonly NpgsqlDataSource _dataSource;

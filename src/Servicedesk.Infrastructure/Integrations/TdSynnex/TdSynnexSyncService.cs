@@ -5,6 +5,10 @@ using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Integrations.TdSynnex;
 
+/// The history read a pass makes (<see cref="Query"/> null = none) and the
+/// coverage to store once it succeeded.
+public sealed record TdSynnexHistoryPlan(TdSynnexOrderQuery? Query, DateTime? CoveredFromUtc, bool Complete);
+
 public sealed record TdSynnexSyncOutcome(
     bool Success, string Status, string? Error, int Seen, int Upserted, int Changed);
 
@@ -78,23 +82,44 @@ public sealed class TdSynnexSyncService : ITdSynnexSyncService
         var sw = Stopwatch.StartNew();
         var prior = await _repo.GetSyncStateAsync(ct) ?? new TdSynnexSyncStateRow();
 
-        var initialDays = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.TdSynnex.InitialSyncDays, ct), 1, 730);
+        var historyDays = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.TdSynnex.InitialSyncDays, ct), 0, 3650);
         var activeEvery = TimeSpan.FromMinutes(Math.Max(60, await _settings.GetAsync<int>(SettingKeys.TdSynnex.ActiveRefreshMinutes, ct)));
         var retentionDays = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.TdSynnex.ChangeRetentionDays, ct), 30, 3650);
 
-        var deltaQuery = prior.DeltaCursorUtc is { } cursor
-            ? new TdSynnexOrderQuery(ModifiedFromUtc: cursor - CursorOverlap)
-            : new TdSynnexOrderQuery(CreatedFromUtc: nowUtc.AddDays(-initialDays));
+        var history = PlanHistory(prior, historyDays, nowUtc);
         var doActive = forceActiveRefresh
             || prior.LastActiveRefreshUtc is null
             || nowUtc - prior.LastActiveRefreshUtc.Value >= activeEvery;
 
-        var delta = await _client.ListOrdersAsync(deltaQuery, ct);
-        if (!delta.Success)
-            return await FailAsync(prior, nowUtc, sw, delta, ct);
-
+        // Backfill first, so the delta / active reads below (newer) win.
         var merged = new Dictionary<string, TdSynnexOrder>(StringComparer.Ordinal);
-        foreach (var o in delta.Orders) merged[o.OrderNumber] = o;
+        string? listKey = null;
+        if (history.Query is { } historyQuery)
+        {
+            var backfill = await _client.ListOrdersAsync(historyQuery, ct);
+            if (!backfill.Success)
+                return await FailAsync(prior, nowUtc, sw, backfill, ct);
+            listKey = backfill.ListKey;
+            foreach (var o in backfill.Orders) merged[o.OrderNumber] = o;
+        }
+
+        // The delta only exists once a first pass succeeded; before that the
+        // history read above covers everything. Orders in the delta were
+        // really modified at TD SYNNEX — those are applied even when they are
+        // already completed in the mirror (a late invoice or credit note).
+        var modified = new HashSet<string>(StringComparer.Ordinal);
+        if (prior.DeltaCursorUtc is { } cursor)
+        {
+            var delta = await _client.ListOrdersAsync(new TdSynnexOrderQuery(ModifiedFromUtc: cursor - CursorOverlap), ct);
+            if (!delta.Success)
+                return await FailAsync(prior, nowUtc, sw, delta, ct);
+            listKey ??= delta.ListKey;
+            foreach (var o in delta.Orders)
+            {
+                merged[o.OrderNumber] = o;
+                modified.Add(o.OrderNumber);
+            }
+        }
 
         if (doActive)
         {
@@ -104,7 +129,7 @@ public sealed class TdSynnexSyncService : ITdSynnexSyncService
             foreach (var o in active.Orders) merged[o.OrderNumber] = o;
         }
 
-        var (upserted, changed) = await ApplyAsync(merged.Values.ToList(), nowUtc, ct);
+        var (upserted, changed, skipped) = await ApplyAsync(merged.Values.ToList(), modified, nowUtc, ct);
 
         try { await _repo.PurgeChangesAsync(nowUtc.AddDays(-retentionDays), ct); }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -118,6 +143,8 @@ public sealed class TdSynnexSyncService : ITdSynnexSyncService
             // The cursor moves to the start of this pass only on success.
             DeltaCursorUtc = nowUtc,
             LastActiveRefreshUtc = doActive ? nowUtc : prior.LastActiveRefreshUtc,
+            HistoryFromUtc = history.CoveredFromUtc,
+            HistoryComplete = history.Complete,
             LastCheckedUtc = nowUtc,
             LastSuccessUtc = nowUtc,
             LastStatus = StatusOk,
@@ -127,18 +154,20 @@ public sealed class TdSynnexSyncService : ITdSynnexSyncService
             LastChanged = changed,
             DurationMs = (int)sw.ElapsedMilliseconds,
         }, ct);
-        await LogTickAsync(StatusOk, null, merged.Count, upserted, changed, doActive, delta.ListKey, (int)sw.ElapsedMilliseconds, ct);
+        await LogTickAsync(StatusOk, null, merged.Count, upserted, changed, doActive, listKey, (int)sw.ElapsedMilliseconds, ct,
+            skipped, history.Query is not null);
         return new TdSynnexSyncOutcome(true, StatusOk, null, merged.Count, upserted, changed);
     }
 
     /// Diff every incoming order against the mirror, upsert it, record the
     /// change history and run the order pass on linked tickets. Per-order
     /// try/catch: one malformed order never sinks the pass.
-    private async Task<(int Upserted, int Changed)> ApplyAsync(
-        IReadOnlyList<TdSynnexOrder> orders, DateTime nowUtc, CancellationToken ct)
+    private async Task<(int Upserted, int Changed, int Skipped)> ApplyAsync(
+        IReadOnlyList<TdSynnexOrder> orders, IReadOnlySet<string> modified, DateTime nowUtc, CancellationToken ct)
     {
         var upserted = 0;
         var changedCount = 0;
+        var skipped = 0;
         foreach (var chunk in orders.Chunk(200))
         {
             var stored = await _repo.GetStoredAsync(chunk.Select(o => o.OrderNumber).ToList(), ct);
@@ -147,6 +176,13 @@ public sealed class TdSynnexSyncService : ITdSynnexSyncService
                 ct.ThrowIfCancellationRequested();
                 try
                 {
+                    stored.TryGetValue(order.OrderNumber, out var known);
+                    if (IsFinal(known) && !modified.Contains(order.OrderNumber))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
                     var derived = TdSynnexOrderDiff.Derive(order);
                     IReadOnlyList<TdSynnexOrderChange> changes = Array.Empty<TdSynnexOrderChange>();
                     string? previousStatus = null;
@@ -174,7 +210,36 @@ public sealed class TdSynnexSyncService : ITdSynnexSyncService
                 }
             }
         }
-        return (upserted, changedCount);
+        return (upserted, changedCount, skipped);
+    }
+
+    /// An order already in the mirror as COMPLETED is final for the history
+    /// backfill and the active refresh: it is not re-applied when those reads
+    /// return it again. Only the delta (TD SYNNEX modified it — a late invoice
+    /// or credit note) still applies it.
+    public static bool IsFinal(TdSynnexStoredOrder? stored) =>
+        string.Equals(stored?.Order.Status, TdSynnexStatus.Completed, StringComparison.OrdinalIgnoreCase);
+
+    /// What part of the order history still has to be read.
+    /// <paramref name="historyDays"/> 0 = every order ever, otherwise the
+    /// last N days by creation date. Only the stretch not yet covered is read
+    /// (CreatedTo = the earliest creation date already covered), so widening
+    /// the window never re-reads what is mirrored. Pure; unit-tested.
+    public static TdSynnexHistoryPlan PlanHistory(TdSynnexSyncStateRow state, int historyDays, DateTime nowUtc)
+    {
+        if (state.HistoryComplete)
+            return new TdSynnexHistoryPlan(null, state.HistoryFromUtc, true);
+
+        DateTime? wantedFrom = historyDays <= 0 ? null : nowUtc.AddDays(-historyDays);
+        var coveredFrom = state.HistoryFromUtc;
+        var needed = coveredFrom is null || wantedFrom is null || wantedFrom < coveredFrom;
+        if (!needed)
+            return new TdSynnexHistoryPlan(null, coveredFrom, false);
+
+        return new TdSynnexHistoryPlan(
+            new TdSynnexOrderQuery(CreatedFromUtc: wantedFrom, CreatedToUtc: coveredFrom),
+            wantedFrom ?? coveredFrom,
+            wantedFrom is null);
     }
 
     private async Task<TdSynnexSyncOutcome> FailAsync(
@@ -186,6 +251,8 @@ public sealed class TdSynnexSyncService : ITdSynnexSyncService
         {
             DeltaCursorUtc = prior.DeltaCursorUtc,
             LastActiveRefreshUtc = prior.LastActiveRefreshUtc,
+            HistoryFromUtc = prior.HistoryFromUtc,
+            HistoryComplete = prior.HistoryComplete,
             LastCheckedUtc = nowUtc,
             LastSuccessUtc = prior.LastSuccessUtc,
             LastStatus = status,
@@ -201,12 +268,12 @@ public sealed class TdSynnexSyncService : ITdSynnexSyncService
 
     private Task LogTickAsync(
         string status, string? error, int seen, int upserted, int changed, bool activeRefresh,
-        string? listKey, int latencyMs, CancellationToken ct) =>
+        string? listKey, int latencyMs, CancellationToken ct, int skippedFinal = 0, bool historyRead = false) =>
         _audit.LogAsync(new IntegrationAuditEvent(
             Integration: TdSynnexEventTypes.Integration,
             EventType: TdSynnexEventTypes.SyncTick,
             Outcome: status == StatusOk ? IntegrationAuditOutcome.Ok : IntegrationAuditOutcome.Warn,
             LatencyMs: latencyMs,
             ErrorCode: error is null ? null : status,
-            Payload: new { status, seen, upserted, changed, activeRefresh, listKey }), ct);
+            Payload: new { status, seen, upserted, changed, skippedFinal, activeRefresh, historyRead, listKey }), ct);
 }

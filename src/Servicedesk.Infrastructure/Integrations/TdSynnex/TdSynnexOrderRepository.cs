@@ -89,6 +89,10 @@ public sealed class TdSynnexSyncStateRow
 {
     public DateTime? DeltaCursorUtc { get; set; }
     public DateTime? LastActiveRefreshUtc { get; set; }
+    /// Earliest order creation date the history read has covered (null = none yet).
+    public DateTime? HistoryFromUtc { get; set; }
+    /// True once every order ever (no creation-date bound) has been read.
+    public bool HistoryComplete { get; set; }
     public DateTime? LastCheckedUtc { get; set; }
     public DateTime? LastSuccessUtc { get; set; }
     public string? LastStatus { get; set; }
@@ -296,6 +300,8 @@ public sealed class TdSynnexOrderRepository : ITdSynnexOrderRepository
         return await conn.QuerySingleOrDefaultAsync<TdSynnexSyncStateRow>(new CommandDefinition("""
             SELECT s.delta_cursor_utc        AS DeltaCursorUtc,
                    s.last_active_refresh_utc AS LastActiveRefreshUtc,
+                   s.history_from_utc        AS HistoryFromUtc,
+                   s.history_complete        AS HistoryComplete,
                    s.last_checked_utc        AS LastCheckedUtc,
                    s.last_success_utc        AS LastSuccessUtc,
                    s.last_status             AS LastStatus,
@@ -314,13 +320,15 @@ public sealed class TdSynnexOrderRepository : ITdSynnexOrderRepository
     {
         await using var conn = await _ds.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition("""
-            INSERT INTO tdsynnex_sync_state (id, delta_cursor_utc, last_active_refresh_utc, last_checked_utc,
-                last_success_utc, last_status, last_error, last_seen, last_upserted, last_changed, duration_ms)
-            VALUES (1, @DeltaCursorUtc, @LastActiveRefreshUtc, @LastCheckedUtc,
-                @LastSuccessUtc, @LastStatus, @LastError, @LastSeen, @LastUpserted, @LastChanged, @DurationMs)
+            INSERT INTO tdsynnex_sync_state (id, delta_cursor_utc, last_active_refresh_utc, history_from_utc, history_complete,
+                last_checked_utc, last_success_utc, last_status, last_error, last_seen, last_upserted, last_changed, duration_ms)
+            VALUES (1, @DeltaCursorUtc, @LastActiveRefreshUtc, @HistoryFromUtc, @HistoryComplete,
+                @LastCheckedUtc, @LastSuccessUtc, @LastStatus, @LastError, @LastSeen, @LastUpserted, @LastChanged, @DurationMs)
             ON CONFLICT (id) DO UPDATE SET
                 delta_cursor_utc        = EXCLUDED.delta_cursor_utc,
                 last_active_refresh_utc = EXCLUDED.last_active_refresh_utc,
+                history_from_utc        = EXCLUDED.history_from_utc,
+                history_complete        = EXCLUDED.history_complete,
                 last_checked_utc        = EXCLUDED.last_checked_utc,
                 last_success_utc        = EXCLUDED.last_success_utc,
                 last_status             = EXCLUDED.last_status,

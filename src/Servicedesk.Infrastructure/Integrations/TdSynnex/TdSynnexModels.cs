@@ -87,8 +87,11 @@ public sealed record TdSynnexLineSplit
 }
 
 /// Status vocabulary. Order statuses are the documented enum; split statuses
-/// are free text in the spec (the example shows <c>SHIPPED</c>), so the
-/// "done" set is a tolerant superset.
+/// are free text in the spec. Seen live (2026-11-20): <c>WITH_VENDOR</c> (not
+/// shipped yet), <c>SHIPPED</c> (by TD SYNNEX, with a delivery note) and
+/// <c>SHIPPED_WITH_VENDOR</c> (drop-shipped by the manufacturer — no delivery
+/// note, only an invoice). Anything starting with SHIPPED/DELIVERED counts as
+/// done, plus a tolerant set of closing statuses.
 public static class TdSynnexStatus
 {
     public const string Open = "OPEN";
@@ -110,8 +113,20 @@ public static class TdSynnexStatus
         "SHIPPED", "DELIVERED", "INVOICED", "COMPLETED", "CLOSED", "CANCELLED", "CANCELED", "REJECTED",
     };
 
-    public static bool IsDoneSplitStatus(string? status) =>
-        status is not null && DoneSplit.Contains(status.Trim());
+    public static bool IsDoneSplitStatus(string? status)
+    {
+        if (status is null) return false;
+        var s = status.Trim();
+        return DoneSplit.Contains(s)
+            || s.StartsWith("SHIPPED", StringComparison.OrdinalIgnoreCase)
+            || s.StartsWith("DELIVERED", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// A completed or rejected order has nothing left to ship, whatever its
+    /// split statuses say.
+    public static bool IsClosed(string? status) =>
+        string.Equals(status?.Trim(), Completed, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status?.Trim(), Rejected, StringComparison.OrdinalIgnoreCase);
 }
 
 /// One page of the order list.

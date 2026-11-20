@@ -97,7 +97,7 @@ export function OrderDetailPanel({
                               <span className={cn("tabular-nums", s.isDone ? "text-muted-foreground" : "text-foreground")}>
                                 {s.shipDate ? formatShipDate(s.shipDate) : s.shipDateRaw ?? "no date"}
                               </span>
-                              <SplitStatusChip status={s.status} done={s.isDone} />
+                              <SplitStatusChip status={s.status} detail={s.statusDetail} done={s.isDone} />
                               {s.shipDateDetails && <span className="text-muted-foreground">{s.shipDateDetails}</span>}
                               {s.deliveryNotes.length > 0 && (
                                 <span className="text-muted-foreground">DN {s.deliveryNotes.join(", ")}</span>

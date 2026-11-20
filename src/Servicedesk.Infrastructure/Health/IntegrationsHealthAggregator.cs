@@ -2,6 +2,7 @@ using Dapper;
 using Npgsql;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Integrations.Sophos;
+using Servicedesk.Infrastructure.Integrations.TdSynnex;
 using Servicedesk.Infrastructure.Integrations.Telavox;
 using Servicedesk.Infrastructure.Integrations.Veeam;
 using Servicedesk.Infrastructure.Integrations.Zammad;
@@ -62,6 +63,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     private readonly ITelavoxAgentLinkStore _telavoxLinks;
     private readonly ISophosStore _sophos;
     private readonly IVeeamStore _veeam;
+    private readonly ITdSynnexOrderRepository _tdSynnex;
     private readonly NpgsqlDataSource _dataSource;
 
     public IntegrationsHealthAggregator(
@@ -72,8 +74,10 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         ITelavoxAgentLinkStore telavoxLinks,
         ISophosStore sophos,
         IVeeamStore veeam,
+        ITdSynnexOrderRepository tdSynnex,
         NpgsqlDataSource dataSource)
     {
+        _tdSynnex = tdSynnex;
         _secrets = secrets;
         _settings = settings;
         _adsolutConnections = adsolutConnections;
@@ -106,6 +110,9 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
 
         var veeam = await BuildVeeamAsync(tz, ct);
         if (veeam is not null) integrations.Add(veeam);
+
+        var tdSynnex = await BuildTdSynnexAsync(tz, ct);
+        if (tdSynnex is not null) integrations.Add(tdSynnex);
 
         var rollup = integrations.Aggregate(HealthStatus.Ok,
             (acc, i) => i.Rollup > acc ? i.Rollup : acc);
@@ -966,6 +973,64 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
             Key: "sophos",
             Name: "Sophos Central",
             LogoKey: "sophos",
+            Rollup: rollup,
+            Checks: checks,
+            Actions: tileActions);
+    }
+
+    // ---- TD SYNNEX (Order Management, v0.1.59) --------------------------
+
+    private async Task<IntegrationHealth?> BuildTdSynnexAsync(TimeZoneInfo tz, CancellationToken ct)
+    {
+        var enabled = await _settings.GetAsync<bool>(SettingKeys.TdSynnex.Enabled, ct);
+        var baseUrl = (await _settings.GetAsync<string>(SettingKeys.TdSynnex.BaseUrl, ct) ?? string.Empty).Trim();
+        var hasClientId = await _secrets.HasAsync(ProtectedSecretKeys.TdSynnexClientId, ct);
+        var hasSecret = await _secrets.HasAsync(ProtectedSecretKeys.TdSynnexClientSecret, ct);
+        if (!enabled || baseUrl.Length == 0 || !hasClientId || !hasSecret)
+        {
+            return null;
+        }
+
+        var interval = Math.Max(10, await _settings.GetAsync<int>(SettingKeys.TdSynnex.SyncIntervalMinutes, ct));
+        var sync = await _tdSynnex.GetSyncStateAsync(ct);
+
+        var connectionCheck = new SubsystemHealth(
+            Key: "tdsynnex-connection",
+            Label: "Connection",
+            Status: HealthStatus.Ok,
+            Summary: "Configured — API client credentials stored.",
+            Details: new[]
+            {
+                new HealthDetail("API", baseUrl),
+                new HealthDetail("Credentials", "Stored (encrypted)"),
+            },
+            Actions: Array.Empty<HealthAction>());
+
+        var counters = new List<HealthDetail>
+        {
+            new("Orders", (sync?.OrderCount ?? 0).ToString()),
+            new("Changed last pass", (sync?.LastChanged ?? 0).ToString()),
+            new("History", sync is null ? "Not read yet"
+                : sync.HistoryComplete ? "All orders"
+                : sync.HistoryFromUtc is { } from ? $"From {HealthTimeFormat.Local(from, tz)}" : "Not read yet"),
+        };
+        var syncCheck = BuildSingletonSyncCheck(
+            "tdsynnex-sync", sync?.LastCheckedUtc,
+            sync?.LastStatus is null or TdSynnexSyncService.StatusOk ? null : sync.LastError ?? sync.LastStatus,
+            interval, counters, tz);
+
+        var checks = new[] { connectionCheck, syncCheck };
+        var rollup = checks.Aggregate(HealthStatus.Ok, (acc, c) => c.Status > acc ? c.Status : acc);
+
+        var tileActions = new List<HealthAction>
+        {
+            new(Key: "tdsynnex-sync-now", Label: "Sync now",
+                Endpoint: "/api/admin/integrations/tdsynnex/sync", ConfirmMessage: null),
+        };
+        return new IntegrationHealth(
+            Key: "tdsynnex",
+            Name: "TD SYNNEX",
+            LogoKey: "tdsynnex",
             Rollup: rollup,
             Checks: checks,
             Actions: tileActions);

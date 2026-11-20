@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
 import microsoftLogo from "@/assets/integrations/microsoft.svg";
 import sophosLogo from "@/assets/integrations/sophos.svg";
+import tdsynnexLogo from "@/assets/integrations/tdsynnex.svg";
 import telavoxLogo from "@/assets/integrations/telavox.svg";
 import veeamLogo from "@/assets/integrations/veeam.svg";
 import zammadLogo from "@/assets/integrations/zammad.svg";
@@ -80,6 +81,7 @@ const LOGOS: Record<string, string> = {
   m365: microsoftLogo,
   sophos: sophosLogo,
   veeam: veeamLogo,
+  tdsynnex: tdsynnexLogo,
 };
 
 const DETAIL_ROUTES: Record<string, string> = {
@@ -89,6 +91,7 @@ const DETAIL_ROUTES: Record<string, string> = {
   m365: "/settings/integrations/m365",
   sophos: "/settings/integrations/sophos",
   veeam: "/settings/integrations/veeam",
+  tdsynnex: "/settings/integrations/tdsynnex",
 };
 
 /// Admin-only dashboard tile. Shows a compact roll-up of every configured

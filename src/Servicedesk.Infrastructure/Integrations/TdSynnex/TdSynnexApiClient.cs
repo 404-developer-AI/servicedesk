@@ -14,6 +14,7 @@ namespace Servicedesk.Infrastructure.Integrations.TdSynnex;
 public sealed record TdSynnexOrderQuery(
     DateTime? ModifiedFromUtc = null,
     DateTime? CreatedFromUtc = null,
+    DateTime? CreatedToUtc = null,
     IReadOnlyList<string>? Statuses = null,
     string? OrderNumber = null);
 
@@ -189,6 +190,7 @@ public sealed class TdSynnexApiClient : ITdSynnexApiClient
         };
         if (q.ModifiedFromUtc is { } m) parts.Add("ModifiedFrom=" + Uri.EscapeDataString(Iso(m)));
         if (q.CreatedFromUtc is { } c) parts.Add("CreatedFrom=" + Uri.EscapeDataString(Iso(c)));
+        if (q.CreatedToUtc is { } until) parts.Add("CreatedTo=" + Uri.EscapeDataString(Iso(until)));
         if (!string.IsNullOrWhiteSpace(q.OrderNumber))
             parts.Add("TdsynnexOrderNumber=" + Uri.EscapeDataString(q.OrderNumber.Trim()));
         foreach (var s in q.Statuses ?? Array.Empty<string>())

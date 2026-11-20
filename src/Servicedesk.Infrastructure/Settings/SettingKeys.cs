@@ -367,7 +367,8 @@ public static class SettingKeys
         /// Minutes between delta syncs (orders modified since the last pass).
         public const string SyncIntervalMinutes = "TdSynnex.SyncIntervalMinutes";
 
-        /// How far back (days) the first sync reads orders.
+        /// How much order history (days, by creation date) is mirrored;
+        /// 0 = every order ever. Widening it reads only the missing stretch.
         public const string InitialSyncDays = "TdSynnex.InitialSyncDays";
 
         /// Minutes between full re-reads of every not-yet-completed order — a
@@ -2700,7 +2701,7 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.TdSynnex.SyncIntervalMinutes, "30", "int", "TD SYNNEX",
             "How often (minutes) orders changed since the previous pass are read. Floor 10 — set lower and the worker clamps."),
         new SettingDefault(SettingKeys.TdSynnex.InitialSyncDays, "90", "int", "TD SYNNEX",
-            "How far back (days) the very first sync reads orders. Later passes only read what changed. Clamped to [1, 730]."),
+            "How much order history (days, by order date) is read into Order Management. 0 = every order ever, completed ones included. Raising it later reads only the missing older orders. Orders already in the list as completed are not read again unless TD SYNNEX changes them (for example a late invoice). Clamped to [0, 3650]."),
         new SettingDefault(SettingKeys.TdSynnex.ActiveRefreshMinutes, "360", "int", "TD SYNNEX",
             "How often (minutes) every order that is not completed or rejected is re-read in full, in case a ship-date change did not update the order's modification date. Floor 60."),
         new SettingDefault(SettingKeys.TdSynnex.ChangeRetentionDays, "365", "int", "TD SYNNEX",

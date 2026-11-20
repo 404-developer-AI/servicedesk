@@ -14,10 +14,13 @@ export function OrderStatusChip({ status, className }: { status: TdOrderStatus |
   );
 }
 
-/// A split-delivery status from TD SYNNEX (free text, e.g. SHIPPED).
-export function SplitStatusChip({ status, done }: { status: string | null; done: boolean }) {
+/// A split-delivery status from TD SYNNEX (e.g. WITH_VENDOR, SHIPPED,
+/// SHIPPED_WITH_VENDOR). Shows TD SYNNEX's own description when it sends one
+/// ("Shipped with Vendor"), else the code in sentence case.
+export function SplitStatusChip({ status, detail, done }: { status: string | null; detail?: string | null; done: boolean }) {
   const tone: Tone = done ? "success" : status ? "info" : "neutral";
-  const label = status ? status.charAt(0) + status.slice(1).toLowerCase() : "—";
+  const code = status ? status.replace(/_/g, " ") : null;
+  const label = detail?.trim() || (code ? code.charAt(0) + code.slice(1).toLowerCase() : "—");
   return (
     <span className={cn("inline-flex items-center rounded-md border px-1.5 py-px text-[10px] font-medium", TONE_CLASSES[tone])}>
       {label}

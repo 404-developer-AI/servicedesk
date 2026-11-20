@@ -24,6 +24,8 @@ import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditL
 import tdsynnexLogo from "@/assets/integrations/tdsynnex.svg";
 import { cn } from "@/lib/utils";
 import { formatTimeAgo } from "@/lib/format";
+import { formatDate } from "@/lib/dateFormat";
+import { useServerTimeZone } from "@/hooks/useServerTime";
 
 const STATUS_QK = ["integrations", "tdsynnex", "status"] as const;
 
@@ -56,6 +58,7 @@ function relativeFromUtc(iso: string | null | undefined): string | null {
 export function TdSynnexIntegrationPage() {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: STATUS_QK, queryFn: tdSynnexAdminApi.status });
+  const zone = useServerTimeZone();
 
   const [clientIdDraft, setClientIdDraft] = useState("");
   const [secretDraft, setSecretDraft] = useState("");
@@ -171,7 +174,9 @@ export function TdSynnexIntegrationPage() {
   const connectionDirty =
     !!data && (baseUrlDraft.trim() !== data.baseUrl || tokenUrlDraft.trim() !== data.tokenUrl);
   const scheduleValid =
-    Number(intervalDraft) >= 10 && Number(initialDaysDraft) >= 1 && Number(initialDaysDraft) <= 730 && Number(activeDraft) >= 60;
+    Number(intervalDraft) >= 10 &&
+    initialDaysDraft.trim() !== "" && Number(initialDaysDraft) >= 0 && Number(initialDaysDraft) <= 3650 &&
+    Number(activeDraft) >= 60;
   const scheduleDirty =
     !!data &&
     (Number(intervalDraft) !== data.syncIntervalMinutes ||
@@ -191,8 +196,8 @@ export function TdSynnexIntegrationPage() {
           >
             <ArrowLeft className="h-3 w-3" /> Integrations
           </Link>
-          <div className="mb-2 flex h-10 w-20 items-center justify-center rounded-lg border border-glass-strong bg-glass">
-            <img src={tdsynnexLogo} alt="" aria-hidden className="h-6 w-auto" />
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg border border-glass-strong bg-glass">
+            <img src={tdsynnexLogo} alt="" aria-hidden className="h-6 w-6" />
           </div>
           <h1 className="text-display-md font-semibold text-foreground">TD SYNNEX</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
@@ -353,9 +358,12 @@ export function TdSynnexIntegrationPage() {
           <Clock className="h-4 w-4 text-primary" /> Sync schedule
         </div>
         <p className="max-w-2xl text-xs text-muted-foreground">
-          Every interval, orders changed since the previous pass are read. The first sync reads the
-          orders of the last <em>initial days</em>. As a safety net, every order that is not yet
-          completed is re-read in full at the <em>active refresh</em> interval.
+          Every interval, orders changed since the previous pass are read. <em>History</em> sets how
+          many days of orders (by order date) are kept in the list; <code>0</code> reads every order
+          ever, completed ones included. Raising it later only reads the missing older orders. An order
+          that is already in the list as completed is not read again — unless TD SYNNEX changes it
+          (for example a late invoice). As a safety net, every order that is not yet completed is
+          re-read in full at the <em>active refresh</em> interval.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <label className="space-y-1.5">
@@ -363,8 +371,8 @@ export function TdSynnexIntegrationPage() {
             <Input type="number" min={10} max={1440} value={intervalDraft} onChange={(e) => setIntervalDraft(e.target.value)} className="w-36" />
           </label>
           <label className="space-y-1.5">
-            <span className="text-[11px] font-medium text-muted-foreground">Initial days (1–730)</span>
-            <Input type="number" min={1} max={730} value={initialDaysDraft} onChange={(e) => setInitialDaysDraft(e.target.value)} className="w-36" />
+            <span className="text-[11px] font-medium text-muted-foreground">History (days, 0 = all)</span>
+            <Input type="number" min={0} max={3650} value={initialDaysDraft} onChange={(e) => setInitialDaysDraft(e.target.value)} className="w-36" />
           </label>
           <label className="space-y-1.5">
             <span className="text-[11px] font-medium text-muted-foreground">Active refresh (minutes, min 60)</span>
@@ -391,6 +399,15 @@ export function TdSynnexIntegrationPage() {
                   <span className="text-muted-foreground/70">
                     {" "}
                     · last pass {data.lastSeen} read, {data.lastChanged} changed
+                  </span>
+                  <span className="text-muted-foreground/70">
+                    {" "}
+                    · history{" "}
+                    {data.historyComplete
+                      ? "complete (all orders)"
+                      : data.historyFromUtc
+                        ? `from ${formatDate(data.historyFromUtc, zone)}`
+                        : "not read yet"}
                   </span>
                 </>
               ) : (

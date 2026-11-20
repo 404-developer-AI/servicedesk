@@ -180,6 +180,10 @@ export interface TdSynnexStatus {
   lastCheckedUtc: string | null;
   lastSuccessUtc: string | null;
   lastActiveRefreshUtc: string | null;
+  /** Earliest order date already read into the mirror (null = nothing yet). */
+  historyFromUtc: string | null;
+  /** Every order ever has been read (history setting 0). */
+  historyComplete: boolean;
   lastStatus: string | null;
   lastError: string | null;
   lastSeen: number;
