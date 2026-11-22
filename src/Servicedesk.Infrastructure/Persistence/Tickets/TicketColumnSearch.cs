@@ -33,6 +33,9 @@ public static class TicketColumnSearch
 
     public static bool IsSearchable(string columnId) => FieldMap.ContainsKey(columnId);
 
+    /// The whitelisted column ids — read by the client/server lockstep test.
+    internal static IEnumerable<string> SearchableColumnIds => FieldMap.Keys;
+
     /// Keeps only whitelisted, distinct column ids, in the given order.
     public static IReadOnlyList<string> FilterFields(IEnumerable<string>? ids) =>
         ids is null

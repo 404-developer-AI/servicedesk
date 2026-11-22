@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { floatBucket, ticketRowAccentStyle } from "./ticketFlags";
+import floatCases from "./ticketFloatCases.json";
 
 const allFloats = { priorityFloat: true, callbackFloat: true, researchFloat: true };
 const colors = { callback: "#22c55e", research: "#3b82f6" };
@@ -63,4 +64,17 @@ describe("ticketRowAccentStyle", () => {
     expect(s.boxShadow).toContain("#ef4444");
     expect(s.backgroundImage).toContain("#ef4444");
   });
+});
+
+// Lockstep with the server: the same cases drive TicketFloatLockstepDbTests
+// against the real ORDER BY in TicketRepository.SearchAsync.
+describe("floatBucket matches the shared server cases", () => {
+  for (const view of floatCases.views) {
+    it(`view "${view.name}"`, () => {
+      for (const ticket of floatCases.tickets) {
+        const expected = (view.expected as Record<string, number | null>)[ticket.name];
+        expect(floatBucket(ticket, view), ticket.name).toBe(expected);
+      }
+    });
+  }
 });

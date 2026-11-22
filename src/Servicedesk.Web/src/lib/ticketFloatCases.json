@@ -1,0 +1,39 @@
+{
+  "description": "Shared lockstep cases for the ticket float order (CLAUDE.md: Priority > Call-back > Research, only New/Open float, a ticket lands in the first enabled bucket it qualifies for). Read by ticketFlags.test.ts (client floatBucket) and by Servicedesk.Api.Tests TicketFloatLockstepDbTests (server ORDER BY in TicketRepository.SearchAsync). Change both sides together; bucket 0 = Priority, 1 = Call-back, 2 = Research, null = normal order.",
+  "tickets": [
+    { "name": "prio-callback-research", "priorityIsDefault": false, "isCallback": true, "isResearch": true, "statusStateCategory": "Open" },
+    { "name": "prio-only", "priorityIsDefault": false, "isCallback": false, "isResearch": false, "statusStateCategory": "Open" },
+    { "name": "callback-research", "priorityIsDefault": true, "isCallback": true, "isResearch": true, "statusStateCategory": "Open" },
+    { "name": "callback-new", "priorityIsDefault": true, "isCallback": true, "isResearch": false, "statusStateCategory": "New" },
+    { "name": "research-only", "priorityIsDefault": true, "isCallback": false, "isResearch": true, "statusStateCategory": "Open" },
+    { "name": "prio-pending", "priorityIsDefault": false, "isCallback": true, "isResearch": true, "statusStateCategory": "Pending" },
+    { "name": "plain", "priorityIsDefault": true, "isCallback": false, "isResearch": false, "statusStateCategory": "Open" }
+  ],
+  "views": [
+    {
+      "name": "all floats",
+      "priorityFloat": true, "callbackFloat": true, "researchFloat": true,
+      "expected": { "prio-callback-research": 0, "prio-only": 0, "callback-research": 1, "callback-new": 1, "research-only": 2, "prio-pending": null, "plain": null }
+    },
+    {
+      "name": "call-back and research",
+      "priorityFloat": false, "callbackFloat": true, "researchFloat": true,
+      "expected": { "prio-callback-research": 1, "prio-only": null, "callback-research": 1, "callback-new": 1, "research-only": 2, "prio-pending": null, "plain": null }
+    },
+    {
+      "name": "research only",
+      "priorityFloat": false, "callbackFloat": false, "researchFloat": true,
+      "expected": { "prio-callback-research": 2, "prio-only": null, "callback-research": 2, "callback-new": null, "research-only": 2, "prio-pending": null, "plain": null }
+    },
+    {
+      "name": "priority only",
+      "priorityFloat": true, "callbackFloat": false, "researchFloat": false,
+      "expected": { "prio-callback-research": 0, "prio-only": 0, "callback-research": null, "callback-new": null, "research-only": null, "prio-pending": null, "plain": null }
+    },
+    {
+      "name": "priority and research",
+      "priorityFloat": true, "callbackFloat": false, "researchFloat": true,
+      "expected": { "prio-callback-research": 0, "prio-only": 0, "callback-research": 2, "callback-new": null, "research-only": 2, "prio-pending": null, "plain": null }
+    }
+  ]
+}

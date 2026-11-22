@@ -203,7 +203,7 @@ public sealed class TriggerSchedulerWorker : BackgroundService
         return clears;
     }
 
-    private static async Task RunEscalationsAsync(
+    internal static async Task RunEscalationsAsync(
         ITriggerRepository repo, ITriggerService triggerService, ISettingsService settings,
         ISlaEngine sla, CancellationToken ct)
     {
