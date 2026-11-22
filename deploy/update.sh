@@ -2,7 +2,8 @@
 # update.sh — one-liner production updater for Servicedesk.
 #
 # Safe path for upgrading a live install:
-#   1. pre-update backup (default: YES, --no-backup to skip)
+#   1. pre-update backup (default: YES, --no-backup to skip) — checks its own disk room
+#      then: at least UPDATE_MIN_FREE_GB (5) free for the build, before anything changes
 #   2. git fetch + checkout target ref (default: latest v* tag)
 #   3. diff .env.example against secrets.env → prompt for any new required vars
 #   4. docker compose build app (new image)
@@ -666,6 +667,28 @@ print_summary() {
 }
 
 # ===========================================================================
+# Disk space for the build — checked after the pre-update backup (which
+# checks its own room) and before anything is fetched, so a refusal changes
+# nothing: same git ref, old app still running. UPDATE_MIN_FREE_GB tunes it.
+# ===========================================================================
+check_build_space() {
+    local min_gb="${UPDATE_MIN_FREE_GB:-5}" root avail
+    [[ "$min_gb" =~ ^[0-9]+$ ]] || die "UPDATE_MIN_FREE_GB must be a whole number of GB (got '${min_gb}')."
+    root="$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)"
+    avail="$(df -B1 --output=avail "$root" 2>/dev/null | tail -1 | tr -d ' ')"
+    if [[ ! "$avail" =~ ^[0-9]+$ ]]; then
+        warn "Could not read the free space on ${root} — skipping the build space check."
+        return
+    fi
+    local avail_gb
+    avail_gb="$(awk -v b="$avail" 'BEGIN { printf "%.1f", b / 1073741824 }')"
+    if (( avail < min_gb * 1073741824 )); then
+        die "Only ${avail_gb} GB free on ${root}; building the new version needs at least ${min_gb} GB. Nothing changed. Free space (e.g. docker builder prune -f) and run the update again."
+    fi
+    ok "Disk space for the build: ${avail_gb} GB free (needs ${min_gb} GB)."
+}
+
+# ===========================================================================
 # Docker cleanup — only after a successful update. Every update builds the
 # app image on this host; without pruning the build cache and the superseded
 # images pile up release after release (prod reached 25 GB of build cache).
@@ -674,7 +697,9 @@ print_summary() {
 # ===========================================================================
 prune_docker() {
     log "Pruning old Docker images and build cache …"
-    docker image prune -f >/dev/null 2>&1 || warn "docker image prune failed — skipped."
+    # -a: superseded app images keep their version tag (servicedesk/app:0.1.x),
+    # so they are never "dangling"; remove every unused image older than a week.
+    docker image prune -a -f --filter until=168h >/dev/null 2>&1 || warn "docker image prune failed — skipped."
     docker builder prune -f --filter until=168h >/dev/null 2>&1 || warn "docker builder prune failed — skipped."
     ok "Docker cleanup done."
     docker system df 2>/dev/null || true
@@ -689,6 +714,7 @@ main() {
     hr
     preflight
     run_backup
+    check_build_space
     snapshot_current_state
     fetch_and_checkout
     reconcile_env_vars

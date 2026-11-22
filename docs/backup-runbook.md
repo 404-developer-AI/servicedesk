@@ -54,6 +54,12 @@ Hardlinks only work within one filesystem. If the backup root is on a filesystem
 sudo BACKUP_RETAIN=30 /opt/servicedesk/deploy/backup.sh
 ```
 
+### Disk space
+
+Before writing anything, `backup.sh` works out what this backup needs — the database dump (the previous dump plus 25 %, or the database size for a first backup) plus the stored files the previous backup does not have yet — and checks that `BACKUP_MIN_FREE_PERCENT` of the disk (default `10`) stays free afterwards. On a default install PostgreSQL lives on the same disk and must never run out. If there is not enough room it stops without writing and says how much it needs; free space, lower `BACKUP_RETAIN` or point `BACKUP_ROOT` at another disk. A backup that fails halfway removes its incomplete directory.
+
+`update.sh` stops when its pre-update backup fails, and then also checks that at least `UPDATE_MIN_FREE_GB` (default `5`) is free for building the new version. Both checks run before anything changes: on a refusal the running version stays as it is.
+
 ## Automating backups with cron
 
 ```bash
@@ -81,7 +87,7 @@ sudo /opt/servicedesk/deploy/restore.sh /var/backups/servicedesk/2026-04-20T12-3
 ```
 
 The script:
-1. Prints the backup manifest and requires you to type `RESTORE` to confirm.
+1. Checks the dump is a complete, readable archive (`pg_restore --list`) — a bad dump stops it before anything changes — then prints the backup manifest and requires you to type `RESTORE` to confirm.
 2. Stops ONLY the app container — nginx stays up so visitors see a 502 instead of a connection refused.
 3. Kills lingering Postgres sessions to the target DB, drops + recreates it.
 4. `pg_restore --no-owner --role=<db_user> -d servicedesk`.
