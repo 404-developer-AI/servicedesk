@@ -10,7 +10,8 @@
 #   6. wait for health
 #   7. ON FAILURE → automatic rollback to previous git ref + rebuild + start
 #   8. pull the nginx image + recreate it if the image or template changed
-#   9. re-apply REVOKE UPDATE, DELETE ON audit_log (idempotent)
+#   9. prune superseded images + build cache older than a week
+#  10. re-apply REVOKE UPDATE, DELETE ON audit_log (idempotent)
 #
 # Data-loss guarantees:
 #   • Postgres stays native on host — never touched by this script.
@@ -665,6 +666,21 @@ print_summary() {
 }
 
 # ===========================================================================
+# Docker cleanup — only after a successful update. Every update builds the
+# app image on this host; without pruning the build cache and the superseded
+# images pile up release after release (prod reached 25 GB of build cache).
+# A week of build cache is kept so the next build stays fast; a rollback
+# rebuilds from git and never needs an old image. Never fails the update.
+# ===========================================================================
+prune_docker() {
+    log "Pruning old Docker images and build cache …"
+    docker image prune -f >/dev/null 2>&1 || warn "docker image prune failed — skipped."
+    docker builder prune -f --filter until=168h >/dev/null 2>&1 || warn "docker builder prune failed — skipped."
+    ok "Docker cleanup done."
+    docker system df 2>/dev/null || true
+}
+
+# ===========================================================================
 # main
 # ===========================================================================
 main() {
@@ -685,6 +701,7 @@ main() {
         exit 1
     fi
     update_nginx
+    prune_docker
     reapply_audit_log_revoke
     backfill_public_base_url
     print_summary

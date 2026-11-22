@@ -110,7 +110,7 @@ sudo /opt/servicedesk/deploy/backup.sh
 sudo /opt/servicedesk/deploy/restore.sh /var/backups/servicedesk/<timestamp>
 ```
 
-A backup holds the database and the stored files together, so a restore is always consistent. Unchanged files are shared with the previous backup, and the newest 14 backups are kept (`BACKUP_RETAIN`). See the [backup runbook](docs/backup-runbook.md).
+A backup holds the database and the stored files together, so a restore is always consistent. Unchanged files are shared with the previous backup, and the newest 14 backups are kept (`BACKUP_RETAIN`). Keep backups off the server's own disk — `sudo BACKUP_ROOT=/mnt/backup/servicedesk /opt/servicedesk/deploy/backup.sh` — so they survive losing it. See the [backup runbook](docs/backup-runbook.md).
 
 ## Local development
 

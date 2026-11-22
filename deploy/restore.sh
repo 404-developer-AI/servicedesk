@@ -31,6 +31,10 @@ BACKUP_DIR="${1:-}"
 [[ -n "$BACKUP_DIR" ]] || { echo "Usage: restore.sh <backup-dir>" >&2; exit 1; }
 [[ -d "$BACKUP_DIR" ]] || { echo "[✗] Backup dir not found: ${BACKUP_DIR}" >&2; exit 1; }
 [[ -f "${BACKUP_DIR}/servicedesk.dump" ]] || { echo "[✗] ${BACKUP_DIR}/servicedesk.dump missing." >&2; exit 1; }
+# The database is dropped further down — make sure the dump is a readable,
+# complete pg_dump archive first, so a bad dump can never leave no database.
+sudo -u postgres pg_restore --list < "${BACKUP_DIR}/servicedesk.dump" > /dev/null \
+    || { echo "[✗] ${BACKUP_DIR}/servicedesk.dump is not a valid pg_dump archive — nothing changed." >&2; exit 1; }
 
 INSTALL_DIR="${INSTALL_DIR:-$INSTALL_DIR_DEFAULT}"
 [[ -f "$SECRETS_FILE" ]] || { echo "[✗] ${SECRETS_FILE} missing — cannot read app role." >&2; exit 1; }
@@ -63,7 +67,9 @@ sudo -u postgres psql -c "CREATE DATABASE ${PG_APP_DB} OWNER \"${DB_USER}\";"
 
 # ---- 3. pg_restore ------------------------------------------------------
 echo "[i] Restoring ${BACKUP_DIR}/servicedesk.dump …"
-sudo -u postgres pg_restore --no-owner --role="${DB_USER}" -d "${PG_APP_DB}" "${BACKUP_DIR}/servicedesk.dump"
+# Root reads the dump and feeds it on stdin: backup directories are root-only
+# (700), so pg_restore running as postgres cannot open the file itself.
+sudo -u postgres pg_restore --no-owner --role="${DB_USER}" -d "${PG_APP_DB}" < "${BACKUP_DIR}/servicedesk.dump"
 
 # ---- 4. re-apply REVOKE -------------------------------------------------
 echo "[i] Re-applying audit_log REVOKE …"

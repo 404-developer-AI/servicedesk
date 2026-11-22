@@ -56,7 +56,9 @@ chmod 700 "${BACKUP_ROOT}" "${dest}"
 echo "[i] Dumping Postgres database '${PG_APP_DB}' as role ${DB_USER} …"
 # v0.1.24 — performance-monitoring tables (perf_*) are dumped structure-only:
 # their data is re-collected within minutes and would only bloat every backup.
-sudo -u postgres pg_dump -Fc -d "${PG_APP_DB}" --exclude-table-data='perf_*' -f "${dest}/servicedesk.dump"
+# The dump goes to stdout and root writes the file: ${dest} is root-only
+# (700), so pg_dump running as postgres cannot open a file in it itself.
+sudo -u postgres pg_dump -Fc -d "${PG_APP_DB}" --exclude-table-data='perf_*' > "${dest}/servicedesk.dump"
 pg_size="$(du -h "${dest}/servicedesk.dump" | awk '{print $1}')"
 echo "[✓] Postgres dump: ${pg_size}"
 
