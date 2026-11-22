@@ -166,7 +166,10 @@ public sealed record UserAdminRow(
     bool FeedbackEnabled = false,
     bool FeedbackOwnOnly = false,
     bool InsightsEnabled = false,
-    bool OrderManagementEnabled = false)
+    bool OrderManagementEnabled = false,
+    bool CalendarPlanningEnabled = false,
+    string? CalendarId = null,
+    string? CalendarName = null)
 {
     /// Per-user Dashboard tile preferences sourced from
     /// `user_dashboard_tiles`. Empty list = no tiles enabled
@@ -290,7 +293,10 @@ public sealed record FeatureFlagsUpdate(
     bool? FeedbackEnabled = null,
     bool? FeedbackOwnOnly = null,
     bool? InsightsEnabled = null,
-    bool? OrderManagementEnabled = null);
+    bool? OrderManagementEnabled = null,
+    bool? CalendarPlanningEnabled = null,
+    string? CalendarId = null,
+    string? CalendarName = null);
 
 public abstract record UpdateFeatureFlagsResult
 {

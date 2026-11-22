@@ -116,6 +116,10 @@ public interface IUserService
     /// missing rows.
     Task<bool> GetBackofficeFormsEnabledAsync(Guid userId, CancellationToken ct = default);
 
+    /// v0.1.61 — per-user "Plan in calendars": may save forms that create
+    /// Outlook appointments. The access boundary for calendar planning.
+    Task<bool> GetCalendarPlanningEnabledAsync(Guid userId, CancellationToken ct = default);
+
     /// v0.1.59 — per-user opt-in for Order Management (TD SYNNEX orders:
     /// dashboard, ticket links, order chip). The access boundary for the
     /// whole feature, admins included. Fail-closed default for fakes.
@@ -186,6 +190,7 @@ public interface IUserService
             feedback)
         {
             OrderManagementEnabled = await GetOrderManagementEnabledAsync(userId, ct),
+            CalendarPlanningEnabled = await GetCalendarPlanningEnabledAsync(userId, ct),
         };
     }
 
@@ -242,6 +247,9 @@ public sealed record UserFeatureFlags(
 {
     /// v0.1.59 — Order Management (TD SYNNEX orders).
     public bool OrderManagementEnabled { get; init; }
+
+    /// v0.1.61 — "Plan in calendars".
+    public bool CalendarPlanningEnabled { get; init; }
 }
 
 public readonly record struct TimesheetFlags(bool Enabled, bool Manager)
@@ -615,6 +623,15 @@ public sealed class UserService : IUserService
         return value ?? false;
     }
 
+    public async Task<bool> GetCalendarPlanningEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT calendar_planning_enabled FROM users WHERE id = @id AND is_active = TRUE";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
+    }
+
     public async Task<bool> GetBackofficeFormsEnabledAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = "SELECT backoffice_forms_enabled FROM users WHERE id = @id";
@@ -699,7 +716,8 @@ public sealed class UserService : IUserService
                    COALESCE(insights_enabled, FALSE)             AS InsightsEnabled,
                    COALESCE(feedback_enabled, FALSE)             AS FeedbackEnabled,
                    COALESCE(feedback_own_only, FALSE)            AS FeedbackOwnOnly,
-                   COALESCE(order_management_enabled, FALSE)     AS OrderManagementEnabled
+                   COALESCE(order_management_enabled, FALSE)     AS OrderManagementEnabled,
+                   COALESCE(calendar_planning_enabled, FALSE)    AS CalendarPlanningEnabled
             FROM users WHERE id = @id
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
@@ -729,6 +747,7 @@ public sealed class UserService : IUserService
             new FeedbackAccessInfo(r.FeedbackEnabled, r.FeedbackOwnOnly))
         {
             OrderManagementEnabled = r.OrderManagementEnabled,
+            CalendarPlanningEnabled = r.CalendarPlanningEnabled,
         };
     }
 
@@ -753,6 +772,7 @@ public sealed class UserService : IUserService
         public bool FeedbackEnabled { get; set; }
         public bool FeedbackOwnOnly { get; set; }
         public bool OrderManagementEnabled { get; set; }
+        public bool CalendarPlanningEnabled { get; set; }
     }
 
     public async Task<FeedbackAccessInfo> GetFeedbackAccessAsync(Guid userId, CancellationToken ct = default)

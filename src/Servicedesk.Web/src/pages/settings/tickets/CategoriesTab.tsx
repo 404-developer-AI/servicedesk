@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -62,6 +63,11 @@ export function CategoriesTab() {
                   <td className="px-4 py-3 text-foreground">
                     <div className="flex items-center gap-2">
                       {c.name}
+                      {c.isLocked && (
+                        <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
+                          Locked
+                        </Badge>
+                      )}
                       {c.isSystem && (
                         <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                           system
@@ -156,6 +162,7 @@ function CategoryDialog({
     description: category?.description ?? "",
     sortOrder: category?.sortOrder ?? 0,
     isActive: category?.isActive ?? true,
+    isLocked: category?.isLocked ?? false,
   }));
 
   const save = useMutation({
@@ -229,6 +236,19 @@ function CategoryDialog({
               onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
             />
             Active
+          </label>
+          <label className="flex items-start gap-3">
+            <Switch
+              className="mt-0.5"
+              checked={form.isLocked}
+              onCheckedChange={(v) => setForm((f) => ({ ...f, isLocked: v }))}
+            />
+            <span className="space-y-0.5">
+              <span className="block text-sm">Locked</span>
+              <span className="block text-[11px] text-muted-foreground/70">
+                Tickets in this category are handled via Back office forms. Agents see a banner on the ticket and the status, queue, priority and owner fields are greyed out; adding a note is always allowed. This is a guide, not an access rule.
+              </span>
+            </span>
           </label>
         </div>
         <DialogFooter>

@@ -570,6 +570,8 @@ export type TicketFieldUpdate = {
   statusId?: string;
   priorityId?: string;
   categoryId?: string;
+  /// v0.1.61 — set true to clear the category (categoryId omitted).
+  clearCategory?: boolean;
   assigneeUserId?: string;
   /// v0.0.78 — set true to clear the assignee. A null/omitted
   /// assigneeUserId reads as "no change" on the server, so unassigning
@@ -818,6 +820,9 @@ export type DisplayConfig = {
   /// until the agent picks one (remembered per agent per view).
   searchEnabled?: boolean;
   searchDefaultMode?: ViewSearchMode;
+  /// v0.1.61 — categories that get their own tab, in tab order; every other
+  /// ticket of the view sits in the default "Other" tab. Client-side only.
+  tabCategoryIds?: string[];
 };
 
 export type View = {
@@ -1641,6 +1646,11 @@ export type UserAdminRow = {
   backofficeFormsEnabled: boolean;
   // v0.1.59 — per-user opt-in for Order Management (TD SYNNEX orders).
   orderManagementEnabled: boolean;
+  // v0.1.61 — per-user "Plan in calendars" opt-in + the Outlook calendar
+  // that receives the user's planned appointments (null = default calendar).
+  calendarPlanningEnabled: boolean;
+  calendarId: string | null;
+  calendarName: string | null;
   // v0.0.59 — per-user opt-in for the Adsolut Orders feature.
   adsolutOrdersEnabled: boolean;
   // v0.0.69 — per-user opt-in for the Statistics feature. read = view
@@ -1680,7 +1690,23 @@ export type FeatureFlagsUpdate = Partial<{
   feedbackEnabled: boolean;
   feedbackOwnOnly: boolean;
   orderManagementEnabled: boolean;
+  calendarPlanningEnabled: boolean;
+  /// Empty string clears (default calendar).
+  calendarId: string;
+  calendarName: string;
 }>;
+
+export type UserCalendarOption = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  canEdit: boolean;
+};
+
+export type UserCalendarsResponse = {
+  items: UserCalendarOption[];
+  error?: string;
+};
 
 export type M365PickerUser = {
   oid: string;
@@ -1764,6 +1790,11 @@ export const adminUserApi = {
       `/api/admin/users/${userId}/feature-flags`,
       update,
     ),
+
+  /// Outlook calendars of one user (Graph). On a Graph failure the server
+  /// returns an empty list plus an `error` text.
+  listCalendars: (userId: string) =>
+    request<UserCalendarsResponse>("GET", `/api/admin/users/${userId}/calendars`),
 
   // Replace the full set of enabled Dashboard tile-ids for one user.
   // Unknown ids cause a 400; sending an empty array clears the set.

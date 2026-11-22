@@ -146,6 +146,13 @@ public static class DependencyInjection
         services.AddSingleton<IActivityRecorder, ActivityRecorder>();
         services.AddSingleton<IActivityFeedQuery, ActivityFeedQuery>();
         services.AddHostedService<ActivityListenerWorker>();
+
+        // v0.1.61 — Outlook calendar planning from forms.
+        services.AddSingleton<Calendar.IGraphCalendarClient, Calendar.GraphCalendarClient>();
+        services.AddSingleton<Calendar.ICalendarSyncRepository, Calendar.CalendarSyncRepository>();
+        services.AddSingleton<Calendar.CalendarSyncSignal>();
+        services.AddScoped<Calendar.ICalendarSyncService, Calendar.CalendarSyncService>();
+        services.AddHostedService<Calendar.CalendarSyncWorker>();
         services.AddHostedService<ActivityRetentionWorker>();
         services.AddSingleton<IRetentionHealth, RetentionHealth>();
         services.AddHostedService<RetentionWorker>();
@@ -668,6 +675,8 @@ public static class DependencyInjection
         services.AddSingleton<SystemFieldMutator>();
         services.AddSingleton<ITriggerActionHandler, SetQueueHandler>();
         services.AddSingleton<ITriggerActionHandler, SetPriorityHandler>();
+        services.AddSingleton<ITriggerActionHandler, SetCategoryHandler>();
+        services.AddSingleton<ITriggerActionHandler, HandleBackofficeFormHandler>();
         services.AddSingleton<ITriggerActionHandler, SetStatusHandler>();
         services.AddSingleton<ITriggerActionHandler, SetOwnerHandler>();
         services.AddSingleton<ITriggerActionHandler, SetPendingTillHandler>();
@@ -696,6 +705,8 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerActionPreviewDispatcher, TriggerActionPreviewDispatcher>();
         services.AddSingleton<ITriggerActionPreviewer, SetQueuePreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, SetPriorityPreviewer>();
+        services.AddSingleton<ITriggerActionPreviewer, SetCategoryPreviewer>();
+        services.AddSingleton<ITriggerActionPreviewer, HandleBackofficeFormPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, SetStatusPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, SetOwnerPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, SetPendingTillPreviewer>();

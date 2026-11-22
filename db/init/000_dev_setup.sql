@@ -5,9 +5,9 @@
 -- psql -U postgres -f db/init/000_dev_setup.sql
 
 CREATE ROLE servicedesk_app WITH LOGIN PASSWORD 'CHANGE_ME_LOCAL_DEV';
-CREATE DATABASE servicedesk_dev WITH OWNER servicedesk_app ENCODING 'UTF8';
+CREATE DATABASE servicedesk_demo WITH OWNER servicedesk_app ENCODING 'UTF8';
 
-\connect servicedesk_dev
+\connect servicedesk_demo
 
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
 GRANT USAGE, CREATE ON SCHEMA public TO servicedesk_app;

@@ -33,6 +33,10 @@ public static class TriggerValidator
     public static readonly IReadOnlySet<string> ActionKinds = new HashSet<string>(StringComparer.Ordinal)
     {
         "set_queue", "set_priority", "set_status", "set_owner", "set_pending_till",
+        // v0.1.61 — sets or clears the ticket category (phase marker).
+        "set_category",
+        // v0.1.61 — marks open back-office forms of chosen templates handled.
+        "handle_backoffice_form",
         "add_internal_note", "add_public_note", "repost_as_public_reply",
         "send_mail",
         "send_survey",
@@ -471,6 +475,9 @@ public static class TriggerValidator
                 return RequireGuid(action, "queue_id");
             case "set_priority":
                 return RequireGuid(action, "priority_id");
+            case "set_category":
+                // category_id may be explicit null (clear the category).
+                return RequireGuidOrNull(action, "category_id");
             case "set_status":
                 return RequireGuid(action, "status_id");
             case "set_owner":
@@ -488,6 +495,8 @@ public static class TriggerValidator
                 return "requires non-empty 'body_html' or 'body_text'.";
             case "notify_agent":
                 return NotifyAgentAction.Validate(action);
+            case "handle_backoffice_form":
+                return HandleBackofficeFormAction.Validate(action);
             case "repost_as_public_reply":
                 // Carries no admin-typed payload — the handler reads the
                 // triggering article's body verbatim. Surface a clean save

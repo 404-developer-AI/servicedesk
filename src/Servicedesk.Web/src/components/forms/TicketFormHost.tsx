@@ -2,10 +2,12 @@ import * as React from "react";
 import { toast } from "sonner";
 import {
   FILL_FORM_EVENT,
+  FORM_SAVED_EVENT,
   OPEN_FORM_EVENT,
   formApiError,
   ticketFormsApi,
   type FillFormDetail,
+  type FormSavedDetail,
   type TicketFormDetail,
 } from "@/lib/forms-api";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
@@ -103,7 +105,13 @@ export function TicketFormHost({ ticketId, ticketNumber }: { ticketId: string; t
         target={fill}
         ticketNumber={ticketNumber}
         onOpenChange={(o) => { if (!o) setFill(null); }}
-        onSaved={(saved) => setViewId(fill?.mode === "edit" ? saved.id : null)}
+        onSaved={(saved) => {
+          const mode = fill?.mode ?? "create";
+          setViewId(mode === "edit" ? saved.id : null);
+          window.dispatchEvent(new CustomEvent<FormSavedDetail>(FORM_SAVED_EVENT, {
+            detail: { ticketId, templateId: saved.templateId ?? null, mode },
+          }));
+        }}
       />
     </>
   );

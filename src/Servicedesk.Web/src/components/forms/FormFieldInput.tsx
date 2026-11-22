@@ -8,12 +8,13 @@ import { useServerNowMs, useServerOffsetMinutes, useServerTimeZone } from "@/hoo
 import { userApi } from "@/lib/ticket-api";
 import { agentQueueApi } from "@/lib/api";
 import { ticketFormsApi, type FormField } from "@/lib/forms-api";
-import { liveOrders, newRowKey, plainTextToHtml, type ArticleDraftRow, type DraftValue } from "@/lib/formDraft";
+import { liveOrders, newRowKey, parseDuration, plainTextToHtml, type ArticleDraftRow, type DraftValue } from "@/lib/formDraft";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import type { IntakeMentionItem } from "@/components/intake/IntakeMentionList";
 import { PlainTextPicker } from "./PlainTextPicker";
 import { pickerItemAsText } from "./formFieldPicker";
 import { cn } from "@/lib/utils";
+import { AgentsControl, AttachmentsControl, InviteesControl } from "./FormFieldInputsV61";
 
 /// v0.1.52 — one input per form field type. Shared by the fill dialog and the
 /// admin editor's live preview (pass `ticketId = null` there: lookups that
@@ -33,9 +34,15 @@ type Props = {
   error?: string;
   disabled?: boolean;
   picker?: FieldPicker;
+  /// v0.1.61 — a Teams meeting with several technicians: show the organizer star.
+  organizerMode?: boolean;
+  /// v0.1.61 — combined size cap for Attachments fields (bytes).
+  maxAttachmentBytes?: number | null;
+  /// v0.1.61 — rendered right under the control (e.g. the availability panel).
+  below?: React.ReactNode;
 };
 
-export function FormFieldInput({ field, value, onChange, ticketId, error, disabled, picker }: Props) {
+export function FormFieldInput({ field, value, onChange, ticketId, error, disabled, picker, organizerMode, maxAttachmentBytes, below }: Props) {
   if (field.type === "SectionHeader") {
     return (
       <div className="sd-form-section col-span-2 pt-3 first:pt-0">
@@ -51,7 +58,7 @@ export function FormFieldInput({ field, value, onChange, ticketId, error, disabl
   }
 
   const id = `ff-${field.id}`;
-  const control = renderControl(field, value, onChange, ticketId, id, !!error, disabled, picker);
+  const control = renderControl(field, value, onChange, ticketId, id, !!error, disabled, picker, organizerMode, maxAttachmentBytes);
   const inlineLabel = field.type === "Checkbox";
 
   return (
@@ -64,6 +71,7 @@ export function FormFieldInput({ field, value, onChange, ticketId, error, disabl
       )}
       {control}
       {field.help && !inlineLabel && <p className="text-xs leading-snug text-muted-foreground/70">{field.help}</p>}
+      {below}
       {error && <p className="text-xs font-medium text-rose-600 dark:text-rose-400">{error}</p>}
     </div>
   );
@@ -78,6 +86,8 @@ function renderControl(
   invalid: boolean,
   disabled?: boolean,
   picker?: FieldPicker,
+  organizerMode?: boolean,
+  maxAttachmentBytes?: number | null,
 ): React.ReactNode {
   const ring = invalid ? "border-rose-500/60 focus:border-rose-500/80" : "";
   const text = value?.kind === "text" ? value.value : "";
@@ -118,11 +128,8 @@ function renderControl(
           className={cn(formInputCn, "h-9 tabular-nums", ring)} />
       );
     case "Duration":
-      return (
-        <input id={id} type="text" inputMode="numeric" disabled={disabled} value={text} placeholder="h:mm"
-          onChange={(e) => onChange({ kind: "text", value: e.target.value })}
-          className={cn(formInputCn, "h-9 w-32 tabular-nums", ring)} />
-      );
+      return <DurationControl id={id} value={text} disabled={disabled} ring={ring}
+        onChange={(v) => onChange({ kind: "text", value: v })} />;
     case "Date":
       return (
         <input id={id} type="date" disabled={disabled} value={text}
@@ -203,6 +210,9 @@ function renderControl(
       );
     }
     case "Agent":
+      if (f.multiple)
+        return <AgentsControl value={value?.kind === "agents" ? value.value : []} disabled={disabled} invalid={invalid}
+          organizerMode={organizerMode} onChange={(v) => onChange({ kind: "agents", value: v })} />;
       return <AgentControl value={value?.kind === "ref" ? value.value : null} disabled={disabled} invalid={invalid}
         onChange={(v) => onChange({ kind: "ref", value: v })} />;
     case "Contact":
@@ -211,6 +221,19 @@ function renderControl(
     case "Queue":
       return <QueueControl value={value?.kind === "ref" ? value.value : null} disabled={disabled} invalid={invalid}
         onChange={(v) => onChange({ kind: "ref", value: v })} />;
+    case "Address":
+      return (
+        <textarea id={id} rows={2} maxLength={1000} disabled={disabled} value={text}
+          onChange={(e) => onChange({ kind: "text", value: e.target.value })}
+          placeholder="Street and number, postal code and city"
+          className={cn(formInputCn, "min-h-16 resize-y py-2", ring)} />
+      );
+    case "Invitees":
+      return <InviteesControl value={value?.kind === "invitees" ? value.value : []} disabled={disabled} invalid={invalid}
+        onChange={(v) => onChange({ kind: "invitees", value: v })} />;
+    case "Attachments":
+      return <AttachmentsControl ticketId={ticketId} value={value?.kind === "files" ? value.value : []} disabled={disabled}
+        invalid={invalid} maxTotalBytes={maxAttachmentBytes} onChange={(v) => onChange({ kind: "files", value: v })} />;
     case "Article":
       return <ArticleRowsControl field={f} ticketId={ticketId} rows={value?.kind === "articles" ? value.value : []}
         disabled={disabled} invalid={invalid} onChange={(rows) => onChange({ kind: "articles", value: rows })} />;
@@ -286,7 +309,7 @@ function DateTimeControl({ value, onChange, disabled, futureOnly }: {
 }
 
 /// Popover + search box + list. `options` is called with the debounced term.
-function SearchPicker<T extends { id: string }>({
+export function SearchPicker<T extends { id: string }>({
   icon: Icon,
   label,
   placeholder,
@@ -536,6 +559,56 @@ function ArticleRowsControl({ field, ticketId, rows, onChange, disabled, invalid
         />
         {!ticketId && <p className="mt-1.5 px-1 text-[11px] text-muted-foreground/60">Articles are searched on the ticket.</p>}
       </div>
+    </div>
+  );
+}
+
+/// Duration as two pickers — hours and quarter hours — instead of free
+/// "h:mm" typing. The draft keeps the "h:mm" text, so validation and the
+/// stored minutes are unchanged. An existing answer off the 15-minute grid
+/// (or above the hour list) is kept as an extra option.
+const DURATION_HOURS = 24;
+const DURATION_MINUTES = [0, 15, 30, 45];
+
+function DurationControl({ id, value, disabled, ring, onChange }: {
+  id: string;
+  value: string;
+  disabled?: boolean;
+  ring: string;
+  onChange: (v: string) => void;
+}) {
+  const total = parseDuration(value);
+  const hours = total === null ? null : Math.floor(total / 60);
+  const minutes = total === null ? null : total % 60;
+  const hourOptions = Array.from({ length: Math.max(DURATION_HOURS, hours ?? 0) + 1 }, (_, i) => i);
+  const minuteOptions = minutes !== null && !DURATION_MINUTES.includes(minutes)
+    ? [...DURATION_MINUTES, minutes].sort((a, b) => a - b)
+    : DURATION_MINUTES;
+  const emit = (h: number, m: number) => onChange(`${h}:${String(m).padStart(2, "0")}`);
+  const trigger = cn("h-9 border-glass-strong bg-glass text-sm tabular-nums focus:ring-0", ring);
+
+  return (
+    <div className="flex items-center gap-2">
+      <Select disabled={disabled} value={hours === null ? "__none" : String(hours)}
+        onValueChange={(v) => (v === "__none" ? onChange("") : emit(Number(v), minutes ?? 0))}>
+        <SelectTrigger id={id} aria-label="Hours" className={cn(trigger, "w-24")}>
+          <SelectValue placeholder="Hours" />
+        </SelectTrigger>
+        <SelectContent className="max-h-72 border-glass bg-popover/90 backdrop-blur-xl">
+          <SelectItem value="__none"><span className="text-muted-foreground">—</span></SelectItem>
+          {hourOptions.map((h) => <SelectItem key={h} value={String(h)}>{h} h</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Select disabled={disabled} value={minutes === null ? "__none" : String(minutes)}
+        onValueChange={(v) => (v === "__none" ? onChange("") : emit(hours ?? 0, Number(v)))}>
+        <SelectTrigger aria-label="Minutes" className={cn(trigger, "w-28")}>
+          <SelectValue placeholder="Minutes" />
+        </SelectTrigger>
+        <SelectContent className="border-glass bg-popover/90 backdrop-blur-xl">
+          <SelectItem value="__none"><span className="text-muted-foreground">—</span></SelectItem>
+          {minuteOptions.map((m) => <SelectItem key={m} value={String(m)}>{String(m).padStart(2, "0")} min</SelectItem>)}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

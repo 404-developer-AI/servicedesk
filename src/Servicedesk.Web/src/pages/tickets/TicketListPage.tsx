@@ -2,14 +2,20 @@ import * as React from "react";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Eye, Layers, ShieldAlert, Ticket, X } from "lucide-react";
+import { Eye, Layers, Lock, ShieldAlert, Ticket, X } from "lucide-react";
 import { ColumnSelector } from "@/components/ColumnSelector";
 import { Button } from "@/components/ui/button";
 import { TicketTableSkeleton } from "./components/TicketTable";
 import { GroupedTicketList, type TicketSelection } from "./components/GroupedTicketList";
+import { ViewTabs } from "@/components/ViewTabs";
+import { OTHER_TAB, countReadyByTab, filterByTab } from "@/lib/viewTabs";
+import { useTicketOverlayStore } from "@/stores/useTicketOverlayStore";
+import { useAuth } from "@/auth/authStore";
+import { useServerNowMs } from "@/hooks/useServerTime";
+import { toast } from "sonner";
 import { BulkActionDialog } from "./components/BulkActionDialog";
 import { ticketApi, viewApi } from "@/lib/ticket-api";
-import { agentQueueApi, preferencesApi, settingsApi } from "@/lib/api";
+import { agentQueueApi, preferencesApi, settingsApi, taxonomyApi } from "@/lib/api";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { cn } from "@/lib/utils";
 import { useTicketListRealtime } from "@/hooks/useTicketRealtime";
@@ -238,14 +244,84 @@ export function TicketListPage() {
     [searchActive, searchMode, term],
   );
 
-  function handleRowClick(id: string) {
-    navigate({ to: "/tickets/$id" as never, params: { id } as never });
-  }
-
   const isLoading = ticketsLoading || (!!viewId && !viewApplied);
   const allItems: TicketListItem[] = React.useMemo(() => data?.items ?? [], [data]);
 
+  // ---- v0.1.61 — tabs by category ----
+  // The chosen tab lives only while the agent stays in this view (component
+  // state; leaving the view resets it to Other). A ticket overlay restored
+  // from the tray brings its tab back through the overlay store.
+  const { user } = useAuth();
+  const { data: categories } = useQuery({
+    queryKey: ["taxonomy", "categories"],
+    queryFn: () => taxonomyApi.categories.list(),
+    staleTime: 300_000,
+    enabled: !!viewId,
+  });
+  const tabCategoryIds = React.useMemo(
+    () => (displayConfig.tabCategoryIds ?? []).filter((id) => categories?.some((c) => c.id === id)),
+    [displayConfig.tabCategoryIds, categories],
+  );
+  const tabsOn = !!viewId && tabCategoryIds.length > 0;
+  const [activeTab, setActiveTab] = React.useState<string>(OTHER_TAB);
+  React.useEffect(() => setActiveTab(OTHER_TAB), [viewId]);
+  const pendingTab = useTicketOverlayStore((s) => s.pendingTab);
+  React.useEffect(() => {
+    if (!pendingTab || pendingTab.path !== pathname || pendingTab.search !== searchStr) return;
+    setActiveTab(pendingTab.tab);
+    useTicketOverlayStore.getState().clearPendingTab();
+  }, [pendingTab, pathname, searchStr]);
+  const tab = tabsOn && (activeTab === OTHER_TAB || tabCategoryIds.includes(activeTab)) ? activeTab : OTHER_TAB;
+  const lockedTab = tabsOn && tab !== OTHER_TAB && !!categories?.find((c) => c.id === tab)?.isLocked;
+  // Before the server clock is known an overdue pending ticket simply does not count yet.
+  const nowMs = useServerNowMs() ?? 0;
+  const tabCounts = React.useMemo(
+    () => (tabsOn ? countReadyByTab(allItems, tabCategoryIds, nowMs) : {}),
+    [tabsOn, allItems, tabCategoryIds, nowMs],
+  );
+
+  // A ticket that leaves the open tab (planned, moved) disappears live with a
+  // short notice, so the agent knows where it went.
+  const tabIdsRef = React.useRef<{ tab: string; ids: Map<string, number> } | null>(null);
+  React.useEffect(() => {
+    if (!tabsOn) { tabIdsRef.current = null; return; }
+    const inTab = filterByTab(allItems, tab, tabCategoryIds);
+    const prev = tabIdsRef.current;
+    if (prev && prev.tab === tab) {
+      for (const [id, number] of prev.ids) {
+        if (inTab.some((t) => t.id === id)) continue;
+        const moved = allItems.find((t) => t.id === id);
+        const where = moved?.categoryId ? categories?.find((c) => c.id === moved.categoryId)?.name : null;
+        toast(`#${number} left this tab${where ? ` — now in ${where}` : ""}`);
+      }
+    }
+    tabIdsRef.current = { tab, ids: new Map(inTab.map((t) => [t.id, t.number])) };
+  }, [tabsOn, allItems, tab, tabCategoryIds, categories]);
+
+  function handleRowClick(id: string) {
+    // In a locked tab back office works in the overlay (same as the list).
+    if (lockedTab && user?.backofficeFormsEnabled) {
+      const row = allItems.find((t) => t.id === id);
+      useTicketOverlayStore.getState().open({
+        ticketId: id,
+        ticketNumber: row?.number ?? null,
+        subject: row?.subject ?? null,
+        source: { path: pathname, search: searchStr, tab },
+      });
+      return;
+    }
+    navigate({ to: "/tickets/$id" as never, params: { id } as never });
+  }
+
   const items: TicketListItem[] = React.useMemo(() => {
+    if (tabsOn) {
+      const scoped = filterByTab(allItems, tab, tabCategoryIds);
+      if (!searchActive) return scoped;
+      if (noSearchableColumns) return [];
+      if (!useServerSearch) return scoped.filter((t) => rowMatchesColumns(t, columnTokens, searchCols));
+      if (!searchQuery.data) return searchMode === "columns" ? scoped.filter((t) => rowMatchesColumns(t, columnTokens, searchCols)) : scoped;
+      return filterByTab(searchQuery.data.items, tab, tabCategoryIds);
+    }
     if (!searchActive) return allItems;
     if (noSearchableColumns) return [];
     const clientFilter = () => allItems.filter((t) => rowMatchesColumns(t, columnTokens, searchCols));
@@ -254,7 +330,7 @@ export function TicketListPage() {
     // loaded rows are a fair preview; in Full mode keep the list as is.
     if (!searchQuery.data) return searchMode === "columns" ? clientFilter() : allItems;
     return searchQuery.data.items;
-  }, [allItems, searchActive, noSearchableColumns, useServerSearch, searchQuery.data, searchMode, columnTokens, searchCols]);
+  }, [allItems, searchActive, noSearchableColumns, useServerSearch, searchQuery.data, searchMode, columnTokens, searchCols, tabsOn, tab, tabCategoryIds]);
 
   let searchStatus: React.ReactNode = null;
   if (searchEnabled && term.length > 0 && !searchActive) {
@@ -393,6 +469,21 @@ export function TicketListPage() {
         <p className="-mt-2 shrink-0 text-center text-[11px] text-muted-foreground" aria-live="polite">
           {searchStatus}
         </p>
+      )}
+
+      {tabsOn && (
+        <ViewTabs
+          ariaLabel="Categories"
+          value={tab}
+          onChange={setActiveTab}
+          tabs={[
+            { id: OTHER_TAB, label: "Other", count: tabCounts[OTHER_TAB] },
+            ...tabCategoryIds.map((id) => {
+              const c = categories?.find((x) => x.id === id);
+              return { id, label: c?.name ?? "Category", icon: c?.isLocked ? Lock : undefined, count: tabCounts[id] };
+            }),
+          ]}
+        />
       )}
 
       {selection && selectedItems.length > 0 && (

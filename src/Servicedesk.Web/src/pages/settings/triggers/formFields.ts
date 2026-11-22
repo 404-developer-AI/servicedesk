@@ -8,9 +8,18 @@ import { triggerApi, type TriggerConditionField, type TriggerFormField } from "@
 
 export const FORM_FIELD_PREFIX = "form.field.";
 
-/// Field type the condition editor renders for `form.field.*` (presence and
-/// change operators only — no value input).
+/// Field type the condition editor renders for `form.field.*`: presence,
+/// change, and a text comparison against the answer as text (a dropdown
+/// compares its option label).
 export const FORM_FIELD_CONDITION_TYPE = "form-field";
+
+/// A `form.field.*` key that is a Checkbox on every template: compared
+/// against "Yes" / "No" (an unanswered checkbox counts as "No").
+export const FORM_FIELD_CHECKBOX_CONDITION_TYPE = "form-field-checkbox";
+
+export function isFormFieldConditionType(type: string): boolean {
+  return type === FORM_FIELD_CONDITION_TYPE || type === FORM_FIELD_CHECKBOX_CONDITION_TYPE;
+}
 
 export type FormFieldKeyOption = {
   key: string;
@@ -50,6 +59,6 @@ export function formFieldConditionEntries(rows: TriggerFormField[]): TriggerCond
   return groupFormFieldKeys(rows).map((o) => ({
     key: FORM_FIELD_PREFIX + o.key,
     label: `Form field: ${o.label} (${o.key})`,
-    type: FORM_FIELD_CONDITION_TYPE,
+    type: o.types.length === 1 && o.types[0] === "Checkbox" ? FORM_FIELD_CHECKBOX_CONDITION_TYPE : FORM_FIELD_CONDITION_TYPE,
   }));
 }

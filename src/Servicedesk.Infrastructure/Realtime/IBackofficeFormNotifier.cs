@@ -8,10 +8,15 @@ namespace Servicedesk.Infrastructure.Realtime;
 public interface IBackofficeFormNotifier
 {
     Task BackofficeFormsChangedAsync(CancellationToken ct);
+
+    /// v0.1.61 — a back-office user opened or left a ticket: the list's
+    /// "In progress by X" chips refetch the presence endpoint. No payload.
+    Task BackofficePresenceChangedAsync(CancellationToken ct);
 }
 
 /// No-op fallback used when SignalR is not wired (unit tests, offline jobs).
 public sealed class NullBackofficeFormNotifier : IBackofficeFormNotifier
 {
     public Task BackofficeFormsChangedAsync(CancellationToken ct) => Task.CompletedTask;
+    public Task BackofficePresenceChangedAsync(CancellationToken ct) => Task.CompletedTask;
 }

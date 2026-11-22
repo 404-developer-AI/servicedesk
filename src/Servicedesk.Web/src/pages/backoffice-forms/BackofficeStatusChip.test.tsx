@@ -1,19 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { BackofficeStatusChip, backofficeStatusLabel } from "./BackofficeStatusChip";
+import { BackofficeStatusChip } from "./BackofficeStatusChip";
+import { backofficeStatusLabel, presenceName } from "./backofficeLabels";
 
 describe("backoffice status label", () => {
-  it("names who is handling or handled the form", () => {
-    expect(backofficeStatusLabel({ status: "Open", claimedByName: null, handledByName: null })).toBe("Open");
-    expect(backofficeStatusLabel({ status: "InProgress", claimedByName: "Sam Example", handledByName: null }))
+  it("names who is working on or handled the form", () => {
+    expect(backofficeStatusLabel({ status: "Open", handledByName: null })).toBe("Open");
+    expect(backofficeStatusLabel({ status: "Open", handledByName: null, inProgressBy: "Sam Example" }))
       .toBe("In progress · Sam Example");
-    expect(backofficeStatusLabel({ status: "Handled", claimedByName: null, handledByName: "Alex Example" }))
-      .toBe("Handled · Alex Example");
-    expect(backofficeStatusLabel({ status: "InProgress", claimedByName: null, handledByName: null })).toBe("In progress");
+    expect(backofficeStatusLabel({ status: "Handled", handledByName: "Alex Example" })).toBe("Handled · Alex Example");
+    // Presence never overrides a handled form.
+    expect(backofficeStatusLabel({ status: "Handled", handledByName: null, inProgressBy: "Sam Example" })).toBe("Handled");
   });
 
   it("renders the chip text", () => {
-    render(<BackofficeStatusChip item={{ status: "Handled", claimedByName: null, handledByName: "Alex Example" }} />);
+    render(<BackofficeStatusChip item={{ status: "Handled", handledByName: "Alex Example" }} />);
     expect(screen.getByText("Handled · Alex Example")).toBeTruthy();
+  });
+
+  it("turns an e-mail into a readable presence name", () => {
+    expect(presenceName("sam.example@example.test")).toBe("Sam Example");
+    expect(presenceName("Alex")).toBe("Alex");
   });
 });

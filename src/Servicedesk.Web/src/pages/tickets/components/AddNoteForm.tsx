@@ -757,6 +757,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
               : Promise.resolve([]),
           ]);
           const formItems = forms
+            .filter((f) => f.inPicker !== false)
             .filter((f) => !needle || f.name.toLowerCase().includes(needle) || f.description.toLowerCase().includes(needle))
             .slice(0, 8)
             .map((f) => ({

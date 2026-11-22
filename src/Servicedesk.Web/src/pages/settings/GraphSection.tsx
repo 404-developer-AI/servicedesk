@@ -11,6 +11,7 @@ const GRAPH_QUERY_KEY = ["settings", "list", "Graph"] as const;
 const GRAPH_SECRET_QUERY_KEY = ["settings", "graph", "secret"] as const;
 const AUTH_QUERY_KEY = ["settings", "list", "Auth"] as const;
 const APP_QUERY_KEY = ["settings", "list", "App"] as const;
+const CALENDAR_QUERY_KEY = ["settings", "list", "Calendar"] as const;
 
 function findEntry(entries: SettingEntry[] | undefined, key: string) {
   return entries?.find((e) => e.key === key);
@@ -33,6 +34,11 @@ export function GraphSection() {
   const appSettings = useQuery({
     queryKey: APP_QUERY_KEY,
     queryFn: () => settingsApi.list("App"),
+  });
+
+  const calendarSettings = useQuery({
+    queryKey: CALENDAR_QUERY_KEY,
+    queryFn: () => settingsApi.list("Calendar"),
   });
 
   const [secretValue, setSecretValue] = useState("");
@@ -232,6 +238,27 @@ export function GraphSection() {
             </div>
           )}
         </div>
+
+        {calendarSettings.data && calendarSettings.data.length > 0 && (
+          <div className="border-t border-glass pt-4">
+            <h3 className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+              Calendar planning
+            </h3>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Forms with an 'Outlook appointment' block create appointments in the
+              technicians' Outlook calendars. Microsoft 365 needs the{" "}
+              <code className="rounded bg-glass px-1">Calendars.ReadWrite</code>{" "}
+              application permission on this app, limited to the technicians'
+              mailboxes with an Exchange application access policy. Who may plan
+              is set per user (Settings → Users → Plan in calendars).
+            </p>
+            <div className="space-y-3">
+              {calendarSettings.data.map((entry) => (
+                <SettingField key={entry.key} entry={entry} queryKey={CALENDAR_QUERY_KEY} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

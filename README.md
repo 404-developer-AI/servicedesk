@@ -19,7 +19,9 @@ A self-hosted helpdesk for IT service teams. One install per organisation, on a 
 - Reply to and like internal notes, with threaded replies and notifications for the author.
 - Group tags: @@-tag a group of agents; the group shares one tag until a member acknowledges it, or — for groups set to personal acknowledgement — until every member has marked it as read. Hovering a tag in the sidebar shows the full note it sits in.
 - Follow tickets: followed tickets are listed in the sidebar, marked as soon as something happens on them, and can carry a personal note on why you follow them.
-- A back office work list for forms that need follow-up: pick a form up, mark it handled with a note, and let triggers decide what happens on the ticket.
+- A back office work list for forms that need follow-up: open the ticket on top of the list, see who is working on what, mark a form handled with a note, and let triggers decide what happens on the ticket.
+- Optional Outlook calendar planning from forms: appointments per technician or a Teams meeting with invitees, with a live double-booking check (Microsoft 365, `Calendars.ReadWrite` application permission).
+- Views can split their tickets into tabs per category.
 - Project tickets that group related tickets, with their logged time rolled up.
 - Triggers, SLA targets, call-back and research flags, merge and split, and bulk actions on many tickets at once.
 
@@ -118,7 +120,7 @@ No Docker needed: PostgreSQL runs natively, the API on Kestrel and the frontend 
 # 1. Create a PostgreSQL database and role; the schema is created on first run.
 
 # 2. Development secrets (user-secrets, not .env):
-dotnet user-secrets --project src/Servicedesk.Api set "ConnectionStrings:Postgres" "Host=localhost;Database=servicedesk_dev;Username=sd_dev;Password=..."
+dotnet user-secrets --project src/Servicedesk.Api set "ConnectionStrings:Postgres" "Host=localhost;Database=servicedesk_demo;Username=sd_dev;Password=..."
 dotnet user-secrets --project src/Servicedesk.Api set "Audit:HashKey"            "$(openssl rand -base64 32)"
 dotnet user-secrets --project src/Servicedesk.Api set "DataProtection:MasterKey" "$(openssl rand -base64 32)"
 

@@ -384,7 +384,7 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
             SELECT id AS Id, parent_id AS ParentId, name AS Name, slug AS Slug,
                    description AS Description, sort_order AS SortOrder,
                    is_active AS IsActive, is_system AS IsSystem,
-                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc, is_locked AS IsLocked
             FROM categories
             ORDER BY sort_order, name
             """;
@@ -398,7 +398,7 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
             SELECT id AS Id, parent_id AS ParentId, name AS Name, slug AS Slug,
                    description AS Description, sort_order AS SortOrder,
                    is_active AS IsActive, is_system AS IsSystem,
-                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc, is_locked AS IsLocked
             FROM categories WHERE id = @id
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -408,32 +408,32 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
     public async Task<Category> CreateCategoryAsync(Category c, CancellationToken ct)
     {
         const string sql = """
-            INSERT INTO categories (parent_id, name, slug, description, sort_order, is_active, is_system)
-            VALUES (@ParentId, @Name, @Slug, @Description, @SortOrder, @IsActive, @IsSystem)
+            INSERT INTO categories (parent_id, name, slug, description, sort_order, is_active, is_system, is_locked)
+            VALUES (@ParentId, @Name, @Slug, @Description, @SortOrder, @IsActive, @IsSystem, @IsLocked)
             RETURNING id AS Id, parent_id AS ParentId, name AS Name, slug AS Slug,
                       description AS Description, sort_order AS SortOrder,
                       is_active AS IsActive, is_system AS IsSystem,
-                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc, is_locked AS IsLocked
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QuerySingleAsync<Category>(new CommandDefinition(sql, c, cancellationToken: ct));
     }
 
-    public async Task<Category?> UpdateCategoryAsync(Guid id, Guid? parentId, string name, string slug, string description, int sortOrder, bool isActive, CancellationToken ct)
+    public async Task<Category?> UpdateCategoryAsync(Guid id, Guid? parentId, string name, string slug, string description, int sortOrder, bool isActive, bool isLocked, CancellationToken ct)
     {
         const string sql = """
             UPDATE categories SET parent_id = @parentId, name = @name, slug = @slug,
                                   description = @description, sort_order = @sortOrder,
-                                  is_active = @isActive, updated_utc = now()
+                                  is_active = @isActive, is_locked = @isLocked, updated_utc = now()
             WHERE id = @id
             RETURNING id AS Id, parent_id AS ParentId, name AS Name, slug AS Slug,
                       description AS Description, sort_order AS SortOrder,
                       is_active AS IsActive, is_system AS IsSystem,
-                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc, is_locked AS IsLocked
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<Category>(new CommandDefinition(sql,
-            new { id, parentId, name, slug, description, sortOrder, isActive }, cancellationToken: ct));
+            new { id, parentId, name, slug, description, sortOrder, isActive, isLocked }, cancellationToken: ct));
     }
 
     public async Task<DeleteResult> DeleteCategoryAsync(Guid id, CancellationToken ct)

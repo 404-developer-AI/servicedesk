@@ -12,8 +12,9 @@ public interface IFormTemplateRepository
     Task<bool> DeleteAsync(Guid id, CancellationToken ct);
     /// Another active template already uses this name (case-insensitive).
     Task<bool> ActiveNameTakenAsync(string name, Guid? exceptId, CancellationToken ct);
-    /// Active templates whose queue scope is empty (all queues) or contains
-    /// <paramref name="queueId"/> — the "::" picker for one ticket.
+    /// Active templates offered on a ticket in <paramref name="queueId"/>:
+    /// through `::` (picker on, queue scope empty or containing it) or a
+    /// header button for that queue (<see cref="FormTemplateScope"/>).
     Task<IReadOnlyList<FormTemplateSummary>> ListAvailableForQueueAsync(Guid queueId, CancellationToken ct);
     /// v0.1.58 — every field with a trigger key, per template (the trigger
     /// editor's form-field pickers). Admin configuration only.
@@ -38,6 +39,11 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
                queue_ids     AS QueueIds,
                field_count   AS FieldCount,
                send_to_backoffice AS SendToBackoffice,
+               bo_plan_template_id AS BoPlanTemplateId,
+               COALESCE((outlook_mapping->>'enabled')::boolean, FALSE) AS OutlookEnabled,
+               header_button_label AS HeaderButtonLabel,
+               header_button_queue_ids AS HeaderButtonQueueIds,
+               in_picker     AS InPicker,
                created_utc   AS CreatedUtc,
                updated_utc   AS UpdatedUtc
         FROM form_templates
@@ -57,7 +63,8 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
         var rows = await conn.QueryAsync<SummaryRow>(new CommandDefinition(
             SummarySelect + """
              WHERE is_active = TRUE
-               AND (cardinality(queue_ids) = 0 OR @queueId = ANY(queue_ids))
+               AND ((in_picker AND (cardinality(queue_ids) = 0 OR @queueId = ANY(queue_ids)))
+                    OR (header_button_label IS NOT NULL AND @queueId = ANY(header_button_queue_ids)))
              ORDER BY lower(name), id
             """, new { queueId }, cancellationToken: ct));
         return rows.Select(ToSummary).ToList();
@@ -93,6 +100,12 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
                    definition::text AS DefinitionJson,
                    field_count      AS FieldCount,
                    send_to_backoffice AS SendToBackoffice,
+                   bo_plan_template_id AS BoPlanTemplateId,
+                   COALESCE((outlook_mapping->>'enabled')::boolean, FALSE) AS OutlookEnabled,
+                   outlook_mapping::text AS OutlookJson,
+                   header_button_label AS HeaderButtonLabel,
+                   header_button_queue_ids AS HeaderButtonQueueIds,
+                   in_picker        AS InPicker,
                    created_utc      AS CreatedUtc,
                    updated_utc      AS UpdatedUtc
             FROM form_templates
@@ -103,7 +116,9 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
             row.Id, row.Name, row.Description, row.IsActive,
             row.QueueIds ?? Array.Empty<Guid>(),
             FormDefinition.Parse(row.DefinitionJson),
-            row.FieldCount, row.CreatedUtc, row.UpdatedUtc, row.SendToBackoffice);
+            row.FieldCount, row.CreatedUtc, row.UpdatedUtc, row.SendToBackoffice,
+            row.BoPlanTemplateId, FormOutlookMapping.Parse(row.OutlookJson), row.HeaderButtonLabel,
+            row.HeaderButtonQueueIds ?? Array.Empty<Guid>(), row.InPicker);
     }
 
     public async Task<bool> ActiveNameTakenAsync(string name, Guid? exceptId, CancellationToken ct)
@@ -122,8 +137,11 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.ExecuteScalarAsync<Guid>(new CommandDefinition("""
             INSERT INTO form_templates
-                (name, description, is_active, queue_ids, definition, field_count, send_to_backoffice, created_by_user_id)
-            VALUES (@name, @description, @isActive, @queueIds, @definition::jsonb, @fieldCount, @sendToBackoffice, @createdBy)
+                (name, description, is_active, queue_ids, definition, field_count, send_to_backoffice,
+                 bo_plan_template_id, outlook_mapping, header_button_label, header_button_queue_ids, in_picker,
+                 created_by_user_id)
+            VALUES (@name, @description, @isActive, @queueIds, @definition::jsonb, @fieldCount, @sendToBackoffice,
+                    @planTemplateId, @outlook::jsonb, @headerButtonLabel, @headerButtonQueueIds, @inPicker, @createdBy)
             RETURNING id
             """, new
         {
@@ -134,6 +152,11 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
             definition = input.Definition.ToJson(),
             fieldCount = input.Definition.InputFieldCount,
             sendToBackoffice = input.SendToBackoffice,
+            planTemplateId = input.BoPlanTemplateId,
+            outlook = input.Outlook?.ToJson(),
+            headerButtonLabel = input.HeaderButtonLabel,
+            headerButtonQueueIds = (input.HeaderButtonQueueIds ?? Array.Empty<Guid>()).Distinct().ToArray(),
+            inPicker = input.InPicker,
             createdBy = createdByUserId,
         }, cancellationToken: ct));
     }
@@ -150,6 +173,11 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
                    definition = @definition::jsonb,
                    field_count = @fieldCount,
                    send_to_backoffice = @sendToBackoffice,
+                   bo_plan_template_id = @planTemplateId,
+                   outlook_mapping = @outlook::jsonb,
+                   header_button_label = @headerButtonLabel,
+                   header_button_queue_ids = @headerButtonQueueIds,
+                   in_picker = @inPicker,
                    updated_utc = now()
              WHERE id = @id
             """, new
@@ -162,6 +190,11 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
             definition = input.Definition.ToJson(),
             fieldCount = input.Definition.InputFieldCount,
             sendToBackoffice = input.SendToBackoffice,
+            planTemplateId = input.BoPlanTemplateId,
+            outlook = input.Outlook?.ToJson(),
+            headerButtonLabel = input.HeaderButtonLabel,
+            headerButtonQueueIds = (input.HeaderButtonQueueIds ?? Array.Empty<Guid>()).Distinct().ToArray(),
+            inPicker = input.InPicker,
         }, cancellationToken: ct));
         return n > 0;
     }
@@ -177,7 +210,8 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
 
     private static FormTemplateSummary ToSummary(SummaryRow r) => new(
         r.Id, r.Name, r.Description, r.IsActive, r.QueueIds ?? Array.Empty<Guid>(),
-        r.FieldCount, r.CreatedUtc, r.UpdatedUtc, r.SendToBackoffice);
+        r.FieldCount, r.CreatedUtc, r.UpdatedUtc, r.SendToBackoffice, r.BoPlanTemplateId, r.OutlookEnabled, r.HeaderButtonLabel,
+        r.HeaderButtonQueueIds ?? Array.Empty<Guid>(), r.InPicker);
 
     private class SummaryRow
     {
@@ -188,6 +222,11 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
         public Guid[]? QueueIds { get; set; }
         public int FieldCount { get; set; }
         public bool SendToBackoffice { get; set; }
+        public Guid? BoPlanTemplateId { get; set; }
+        public bool OutlookEnabled { get; set; }
+        public string? HeaderButtonLabel { get; set; }
+        public Guid[]? HeaderButtonQueueIds { get; set; }
+        public bool InPicker { get; set; } = true;
         public DateTime CreatedUtc { get; set; }
         public DateTime UpdatedUtc { get; set; }
     }
@@ -195,5 +234,6 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
     private sealed class DetailRow : SummaryRow
     {
         public string? DefinitionJson { get; set; }
+        public string? OutlookJson { get; set; }
     }
 }

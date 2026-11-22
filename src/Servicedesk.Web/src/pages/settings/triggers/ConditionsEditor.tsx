@@ -24,9 +24,11 @@ import type {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
+  FORM_FIELD_CHECKBOX_CONDITION_TYPE,
   FORM_FIELD_CONDITION_TYPE,
   FORM_FIELD_PREFIX,
   formFieldConditionEntries,
+  isFormFieldConditionType,
   useTriggerFormFields,
 } from "./formFields";
 
@@ -425,8 +427,13 @@ function LeafRow({
   // on a status field and wonder why it never matches.
   const applicableOps = React.useMemo(() => {
     return operators.filter((op) => {
-      // Form fields: filled in or not, and whether this save changed them.
-      if (fieldType === FORM_FIELD_CONDITION_TYPE) return op === "is_set" || op === "is_not_set" || op === "has_changed";
+      // Form fields: a checkbox is Yes / No (never empty); other fields can
+      // be filled in or not, or compared as text. Both know "has changed".
+      if (fieldType === FORM_FIELD_CHECKBOX_CONDITION_TYPE) return op === "is" || op === "is_not" || op === "has_changed";
+      if (fieldType === FORM_FIELD_CONDITION_TYPE) {
+        return op === "is_set" || op === "is_not_set" || op === "has_changed"
+          || op === "is" || op === "is_not" || op === "contains" || op === "does_not_contain";
+      }
       if (op === "is_set" || op === "is_not_set") return false;
       if (op === "has_changed") return allowsHasChanged;
       // A linked-order change is a set of change kinds: "contains one / all of".
@@ -441,19 +448,19 @@ function LeafRow({
 
   function setField(field: string) {
     const def = fields.find((f) => f.key === field);
+    const checkbox = def?.type === FORM_FIELD_CHECKBOX_CONDITION_TYPE;
     const formField = def?.type === FORM_FIELD_CONDITION_TYPE;
-    const wasFormField = fieldType === FORM_FIELD_CONDITION_TYPE;
     onChange({
       field,
-      // Form fields only know is set / is not set / has changed.
-      operator: formField && !wasFormField ? "is_set" : !formField && wasFormField ? "is" : leaf.operator,
+      // A checkbox starts as "is Yes", another form field as "is set".
+      operator: checkbox ? "is" : formField ? "is_set" : isFormFieldConditionType(fieldType) ? "is" : leaf.operator,
       // Reset value type when switching field type, otherwise an admin
       // would get garbage in the DB (e.g. a guid stored where a tag-array
       // is expected). Boolean defaults to "true" so the matcher can read
       // a non-empty value if the admin never touches the dropdown — the
       // visual <select> picks the first option but a stale empty-string
       // value would otherwise persist into JSONB and never match.
-      value: def?.type === "tags" || def?.type === "order-change" ? [] : def?.type === "boolean" ? "true" : "",
+      value: def?.type === "tags" || def?.type === "order-change" ? [] : def?.type === "boolean" ? "true" : checkbox ? "Yes" : "",
     });
   }
 
@@ -567,6 +574,30 @@ function ValueInput({
   }
   if (fieldType === "boolean") {
     return <BooleanValueInput value={value} onChange={onChange} />;
+  }
+  if (fieldType === FORM_FIELD_CHECKBOX_CONDITION_TYPE) {
+    // The server compares the answer as text: "Yes" (ticked) / "No".
+    return (
+      <select
+        value={typeof value === "string" && /^no$/i.test(value) ? "No" : "Yes"}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+      >
+        <option value="Yes">Yes (ticked)</option>
+        <option value="No">No (not ticked)</option>
+      </select>
+    );
+  }
+  if (fieldType === FORM_FIELD_CONDITION_TYPE) {
+    return (
+      <input
+        type="text"
+        value={typeof value === "string" ? value : ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="answer, e.g. a dropdown option"
+        className="min-w-48 rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
+      />
+    );
   }
   if (fieldType === "tags") {
     const list = Array.isArray(value) ? value : [];

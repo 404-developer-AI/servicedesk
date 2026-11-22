@@ -170,6 +170,8 @@ export type TriggerAction =
   | { kind: "set_queue"; queue_id: string; form_field?: string | null }
   | { kind: "set_priority"; priority_id: string }
   | { kind: "set_status"; status_id: string }
+  | { kind: "set_category"; category_id: string | null }
+  | { kind: "handle_backoffice_form"; template_ids: string[]; note: string }
   | { kind: "set_owner"; user_id: string | null; form_field?: string | null }
   | SetPendingTillAction
   | { kind: "add_internal_note"; body_html: string }
@@ -215,6 +217,7 @@ export const KNOWN_ACTION_KINDS = [
   "set_queue",
   "set_priority",
   "set_status",
+  "set_category",
   "set_owner",
   "set_pending_till",
   "add_internal_note",
@@ -223,6 +226,7 @@ export const KNOWN_ACTION_KINDS = [
   "send_mail",
   "send_survey",
   "notify_agent",
+  "handle_backoffice_form",
   "create_linked_ticket",
   "prompt_confirm",
   "require_contact_company",
@@ -235,6 +239,7 @@ export const ACTION_KIND_LABELS: Record<KnownActionKind, string> = {
   set_queue: "Set queue",
   set_priority: "Set priority",
   set_status: "Set status",
+  set_category: "Set category",
   set_owner: "Set owner",
   set_pending_till: "Set pending till",
   add_internal_note: "Add internal note",
@@ -243,6 +248,7 @@ export const ACTION_KIND_LABELS: Record<KnownActionKind, string> = {
   send_mail: "Send mail",
   send_survey: "Send survey",
   notify_agent: "Notify agents",
+  handle_backoffice_form: "Handle back-office form",
   create_linked_ticket: "Create linked ticket",
   prompt_confirm: "Confirmation dialog",
   require_contact_company: "Require contact company",
@@ -254,6 +260,8 @@ export function blankActionForKind(kind: KnownActionKind): TriggerAction {
     case "set_queue": return { kind, queue_id: "" };
     case "set_priority": return { kind, priority_id: "" };
     case "set_status": return { kind, status_id: "" };
+    case "set_category": return { kind, category_id: null };
+    case "handle_backoffice_form": return { kind, template_ids: [], note: "" };
     case "set_owner": return { kind, user_id: null };
     case "set_pending_till": return { kind, mode: "relative", value: "P1D" };
     case "add_internal_note": return { kind, body_html: "" };
@@ -376,6 +384,16 @@ export function actionFromBackend(raw: any): TriggerAction {
   }
   if (raw.kind === "title_review") {
     return normalizeTitleReview(raw);
+  }
+  if (raw.kind === "set_category") {
+    return { kind: "set_category", category_id: typeof raw.category_id === "string" ? raw.category_id : null };
+  }
+  if (raw.kind === "handle_backoffice_form") {
+    return {
+      kind: "handle_backoffice_form",
+      template_ids: Array.isArray(raw.template_ids) ? raw.template_ids.filter((u: unknown) => typeof u === "string") : [],
+      note: typeof raw.note === "string" ? raw.note : "",
+    };
   }
   if (raw.kind === "notify_agent") {
     return {

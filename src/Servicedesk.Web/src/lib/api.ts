@@ -80,6 +80,7 @@ export type AuthUserPayload = {
   backofficeFormsEnabled: boolean;
   // v0.1.59 — Order Management (TD SYNNEX orders); server-enforced flag.
   orderManagementEnabled: boolean;
+  calendarPlanningEnabled: boolean;
   adsolutOrdersEnabled: boolean;
   statisticsRead: boolean;
   statisticsWrite: boolean;
@@ -541,6 +542,7 @@ export type Category = {
   description: string;
   sortOrder: number;
   isActive: boolean;
+  isLocked: boolean;
   isSystem: boolean;
   createdUtc: string;
   updatedUtc: string;
@@ -603,6 +605,7 @@ export type CategoryInput = {
   description?: string;
   sortOrder: number;
   isActive: boolean;
+  isLocked: boolean;
 };
 
 // v0.0.39 — ticket types. Seeded with support / order / iso27001; admins

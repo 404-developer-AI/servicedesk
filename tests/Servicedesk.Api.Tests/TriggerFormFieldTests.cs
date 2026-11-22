@@ -331,6 +331,23 @@ public sealed class TriggerFormFieldTests
         Assert.Equal(new[] { "planned_at", "technician" }, FormTriggerFields.ChangedKeys(def, null, after).OrderBy(k => k));
     }
 
+    [Fact]
+    public void A_checkbox_condition_compares_yes_and_an_unanswered_checkbox_counts_as_no()
+    {
+        var box = new FormField { Id = Guid.NewGuid(), Type = FormFieldType.Checkbox, Label = "Delivered", TriggerKey = "delivered" };
+        var def = new FormDefinition { Fields = { box } };
+        const string isYes = """{ "field": "form.field.delivered", "operator": "is", "value": "Yes" }""";
+        const string isNo = """{ "field": "form.field.delivered", "operator": "is", "value": "No" }""";
+
+        var ticked = FormTriggerFields.Build(def, new JsonObject { [box.Id.ToString()] = true }, _ => "");
+        Assert.True(Eval(Cond(isYes), TriggerChangeSet.ForForm(SavePass(fields: ticked))));
+        Assert.False(Eval(Cond(isNo), TriggerChangeSet.ForForm(SavePass(fields: ticked))));
+
+        var unanswered = FormTriggerFields.Build(def, new JsonObject(), _ => "");
+        Assert.Equal("No", unanswered["delivered"].Display);
+        Assert.True(Eval(Cond(isNo), TriggerChangeSet.ForForm(SavePass(fields: unanswered))));
+    }
+
     private static bool Eval(string conditions, TriggerChangeSet cs)
     {
         var ctx = new TriggerEvaluationContext(Guid.NewGuid(), TriggerBackofficeFormTests.MakeTicket(), null, cs, DateTime.UtcNow);

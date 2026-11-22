@@ -27,8 +27,12 @@ public sealed class FormSettingsReader : IFormSettingsReader
         var maxQty = await IntAsync(SettingKeys.Forms.MaxArticleQuantity, 100_000, 1, (int)FormLimits.HardMaxArticleQuantity, ct);
         var longText = await IntAsync(SettingKeys.Forms.LongTextMaxLength, 4000, 100, FormLimits.HardMaxLongText, ct);
         var perTicket = await IntAsync(SettingKeys.Forms.MaxPerTicket, 50, 1, FormLimits.HardMaxPerTicket, ct);
+        var attachMb = await IntAsync(SettingKeys.Forms.MaxAttachmentTotalMb, 25, 1, FormLimits.HardMaxAttachmentTotalMb, ct);
 
-        return new FormRuntimeSettings(enabled, maxFields, maxRows, maxQty, longText, perTicket);
+        return new FormRuntimeSettings(enabled, maxFields, maxRows, maxQty, longText, perTicket)
+        {
+            MaxAttachmentBytes = attachMb * 1024L * 1024L,
+        };
     }
 
     private async Task<int> IntAsync(string key, int fallback, int min, int max, CancellationToken ct)

@@ -528,6 +528,7 @@ public static class AuthEndpoints
         var timesheetBackofficeEnabled = f.TimesheetBackofficeEnabled;
         var backofficeFormsEnabled = f.BackofficeFormsEnabled;
         var orderManagementEnabled = f.OrderManagementEnabled;
+        var calendarPlanningEnabled = f.CalendarPlanningEnabled;
         var statisticsRead = f.StatisticsRead;
         var statisticsWrite = f.StatisticsWrite;
         var contractsEnabled = f.ContractsEnabled;
@@ -585,6 +586,7 @@ public static class AuthEndpoints
                 timesheetBackofficeEnabled,
                 backofficeFormsEnabled,
                 orderManagementEnabled,
+                calendarPlanningEnabled,
                 adsolutOrdersEnabled,
                 statisticsRead,
                 statisticsWrite,

@@ -21,7 +21,12 @@ public sealed record TicketMutationActor(
     string AuditActor,
     string AuditRole,
     string? ClientIp,
-    string? UserAgent);
+    string? UserAgent)
+{
+    /// v0.1.61 — how the session signed in ("ext" = Microsoft 365); calendar
+    /// planning requires an M365 sign-in.
+    public string? Amr { get; init; }
+}
 
 /// Outcome of the pre-mutation rule check. Anything but <see cref="Ok"/>
 /// means the caller must not apply the mutation.
@@ -274,7 +279,7 @@ public sealed class TicketMutationService : ITicketMutationService
         if (update.QueueId.HasValue) changed.Add(TriggerFieldKeys.TicketQueueId);
         if (update.StatusId.HasValue) changed.Add(TriggerFieldKeys.TicketStatusId);
         if (update.PriorityId.HasValue) changed.Add(TriggerFieldKeys.TicketPriorityId);
-        if (update.CategoryId.HasValue) changed.Add(TriggerFieldKeys.TicketCategoryId);
+        if (update.CategoryId.HasValue || update.ClearCategory) changed.Add(TriggerFieldKeys.TicketCategoryId);
         if (update.AssigneeUserId.HasValue || update.ClearAssignee) changed.Add(TriggerFieldKeys.TicketOwnerId);
         if (update.Subject is not null) changed.Add(TriggerFieldKeys.TicketSubject);
         if (update.IsCallback.HasValue) changed.Add(TriggerFieldKeys.TicketIsCallback);

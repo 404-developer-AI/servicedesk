@@ -717,7 +717,7 @@ public sealed class OutboundMailServiceTests
         public Task<IReadOnlyList<Category>> ListCategoriesAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<Category?> GetCategoryAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<Category> CreateCategoryAsync(Category c, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Category?> UpdateCategoryAsync(Guid id, Guid? parentId, string name, string slug, string description, int sortOrder, bool isActive, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Category?> UpdateCategoryAsync(Guid id, Guid? parentId, string name, string slug, string description, int sortOrder, bool isActive, bool isLocked, CancellationToken ct) => throw new NotImplementedException();
         public Task<DeleteResult> DeleteCategoryAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
     }
 
@@ -976,6 +976,7 @@ public sealed class OutboundMailServiceTests
         public Task<bool> GetAdsolutOrdersEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetTimesheetBackofficeEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetBackofficeFormsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<bool> GetCalendarPlanningEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetStatisticsReadEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetStatisticsWriteEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);

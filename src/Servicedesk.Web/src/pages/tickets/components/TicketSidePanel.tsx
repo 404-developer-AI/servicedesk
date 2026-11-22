@@ -73,6 +73,9 @@ import { BackofficeStatusChip } from "@/pages/backoffice-forms/BackofficeStatusC
 
 type TicketSidePanelProps = {
   ticket: Ticket;
+  /// v0.1.61 — back-office soft lock: status, pending till, queue, priority
+  /// and owner are greyed (UI only; "Edit anyway" lifts it).
+  softLocked?: boolean;
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
   onRequestCompanyAssign?: () => void;
   pinned?: boolean;
@@ -196,6 +199,7 @@ export function TicketSidePanel({
   contactNotLinkedWarning,
   taggedOrders,
   ticketForms,
+  softLocked = false,
 }: TicketSidePanelProps) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = React.useState<TabId>("status");
@@ -332,6 +336,7 @@ export function TicketSidePanel({
             contactNotLinkedWarning={contactNotLinkedWarning}
             taggedOrders={taggedOrders ?? []}
             ticketForms={ticketForms ?? []}
+            softLocked={softLocked}
             onRequestLinkProject={() => setLinkProjectOpen(true)}
             onUnlinkProject={() =>
               runProjectAction(() => ticketApiClient.unlinkProject(ticket.id), "Removed from project")
@@ -402,10 +407,12 @@ function StatusTab({
   contactNotLinkedWarning,
   taggedOrders,
   ticketForms,
+  softLocked,
   onRequestLinkProject,
   onUnlinkProject,
   onRevertProject,
 }: {
+  softLocked: boolean;
   ticket: Ticket;
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
   companyDetail: CompanyDetail | null;
@@ -484,6 +491,17 @@ function StatusTab({
     staleTime: 300_000,
   });
 
+  const { data: categories } = useQuery({
+    queryKey: ["taxonomy", "categories"],
+    queryFn: taxonomyApi.categories.list,
+    staleTime: 300_000,
+  });
+  const currentCategory = categories?.find((c) => c.id === ticket.categoryId);
+  const categoryOptions = React.useMemo(
+    () => withInactiveCarveOut(categories, currentCategory),
+    [categories, currentCategory],
+  );
+
   const currentStatus = statuses?.find((s) => s.id === ticket.statusId);
   const currentPriority = priorities?.find((p) => p.id === ticket.priorityId);
   const currentQueue = queues?.find((q) => q.id === ticket.queueId);
@@ -548,7 +566,7 @@ function StatusTab({
           </div>
         </div>
       )}
-      <div>
+      <SoftLockedField locked={softLocked}>
         <FieldLabel>Status</FieldLabel>
         <TaxonomySelect
           value={ticket.statusId}
@@ -561,23 +579,23 @@ function StatusTab({
             suffix: !s.isActive ? "— inactive" : undefined,
           }))}
         />
-      </div>
+      </SoftLockedField>
 
       {currentStatus?.stateCategory === "Pending" && (
-        <div>
+        <SoftLockedField locked={softLocked}>
           <FieldLabel>Pending till</FieldLabel>
           <PendingTillField
             value={ticket.pendingTillUtc}
             onCommit={(iso) => onUpdate({ pendingTillUtc: iso })}
           />
-        </div>
+        </SoftLockedField>
       )}
 
       {/* v0.0.105 — project tickets pinned to the project queue have no
           queue selector: the queue is an implementation detail there and
           the server refuses moves anyway. */}
       {!(projectsEnabled && ticket.isProject && projectQueuePinned) && (
-        <div>
+        <SoftLockedField locked={softLocked}>
           <FieldLabel>Queue</FieldLabel>
           <TaxonomySelect
             value={ticket.queueId}
@@ -589,10 +607,10 @@ function StatusTab({
               suffix: !q.isActive ? "— inactive" : undefined,
             }))}
           />
-        </div>
+        </SoftLockedField>
       )}
 
-      <div>
+      <SoftLockedField locked={softLocked}>
         <FieldLabel>Priority</FieldLabel>
         <TaxonomySelect
           value={ticket.priorityId}
@@ -604,7 +622,28 @@ function StatusTab({
             suffix: !p.isActive ? "— inactive" : undefined,
           }))}
         />
-      </div>
+      </SoftLockedField>
+
+      {/* v0.1.61 — category marks the phase of a ticket (view tabs, soft
+          lock). Hidden while no categories exist. */}
+      {(categories?.length ?? 0) > 0 && (
+        <SoftLockedField locked={softLocked}>
+          <FieldLabel>Category</FieldLabel>
+          <TaxonomySelect
+            value={ticket.categoryId ?? ""}
+            onChange={(v) => onUpdate(v ? { categoryId: v } : { clearCategory: true })}
+            allowEmpty
+            emptyLabel="No category"
+            placeholder="No category"
+            options={categoryOptions.map((c) => ({
+              id: c.id,
+              name: c.name,
+              color: c.isLocked ? "var(--primary)" : "",
+              suffix: !c.isActive ? "— inactive" : c.isLocked ? "· locked" : undefined,
+            }))}
+          />
+        </SoftLockedField>
+      )}
 
       {/* v0.1.17 — Call-back / Research flags. Internal only; each toggle is
           a TicketFlagChange timeline event and feeds the view floats. */}
@@ -625,7 +664,7 @@ function StatusTab({
         />
       </div>
 
-      <div>
+      <SoftLockedField locked={softLocked}>
         <FieldLabel>Assignee</FieldLabel>
         <AgentPicker
           value={ticket.assigneeUserId}
@@ -633,7 +672,7 @@ function StatusTab({
             onUpdate(userId ? { assigneeUserId: userId } : { unassignAssignee: true })
           }
         />
-      </div>
+      </SoftLockedField>
 
       {/* v0.0.51 — company quick-view + change. Click to open the same
           dialog the Company-tab banner uses. The tab itself still
@@ -785,7 +824,7 @@ function FormsBlock({ forms }: { forms: TicketFormSummary[] }) {
               </span>
               {f.boStatus && (
                 <BackofficeStatusChip className="mt-1"
-                  item={{ status: f.boStatus, claimedByName: f.boClaimedByName ?? null, handledByName: f.boHandledByName ?? null }} />
+                  item={{ status: f.boStatus, handledByName: f.boHandledByName ?? null }} />
               )}
             </span>
             {f.version > 1 && (
@@ -1916,5 +1955,20 @@ function PresenceChip({ user }: { user: PresenceUser }) {
         {user.email} — {isViewing ? "viewing now" : "opened recently"}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/// v0.1.61 — back-office soft lock on one side-panel field: greyed and not
+/// clickable while the ticket's category is Locked (UI only; the banner's
+/// "Edit anyway" lifts it, the server never refuses the edit).
+function SoftLockedField({ locked, children }: { locked: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className={locked ? "sd-soft-locked pointer-events-none select-none opacity-50" : undefined}
+      aria-disabled={locked || undefined}
+      title={locked ? "Handled via Back office forms" : undefined}
+    >
+      {children}
+    </div>
   );
 }

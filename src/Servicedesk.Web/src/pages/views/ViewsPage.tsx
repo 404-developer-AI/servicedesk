@@ -156,6 +156,7 @@ function formatDisplayConfig(dc: DisplayConfig): string[] {
     if (sf) parts.push(`Sort: ${sf.label} ${dir}`);
   }
   if (dc.searchEnabled) parts.push(`Search (${dc.searchDefaultMode === "full" ? "full" : "columns"})`);
+  if (dc.tabCategoryIds?.length) parts.push(`Tabs: ${dc.tabCategoryIds.length + 1}`);
   return parts;
 }
 
@@ -442,6 +443,8 @@ function ViewDialog({
   // v0.1.31 — Insights Rewind tracking.
   const [rewindTracked, setRewindTracked] = React.useState(view?.rewindTracked ?? false);
   const [searchEnabled, setSearchEnabled] = React.useState(initialDc.searchEnabled ?? false);
+  // v0.1.61 — categories that get their own tab, in tab order.
+  const [tabCategoryIds, setTabCategoryIds] = React.useState<string[]>(initialDc.tabCategoryIds ?? []);
   const [searchDefaultMode, setSearchDefaultMode] = React.useState<ViewSearchMode>(
     initialDc.searchDefaultMode === "full" ? "full" : "columns",
   );
@@ -470,6 +473,7 @@ function ViewDialog({
         dc.searchEnabled = true;
         dc.searchDefaultMode = searchDefaultMode;
       }
+      if (tabCategoryIds.length > 0) dc.tabCategoryIds = tabCategoryIds;
 
       const input: ViewInput = {
         name,
@@ -707,6 +711,50 @@ function ViewDialog({
               </div>
               <Switch checked={stateBucketSort} onCheckedChange={setStateBucketSort} />
             </div>
+          </div>
+
+          {/* ---- Display config: Tabs by category (v0.1.61) ---- */}
+          <div className="space-y-2 pt-2 border-t border-glass-strong">
+            <div className="space-y-0.5">
+              <span className="text-xs font-medium text-muted-foreground">Tabs by category</span>
+              <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                Each chosen category gets its own tab; every other ticket stays in “Other”, the default tab.
+                A tab’s number counts only tickets that are ready to be worked on (not pending).
+                Tickets in a locked category open in the back-office overlay.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(categories ?? []).filter((c) => c.isActive || tabCategoryIds.includes(c.id)).map((c) => {
+                const on = tabCategoryIds.includes(c.id);
+                return (
+                  <button key={c.id} type="button" aria-pressed={on}
+                    onClick={() => setTabCategoryIds((ids) => (on ? ids.filter((x) => x !== c.id) : [...ids, c.id]))}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
+                      on ? "border-primary/40 bg-primary/12 text-foreground" : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
+                    )}>
+                    {c.name}{c.isLocked ? " · locked" : ""}{!c.isActive ? " (inactive)" : ""}
+                  </button>
+                );
+              })}
+            </div>
+            {tabCategoryIds.length > 1 && (
+              <ol className="space-y-1">
+                <li className="text-[10px] text-muted-foreground/60">Tab order (after “Other”)</li>
+                {tabCategoryIds.map((id, i) => (
+                  <li key={id} className="flex items-center gap-2 rounded-md border border-glass bg-glass px-2.5 py-1 text-xs">
+                    <span className="w-4 tabular-nums text-muted-foreground">{i + 1}</span>
+                    <span className="flex-1 truncate">{(categories ?? []).find((c) => c.id === id)?.name ?? "Unknown category"}</span>
+                    <button type="button" aria-label="Move up" disabled={i === 0}
+                      onClick={() => setTabCategoryIds((ids) => { const n = [...ids]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; return n; })}
+                      className="rounded px-1.5 text-muted-foreground hover:bg-glass-hover disabled:opacity-30">↑</button>
+                    <button type="button" aria-label="Move down" disabled={i === tabCategoryIds.length - 1}
+                      onClick={() => setTabCategoryIds((ids) => { const n = [...ids]; [n[i + 1], n[i]] = [n[i], n[i + 1]]; return n; })}
+                      className="rounded px-1.5 text-muted-foreground hover:bg-glass-hover disabled:opacity-30">↓</button>
+                  </li>
+                ))}
+              </ol>
+            )}
           </div>
 
           {/* ---- Display config: Grouping ---- */}

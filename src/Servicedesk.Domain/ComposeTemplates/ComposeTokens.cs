@@ -16,6 +16,9 @@ public static class ComposeTokens
 
     public const string CompanyName      = "{{company.name}}";
     public const string CompanyCode      = "{{company.code}}";
+    /// v0.1.61 — one line: "street, line 2, postal code city, country"
+    /// (empty parts skipped). The default of a form's Address field.
+    public const string CompanyAddress   = "{{company.address}}";
 
     public const string TicketNumber     = "{{ticket.number}}";
     public const string TicketSubject    = "{{ticket.subject}}";
@@ -35,6 +38,7 @@ public static class ComposeTokens
         new ComposeTokenInfo(ContactMobile,    "Contact · Mobile"),
         new ComposeTokenInfo(CompanyName,      "Company · Name"),
         new ComposeTokenInfo(CompanyCode,      "Company · Customer code"),
+        new ComposeTokenInfo(CompanyAddress,   "Company · Address"),
         new ComposeTokenInfo(TicketNumber,     "Ticket · Number"),
         new ComposeTokenInfo(TicketSubject,    "Ticket · Subject"),
         new ComposeTokenInfo(AgentEmail,       "Agent · Email (current user)"),

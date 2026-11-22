@@ -866,6 +866,7 @@ app.MapChecklistTemplateEndpoints();
 app.MapFormTemplateEndpoints();
 app.MapTicketFormEndpoints();
 app.MapBackofficeFormEndpoints();
+Servicedesk.Api.Calendar.CalendarEndpoints.MapCalendarEndpoints(app);
 app.MapTagGroupEndpoints();
 app.MapNoteThreadEndpoints();
 app.MapTicketFollowEndpoints();

@@ -33,7 +33,12 @@ public static class TicketFormEndpoints
                 var list = await svc.ListUsableTemplatesAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, ct);
                 return Results.Ok(new
                 {
-                    items = list.Select(t => new { id = t.Id, name = t.Name, description = t.Description, fieldCount = t.FieldCount }),
+                    items = list.Select(t => new
+                    {
+                        id = t.Id, name = t.Name, description = t.Description, fieldCount = t.FieldCount,
+                        headerButtonLabel = t.HeaderButtonLabel,
+                        inPicker = t.InPicker,
+                    }),
                 });
             })).WithName("ListUsableFormTemplates");
 
@@ -42,7 +47,14 @@ public static class TicketFormEndpoints
             await Run(async () =>
             {
                 var t = await svc.GetUsableTemplateAsync(TicketEndpoints.ResolveMutationActor(http), ticketId, templateId, ct);
-                return Results.Ok(new { id = t.Id, name = t.Name, description = t.Description, fields = t.Definition.Fields });
+                // v0.1.61 — the Outlook mapping (field ids only) so the fill
+                // dialog can show the appointment helpers (availability,
+                // organizer, end time). Enforcement stays server-side.
+                return Results.Ok(new
+                {
+                    id = t.Id, name = t.Name, description = t.Description, fields = t.Definition.Fields,
+                    outlook = t.Outlook is { Enabled: true } ? t.Outlook : null,
+                });
             })).WithName("GetUsableFormTemplate");
 
         ticket.MapPost("/", async (
@@ -81,11 +93,13 @@ public static class TicketFormEndpoints
             .WithTags("Forms")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        form.MapGet("/", async (Guid formId, HttpContext http, ITicketFormService svc, CancellationToken ct) =>
+        form.MapGet("/", async (Guid formId, HttpContext http, ITicketFormService svc, IFormTemplateRepository templates, CancellationToken ct) =>
             await Run(async () =>
             {
                 var f = await svc.GetAsync(TicketEndpoints.ResolveMutationActor(http), formId, ct);
-                return Results.Ok(MapDetail(f, null));
+                // The live template's Outlook mapping (edit dialog helpers).
+                var outlook = f.TemplateId is { } tid ? (await templates.GetAsync(tid, ct))?.Outlook : null;
+                return Results.Ok(MapDetail(f, null, outlook is { Enabled: true } ? outlook : null));
             })).WithName("GetTicketForm");
 
         form.MapGet("/versions", async (Guid formId, HttpContext http, ITicketFormService svc, CancellationToken ct) =>
@@ -157,12 +171,11 @@ public static class TicketFormEndpoints
         updatedByName = s.UpdatedByName,
         updatedUtc = s.UpdatedUtc,
         boStatus = s.BoStatus,
-        boClaimedByName = s.BoClaimedByName,
         boHandledByName = s.BoHandledByName,
         boHandledUtc = s.BoHandledUtc,
     };
 
-    private static object MapDetail(TicketFormDetail f, long? eventId) => new
+    private static object MapDetail(TicketFormDetail f, long? eventId, FormOutlookMapping? outlook = null) => new
     {
         id = f.Summary.Id,
         ticketId = f.Summary.TicketId,
@@ -178,6 +191,7 @@ public static class TicketFormEndpoints
         fields = f.Snapshot.Fields,
         answers = f.Answers,
         eventId,
+        outlook,
     };
 
     public sealed record CreateTicketFormRequest(Guid TemplateId, JsonObject? Answers);

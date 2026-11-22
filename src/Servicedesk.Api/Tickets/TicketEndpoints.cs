@@ -685,9 +685,18 @@ public static class TicketEndpoints
         group.MapPatch("/{id:guid}", async (
             Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
             ITicketRepository tickets, ICompanyRepository companies,
-            ITicketMutationService mutations, IStatusGateService gateService, CancellationToken ct) =>
+            ITicketMutationService mutations, IStatusGateService gateService,
+            Servicedesk.Infrastructure.Persistence.Taxonomy.ITaxonomyRepository taxonomy, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            if (req.ClearCategory && req.CategoryId.HasValue)
+                return Results.BadRequest(new { error = "Choose a category or clear it, not both.", code = "category_conflict" });
+            if (req.CategoryId is Guid categoryId)
+            {
+                var category = await taxonomy.GetCategoryAsync(categoryId, ct);
+                if (category is null || !category.IsActive)
+                    return Results.BadRequest(new { error = "Unknown or inactive category.", code = "category_invalid" });
+            }
             var actor = ResolveMutationActor(http);
 
             // v0.0.102 — the rule set (queue access on current + target
@@ -707,7 +716,8 @@ public static class TicketEndpoints
                 PendingTillUtc: req.PendingTillUtc,
                 IsCallback: req.IsCallback,
                 IsResearch: req.IsResearch,
-                DescriptionInternal: req.DescriptionInternal);
+                DescriptionInternal: req.DescriptionInternal,
+                ClearCategory: req.ClearCategory);
             var pre = await mutations.PrecheckFieldUpdateAsync(actor, id, requested, ct);
             switch (pre.Check)
             {
@@ -2389,7 +2399,10 @@ public static class TicketEndpoints
         return new TicketMutationActor(
             userId, userRole, actor, role,
             http.Connection.RemoteIpAddress?.ToString(),
-            http.Request.Headers.UserAgent.ToString());
+            http.Request.Headers.UserAgent.ToString())
+        {
+            Amr = http.User.FindFirst(Servicedesk.Api.Auth.SessionAuthenticationHandler.AmrClaimType)?.Value,
+        };
     }
 
     /// v0.0.102 — bulk action payload. Everything but <c>TicketIds</c> is
@@ -2435,7 +2448,10 @@ public static class TicketEndpoints
         bool? IsResearch = null,
         // v0.1.49 — description visibility toggle (Internal / Visible to
         // customer). Null = not provided.
-        bool? DescriptionInternal = null);
+        bool? DescriptionInternal = null,
+        // v0.1.61 — explicit "no category" (Category field in the Status
+        // panel). Mutually exclusive with CategoryId.
+        bool ClearCategory = false);
 
     /// One agent-supplied confirmation payload for a status-change gate.
     /// The fields are kind-specific:

@@ -4,8 +4,11 @@ import type { FormAnswers, FormField } from "@/lib/forms-api";
 /// v0.1.54 — Back office forms: every form filled from a template marked
 /// "Send to back office" lands on this work list. Gated server-side by the
 /// per-user `backoffice_forms_enabled` flag (403 when off).
+/// v0.1.61 — Open → Handled (no claim step). Who is working on a form is
+/// live presence (`presence`), never stored. An open form whose ticket waits
+/// for the customer (setting-driven) is `waiting` and never counts.
 
-export type BackofficeFormStatus = "Open" | "InProgress" | "Handled";
+export type BackofficeFormStatus = "Open" | "Handled";
 export type BackofficeFormTab = BackofficeFormStatus | "All";
 
 export interface BackofficeFormItem {
@@ -24,9 +27,6 @@ export interface BackofficeFormItem {
   submittedUtc: string;
   updatedByName: string | null;
   updatedUtc: string;
-  claimedByUserId: string | null;
-  claimedByName: string | null;
-  claimedUtc: string | null;
   handledByUserId: string | null;
   handledByName: string | null;
   handledUtc: string | null;
@@ -34,12 +34,18 @@ export interface BackofficeFormItem {
   handledNote: string;
   /** Changed after it was handled — back on the list. */
   reopened: boolean;
-  /** Edited while someone was handling it. */
-  updatedSinceClaim: boolean;
+  ticketStatusName: string;
+  ticketStateCategory: string;
+  ticketPendingTillUtc: string | null;
+  /** Open form whose ticket waits for the customer (never counted). */
+  waiting: boolean;
+  /** The template's "Plan with form": the form "Plan" opens, or null. */
+  planTemplateId: string | null;
 }
 
 export interface BackofficeFormLogEntry {
   id: number;
+  /** claimed / released only on history from before v0.1.61. */
   action: "submitted" | "claimed" | "released" | "handled" | "reopened" | "updated";
   userId: string | null;
   userName: string | null;
@@ -73,12 +79,23 @@ export interface BackofficeFormListParams {
   limit: number;
 }
 
+export interface BackofficePresenceUser {
+  userId: string;
+  name: string;
+}
+
+/** ticketId → back-office users who have that ticket open right now. */
+export type BackofficePresenceMap = Record<string, BackofficePresenceUser[]>;
+
 export const BACKOFFICE_FORMS_KEY = ["backoffice-forms"] as const;
 export const backofficeFormKeys = {
   list: (p: BackofficeFormListParams) => [...BACKOFFICE_FORMS_KEY, "list", p] as const,
   counts: () => [...BACKOFFICE_FORMS_KEY, "counts"] as const,
   templates: () => [...BACKOFFICE_FORMS_KEY, "templates"] as const,
   detail: (id: string) => [...BACKOFFICE_FORMS_KEY, "detail", id] as const,
+  onTicket: (ticketId: string) => [...BACKOFFICE_FORMS_KEY, "ticket", ticketId] as const,
+  /** Not under BACKOFFICE_FORMS_KEY on purpose: presence pings refetch only this. */
+  presence: () => ["backoffice-presence"] as const,
 };
 
 const enc = encodeURIComponent;
@@ -98,14 +115,18 @@ function qs(p: BackofficeFormListParams): string {
 export const backofficeFormsApi = {
   list: (p: BackofficeFormListParams) =>
     request<{ items: BackofficeFormItem[]; total: number }>("GET", `/api/backoffice-forms/?${qs(p)}`),
-  counts: () => request<{ open: number; inProgress: number }>("GET", "/api/backoffice-forms/counts"),
+  /** ready = waiting for pickup (badge, red dot); waiting = ticket waits for the customer. */
+  counts: () => request<{ ready: number; waiting: number }>("GET", "/api/backoffice-forms/counts"),
   templates: () =>
-    request<{ items: { id: string; name: string; isActive: boolean }[] }>("GET", "/api/backoffice-forms/templates")
-      .then((r) => r.items),
+    request<{ items: { id: string; name: string; isActive: boolean; planTemplateId: string | null }[] }>(
+      "GET", "/api/backoffice-forms/templates",
+    ).then((r) => r.items),
   get: (id: string) => request<BackofficeFormDetail>("GET", `/api/backoffice-forms/${enc(id)}`),
-  claim: (id: string, takeOver = false) =>
-    request<BackofficeFormItem>("POST", `/api/backoffice-forms/${enc(id)}/claim`, { takeOver }),
-  release: (id: string) => request<BackofficeFormItem>("POST", `/api/backoffice-forms/${enc(id)}/release`),
+  onTicket: (ticketId: string) =>
+    request<{ items: BackofficeFormItem[] }>("GET", `/api/backoffice-forms/ticket/${enc(ticketId)}`).then((r) => r.items),
+  presence: () =>
+    request<{ items: { ticketId: string; users: BackofficePresenceUser[] }[] }>("GET", "/api/backoffice-forms/presence")
+      .then((r) => Object.fromEntries(r.items.map((i) => [i.ticketId, i.users])) as BackofficePresenceMap),
   handle: (id: string, note: string, expectedVersion: number) =>
     request<BackofficeFormItem>("POST", `/api/backoffice-forms/${enc(id)}/handle`, { note, expectedVersion }),
   reopen: (id: string, note: string) =>

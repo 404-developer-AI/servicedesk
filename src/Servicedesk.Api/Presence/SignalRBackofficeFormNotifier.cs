@@ -16,4 +16,7 @@ public sealed class SignalRBackofficeFormNotifier : IBackofficeFormNotifier
 
     public Task BackofficeFormsChangedAsync(CancellationToken ct)
         => _hub.Clients.Group(Group).SendAsync("BackofficeFormsChanged", ct);
+
+    public Task BackofficePresenceChangedAsync(CancellationToken ct)
+        => _hub.Clients.Group(Group).SendAsync("BackofficePresenceChanged", ct);
 }

@@ -1,5 +1,9 @@
 import { z } from "zod";
+import { formatDate, formatDateTime, formatTime } from "@/lib/dateFormat";
 import type {
+  AgentAnswer,
+  AttachmentAnswer,
+  InviteeAnswer,
   ArticleRowAnswer,
   FormAnswers,
   FormAnswersInput,
@@ -30,7 +34,65 @@ export type DraftValue =
   | { kind: "options"; value: string[] }
   | { kind: "ref"; value: RefAnswer | null }
   | { kind: "datetime"; value: string | null }
-  | { kind: "articles"; value: ArticleDraftRow[] };
+  | { kind: "articles"; value: ArticleDraftRow[] }
+  /// v0.1.61 — Agent with "multiple": picked agents in order, one may be organizer.
+  | { kind: "agents"; value: AgentAnswer[] }
+  /// v0.1.61 — people to invite: contacts and/or free e-mail addresses.
+  | { kind: "invitees"; value: InviteeAnswer[] }
+  /// v0.1.61 — files uploaded to the ticket for this form.
+  | { kind: "files"; value: AttachmentAnswer[] };
+
+/// v0.1.61 — "show when": a field is shown (and validated, and sent) only
+/// while its controlling checkbox is ticked — or, with showWhenUnchecked,
+/// not ticked (never answered counts as not ticked). Same rule as the server.
+export function isFieldShown(f: FormField, draft: FormDraft): boolean {
+  if (!f.showWhen) return true;
+  const v = draft[f.showWhen];
+  const ticked = v?.kind === "bool" && v.value === true;
+  return f.showWhenUnchecked ? !ticked : ticked;
+}
+
+/// v0.1.61 — end of a Duration that counts from a DateTime field (start +
+/// duration), as ISO; null when incomplete. Same rule as the server.
+function addMinutesIso(startIso: string | null | undefined, minutes: number | null): string | null {
+  if (!startIso || !minutes || minutes <= 0) return null;
+  const ms = Date.parse(startIso);
+  return Number.isNaN(ms) ? null : new Date(ms + minutes * 60_000).toISOString();
+}
+
+export function durationEndIso(f: FormField, draft: FormDraft): string | null {
+  if (f.type !== "Duration" || !f.durationFrom) return null;
+  const start = draft[f.durationFrom];
+  const dur = draft[f.id];
+  if (start?.kind !== "datetime" || dur?.kind !== "text") return null;
+  return addMinutesIso(start.value, parseDuration(dur.value));
+}
+
+/// The same end from stored answers (the read-only form view).
+export function durationEndIsoFromAnswers(f: FormField, answers: Record<string, unknown>): string | null {
+  if (f.type !== "Duration" || !f.durationFrom) return null;
+  const start = answers[f.durationFrom];
+  const minutes = answers[f.id];
+  return addMinutesIso(typeof start === "string" ? start : null, typeof minutes === "number" ? minutes : null);
+}
+
+/// "until 14:30", or "until 23/11/2026 - 01:00" when it ends on another day
+/// (server zone).
+export function durationEndLabel(endIso: string, startIso: string | null | undefined, zone: string | null): string {
+  const sameDay = !!startIso && formatDate(startIso, zone) === formatDate(endIso, zone);
+  return `until ${sameDay ? formatTime(endIso, zone) : formatDateTime(endIso, zone)}`;
+}
+
+/// A pragmatic e-mail check (one @, a dot in the domain, no spaces) — the
+/// same rule the server applies to invitees.
+export function isEmail(s: string): boolean {
+  const v = s.trim();
+  if (v.length < 3 || v.length > 320 || /\s/.test(v)) return false;
+  const at = v.indexOf("@");
+  if (at <= 0 || at !== v.lastIndexOf("@") || at === v.length - 1) return false;
+  const domain = v.slice(at + 1);
+  return domain.includes(".") && !domain.startsWith(".") && !domain.endsWith(".");
+}
 
 export type FormDraft = Record<string, DraftValue>;
 
@@ -41,11 +103,14 @@ function minutesToDuration(m: number): string {
   return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
 }
 
-/// "1:30" / "1.5" / "90m" / "2h" → minutes; null when unparseable.
+/// "1:30" / "1h30" / "1u30" / "1.5" / "90m" / "2h" → minutes; null when
+/// unparseable.
 export function parseDuration(raw: string): number | null {
   const s = raw.trim().toLowerCase();
   if (s === "") return null;
   let m = /^(\d{1,5}):([0-5]\d)$/.exec(s);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  m = /^(\d{1,5})\s*[hu]\s*([0-5]?\d)\s*(m|min)?$/.exec(s);
   if (m) return Number(m[1]) * 60 + Number(m[2]);
   m = /^(\d{1,5})\s*m(in)?$/.exec(s);
   if (m) return Number(m[1]);
@@ -120,6 +185,8 @@ export function emptyDraft(fields: FormField[], tokens?: Record<string, string>)
         d[f.id] = { kind: "options", value: [] };
         break;
       case "Agent":
+        d[f.id] = f.multiple ? { kind: "agents", value: [] } : { kind: "ref", value: null };
+        break;
       case "Contact":
       case "Queue":
         d[f.id] = { kind: "ref", value: null };
@@ -129,6 +196,15 @@ export function emptyDraft(fields: FormField[], tokens?: Record<string, string>)
         break;
       case "Article":
         d[f.id] = { kind: "articles", value: [] };
+        break;
+      case "Invitees":
+        d[f.id] = { kind: "invitees", value: [] };
+        break;
+      case "Attachments":
+        d[f.id] = { kind: "files", value: [] };
+        break;
+      case "Address":
+        d[f.id] = { kind: "text", value: text(f.defaultValue) };
         break;
       case "LongText":
         d[f.id] = { kind: "html", value: plainTextToHtml(text(f.defaultValue)) };
@@ -163,9 +239,29 @@ export function draftFromAnswers(fields: FormField[], answers: FormAnswers): For
         d[f.id] = { kind: "options", value: Array.isArray(v) ? (v as string[]) : [] };
         break;
       case "Agent":
+        if (f.multiple) {
+          d[f.id] = {
+            kind: "agents",
+            value: Array.isArray(v) ? (v as AgentAnswer[])
+              : typeof v === "object" && v && "id" in v ? [v as AgentAnswer] : [],
+          };
+          break;
+        }
+        d[f.id] = {
+          kind: "ref",
+          value: Array.isArray(v) ? ((v as AgentAnswer[])[0] ?? null)
+            : typeof v === "object" ? (v as RefAnswer) : null,
+        };
+        break;
       case "Contact":
       case "Queue":
         d[f.id] = { kind: "ref", value: typeof v === "object" && !Array.isArray(v) ? (v as RefAnswer) : null };
+        break;
+      case "Invitees":
+        d[f.id] = { kind: "invitees", value: Array.isArray(v) ? (v as InviteeAnswer[]) : [] };
+        break;
+      case "Attachments":
+        d[f.id] = { kind: "files", value: Array.isArray(v) ? (v as AttachmentAnswer[]) : [] };
         break;
       case "DateTime":
         d[f.id] = { kind: "datetime", value: typeof v === "string" ? v : null };
@@ -215,6 +311,9 @@ function clearValue(v: DraftValue | undefined): DraftValue {
     case "ref": return { kind: "ref", value: null };
     case "datetime": return { kind: "datetime", value: null };
     case "articles": return { kind: "articles", value: [] };
+    case "agents": return { kind: "agents", value: [] };
+    case "invitees": return { kind: "invitees", value: [] };
+    case "files": return { kind: "files", value: [] };
     case "html": return { kind: "html", value: "" };
     default: return { kind: "text", value: "" };
   }
@@ -268,9 +367,21 @@ function fieldSchema(f: FormField): z.ZodType<DraftValue> {
     case "DateTime":
       return z.custom<DraftValue>((v) => !req || !!(v as { value: string | null }).value, { message: "Required." });
     case "Agent":
+      return z.custom<DraftValue>((v) => {
+        const d = v as DraftValue;
+        return !req || (d.kind === "agents" ? d.value.length > 0 : d.kind === "ref" && !!d.value);
+      }, { message: "Required." });
     case "Contact":
     case "Queue":
       return z.custom<DraftValue>((v) => !req || !!(v as { value: RefAnswer | null }).value, { message: "Required." });
+    case "Address":
+      return z.custom<DraftValue>((v) => !req || (v as { value: string }).value.trim().length > 0, { message: "Required." })
+        .refine((v) => (v as { value: string }).value.length <= 1000, { message: "At most 1000 characters." });
+    case "Invitees":
+      return z.custom<DraftValue>((v) => !req || (v as { value: InviteeAnswer[] }).value.length > 0, { message: "Add at least one person." })
+        .refine((v) => (v as { value: InviteeAnswer[] }).value.every((p) => !!p.contactId || isEmail(p.email)), { message: "Check the e-mail addresses." });
+    case "Attachments":
+      return z.custom<DraftValue>((v) => !req || (v as { value: AttachmentAnswer[] }).value.length > 0, { message: "Add at least one file." });
     case "Article":
       return z.custom<DraftValue>((v) => {
         const rows = (v as { value: ArticleDraftRow[] }).value;
@@ -302,6 +413,7 @@ export function validateDraft(fields: FormField[], draft: FormDraft): Record<str
   const errors: Record<string, string> = {};
   for (const f of fields) {
     if (f.type === "SectionHeader") continue;
+    if (!isFieldShown(f, draft)) continue;
     const v = draft[f.id];
     if (!v) continue;
     const r = fieldSchema(f).safeParse(v);
@@ -316,6 +428,7 @@ export function draftToInput(fields: FormField[], draft: FormDraft): FormAnswers
   for (const f of fields) {
     const v = draft[f.id];
     if (!v || f.type === "SectionHeader") continue;
+    if (!isFieldShown(f, draft)) continue;
     switch (v.kind) {
       case "text": {
         const s = v.value.trim();
@@ -349,6 +462,17 @@ export function draftToInput(fields: FormField[], draft: FormDraft): FormAnswers
       case "articles":
         if (v.value.length > 0)
           out[f.id] = v.value.map((r) => ({ articleId: r.articleId, quantity: Number(r.quantity.replace(",", ".")) }));
+        break;
+      case "agents":
+        if (v.value.length > 0)
+          out[f.id] = { ids: v.value.map((a) => a.id), organizerId: v.value.find((a) => a.organizer)?.id ?? null };
+        break;
+      case "invitees":
+        if (v.value.length > 0)
+          out[f.id] = v.value.map((p) => (p.contactId ? { contactId: p.contactId } : { email: p.email.trim(), name: p.name.trim() }));
+        break;
+      case "files":
+        if (v.value.length > 0) out[f.id] = v.value.map((a) => a.id);
         break;
     }
   }

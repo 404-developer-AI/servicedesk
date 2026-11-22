@@ -181,7 +181,8 @@ export function Sidebar() {
     staleTime: 30_000,
     refetchOnWindowFocus: true,
   });
-  const backofficeBadge = !!user?.backofficeFormsEnabled && (boCounts?.open ?? 0) > 0;
+  // v0.1.61 — only forms waiting for pickup count; Pending tickets never do.
+  const backofficeBadge = !!user?.backofficeFormsEnabled && (boCounts?.ready ?? 0) > 0;
   const badgedPaths = [
     ...(timesheetBadge ? ["/timesheet"] : []),
     ...(backofficeBadge ? ["/backoffice-forms"] : []),

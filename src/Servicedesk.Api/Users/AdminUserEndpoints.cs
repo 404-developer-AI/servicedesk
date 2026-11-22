@@ -434,7 +434,10 @@ public static class AdminUserEndpoints
         bool? FeedbackEnabled,
         bool? FeedbackOwnOnly,
         bool? InsightsEnabled = null,
-        bool? OrderManagementEnabled = null);
+        bool? OrderManagementEnabled = null,
+        bool? CalendarPlanningEnabled = null,
+        string? CalendarId = null,
+        string? CalendarName = null);
 
     private static async Task<IResult> UpdateFeatureFlags(
         Guid id,
@@ -446,6 +449,11 @@ public static class AdminUserEndpoints
     {
         var adminId = RequireUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
+
+        if (request.CalendarId is { Length: > 1000 })
+            return Results.BadRequest(new { error = "Calendar id is too long." });
+        if (request.CalendarName is { Length: > 200 })
+            return Results.BadRequest(new { error = "Calendar name is too long." });
 
         var update = new FeatureFlagsUpdate(
             request.TimesheetEnabled,
@@ -466,7 +474,10 @@ public static class AdminUserEndpoints
             request.FeedbackEnabled,
             request.FeedbackOwnOnly,
             request.InsightsEnabled,
-            request.OrderManagementEnabled);
+            request.OrderManagementEnabled,
+            request.CalendarPlanningEnabled,
+            request.CalendarId,
+            request.CalendarName);
 
         var result = await admin.UpdateFeatureFlagsAsync(id, update, adminId.Value, ct);
         return result switch
@@ -497,6 +508,9 @@ public static class AdminUserEndpoints
                         feedback_own_only = updated.Row.FeedbackOwnOnly,
                         insights_enabled = updated.Row.InsightsEnabled,
                         order_management_enabled = updated.Row.OrderManagementEnabled,
+                        calendar_planning_enabled = updated.Row.CalendarPlanningEnabled,
+                        calendar_id = updated.Row.CalendarId,
+                        calendar_name = updated.Row.CalendarName,
                     },
                     body: updated.Row,
                     statusCode: StatusCodes.Status200OK,

@@ -365,7 +365,10 @@ public sealed record TicketFieldUpdate(
     bool? IsCallback = null,
     bool? IsResearch = null,
     // v0.1.49 — description visibility; null = not provided.
-    bool? DescriptionInternal = null);
+    bool? DescriptionInternal = null,
+    // v0.1.61 — explicit "no category" (CategoryId null means "not
+    // provided", same as ClearAssignee). Mutually exclusive with CategoryId.
+    bool ClearCategory = false);
 
 public sealed record NewTicketEvent(
     string EventType,

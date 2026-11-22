@@ -537,7 +537,8 @@ public static class TaxonomyEndpoints
         Guid? ParentId,
         string? Description,
         int SortOrder,
-        bool IsActive);
+        bool IsActive,
+        bool IsLocked = false);
 
     private static void MapCategories(RouteGroupBuilder group)
     {
@@ -559,7 +560,7 @@ public static class TaxonomyEndpoints
             var now = DateTime.UtcNow;
             var created = await repo.CreateCategoryAsync(new Category(
                 Guid.Empty, req.ParentId, req.Name.Trim(), Slugify(req.Name),
-                req.Description ?? "", req.SortOrder, req.IsActive, IsSystem: false, now, now), ct);
+                req.Description ?? "", req.SortOrder, req.IsActive, IsSystem: false, now, now, req.IsLocked), ct);
             await AuditWrite(audit, http, "taxonomy.category.created", created.Id.ToString(), created);
             return Results.Created($"/api/taxonomy/categories/{created.Id}", created);
         }).WithName("CreateCategory")
@@ -573,7 +574,7 @@ public static class TaxonomyEndpoints
             if (req.ParentId == id)
                 return Results.BadRequest(new { error = "A category cannot be its own parent." });
             var updated = await repo.UpdateCategoryAsync(id, req.ParentId, req.Name.Trim(), Slugify(req.Name),
-                req.Description ?? "", req.SortOrder, req.IsActive, ct);
+                req.Description ?? "", req.SortOrder, req.IsActive, req.IsLocked, ct);
             if (updated is null) return Results.NotFound();
             await AuditWrite(audit, http, "taxonomy.category.updated", id.ToString(), updated);
             return Results.Ok(updated);

@@ -22,6 +22,9 @@ export const FORM_FIELD_TYPES = [
   "Contact",
   "Article",
   "Queue",
+  "Address",
+  "Attachments",
+  "Invitees",
 ] as const;
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
@@ -41,6 +44,9 @@ export const FORM_FIELD_TYPE_LABEL: Record<FormFieldType, string> = {
   Contact: "Contact",
   Article: "Articles + quantity",
   Queue: "Queue",
+  Address: "Address",
+  Attachments: "Attachments",
+  Invitees: "People to invite",
 };
 
 export const hasOptions = (t: FormFieldType) =>
@@ -67,7 +73,36 @@ export interface FormField {
   defaultValue: string;
   /** v0.1.58 — the name triggers use for this field (a-z, 0-9, _). */
   triggerKey?: string | null;
+  /** v0.1.61 — Agent only: several agents may be picked. */
+  multiple?: boolean | null;
+  /** v0.1.61 — shown (and validated) only while this checkbox field is ticked. */
+  showWhen?: string | null;
+  /** v0.1.61 — inverts showWhen: shown only while that checkbox is not ticked. */
+  showWhenUnchecked?: boolean | null;
+  /** v0.1.61 — Duration only: the DateTime field it counts from (end = start + duration). */
+  durationFrom?: string | null;
 }
+
+/// v0.1.61 — the "Outlook appointment" block of a template: which field
+/// feeds which appointment property (field ids). Enforced server-side.
+export interface FormOutlookMapping {
+  enabled: boolean;
+  titleFieldId?: string | null;
+  startFieldId?: string | null;
+  endFieldId?: string | null;
+  techniciansFieldId?: string | null;
+  addressFieldId?: string | null;
+  teamsFieldId?: string | null;
+  inviteesFieldId?: string | null;
+  messageFieldId?: string | null;
+  attachmentsFieldId?: string | null;
+  shareAttachmentsFieldId?: string | null;
+}
+
+/// Stored shapes of the v0.1.61 field types.
+export type AgentAnswer = { id: string; name: string; organizer?: boolean };
+export type InviteeAnswer = { contactId?: string; email: string; name: string };
+export type AttachmentAnswer = { id: string; name: string; size: number; contentType: string };
 
 /// Same rule as the server (FormTemplateValidator.TriggerKeyPattern).
 export const TRIGGER_KEY_PATTERN = /^[a-z][a-z0-9_]{0,39}$/;
@@ -91,7 +126,10 @@ export type FormAnswerValue =
   | boolean
   | string[]
   | RefAnswer
-  | ArticleRowAnswer[];
+  | ArticleRowAnswer[]
+  | AgentAnswer[]
+  | InviteeAnswer[]
+  | AttachmentAnswer[];
 export type FormAnswers = Record<string, FormAnswerValue>;
 
 export interface FormTemplateSummary {
@@ -103,12 +141,23 @@ export interface FormTemplateSummary {
   fieldCount: number;
   /** Forms filled from this template land on the Back office forms list. */
   sendToBackoffice: boolean;
+  /** v0.1.61 — back-office template: the form "Plan" opens. */
+  boPlanTemplateId?: string | null;
+  /** v0.1.61 — the template creates Outlook appointments. */
+  outlookEnabled?: boolean;
+  /** v0.1.61 — label of the button next to the ticket title; null = no button. */
+  headerButtonLabel?: string | null;
+  /** v0.1.61 — queues whose tickets show the header button. */
+  headerButtonQueueIds?: string[];
+  /** v0.1.61 — false: not offered through `::` (queueIds unused). */
+  inPicker?: boolean;
   createdUtc: string;
   updatedUtc: string;
 }
 
 export interface FormTemplateDetail extends FormTemplateSummary {
   fields: FormField[];
+  outlook?: FormOutlookMapping | null;
 }
 
 export interface FormTemplateUpsert {
@@ -118,6 +167,11 @@ export interface FormTemplateUpsert {
   queueIds: string[];
   fields: FormField[];
   sendToBackoffice: boolean;
+  boPlanTemplateId?: string | null;
+  outlook?: FormOutlookMapping | null;
+  headerButtonLabel?: string | null;
+  headerButtonQueueIds?: string[];
+  inPicker?: boolean;
 }
 
 export interface UsableFormTemplate {
@@ -125,6 +179,10 @@ export interface UsableFormTemplate {
   name: string;
   description: string;
   fieldCount: number;
+  /** v0.1.61 — set: the ticket shows a button with this label next to its title. */
+  headerButtonLabel?: string | null;
+  /** v0.1.61 — offered through `::` (and Insert form) on this ticket. */
+  inPicker?: boolean;
 }
 
 export interface TicketFormSummary {
@@ -139,8 +197,7 @@ export interface TicketFormSummary {
   updatedByName: string | null;
   updatedUtc: string;
   /** v0.1.54 — back office state (null = not a back office form). */
-  boStatus?: "Open" | "InProgress" | "Handled" | null;
-  boClaimedByName?: string | null;
+  boStatus?: "Open" | "Handled" | null;
   boHandledByName?: string | null;
   boHandledUtc?: string | null;
 }
@@ -150,6 +207,38 @@ export interface TicketFormDetail extends TicketFormSummary {
   fields: FormField[];
   answers: FormAnswers;
   eventId: number | null;
+  /** v0.1.61 — the live template's Outlook mapping (edit dialog helpers). */
+  outlook?: FormOutlookMapping | null;
+}
+
+/// v0.1.61 — one Outlook appointment a form keeps in sync.
+export interface FormCalendarEvent {
+  id: string;
+  userId: string;
+  userName: string;
+  isTeams: boolean;
+  status: "Pending" | "Synced" | "Failed" | "CancelPending" | "Cancelled";
+  webLink: string | null;
+  joinUrl: string | null;
+  attempts: number;
+  nextAttemptUtc: string | null;
+  lastError: string;
+  updatedUtc: string;
+}
+
+export interface CalendarBusyItem {
+  startUtc: string;
+  endUtc: string;
+  status: string;
+  subject: string;
+  location: string;
+  isPrivate: boolean;
+}
+
+export interface CalendarAvailability {
+  enabled: boolean;
+  error?: string;
+  users: { userId: string; name: string; reachable: boolean; items: CalendarBusyItem[] }[];
 }
 
 export interface TicketFormVersion {
@@ -209,7 +298,7 @@ export const ticketFormsApi = {
   /// `::` picker variant — one fetch per composer session (30 s TTL).
   usableCached: memoizeTtl(fetchUsable, 30_000),
   template: (ticketId: string, templateId: string) =>
-    request<{ id: string; name: string; description: string; fields: FormField[] }>(
+    request<{ id: string; name: string; description: string; fields: FormField[]; outlook?: FormOutlookMapping | null }>(
       "GET",
       `/api/tickets/${enc(ticketId)}/forms/templates/${enc(templateId)}`,
     ),
@@ -238,7 +327,15 @@ export const ticketFormsApi = {
 
 /// What the client sends: ids only for references (the server resolves and
 /// stores names), article rows as {articleId, quantity}.
-export type FormAnswersInput = Record<string, string | number | boolean | string[] | RichTextAnswer | ShortTextOrdersAnswer | { articleId: string; quantity: number }[]>;
+export type FormAnswersInput = Record<
+  string,
+  | string | number | boolean | string[] | RichTextAnswer | ShortTextOrdersAnswer
+  | { articleId: string; quantity: number }[]
+  /** v0.1.61 — several agents (Agent with "multiple"). */
+  | { ids: string[]; organizerId: string | null }
+  /** v0.1.61 — invitees: a contact, or a free address. */
+  | ({ contactId: string } | { email: string; name: string })[]
+>;
 
 /// Query keys under ["ticket", id] so the TicketUpdated realtime push
 /// (useTicketRealtime) refreshes them with no extra wiring.
@@ -252,3 +349,21 @@ export const ticketFormKeys = {
 export const FILL_FORM_EVENT = "sd:fill-form";
 export const OPEN_FORM_EVENT = "sd:open-form";
 export type FillFormDetail = { ticketId: string; templateId: string };
+/// v0.1.61 — a form was saved (created or edited) on a ticket. The ticket
+/// overlay listens to close itself after the planning form is saved.
+export const FORM_SAVED_EVENT = "sd:form-saved";
+export type FormSavedDetail = { ticketId: string; templateId: string | null; mode: "create" | "edit" };
+
+/// v0.1.61 — Outlook calendar planning.
+export const calendarApi = {
+  settings: () => request<{ enabled: boolean }>("GET", "/api/settings/calendar"),
+  /** Free/busy of the picked technicians (behind "Plan in calendars"). */
+  availability: (userIds: string[], startUtc: string, endUtc: string, excludeFormId?: string | null) => {
+    const q = new URLSearchParams({ userIds: userIds.join(","), start: startUtc, end: endUtc });
+    if (excludeFormId) q.set("excludeFormId", excludeFormId);
+    return request<CalendarAvailability>("GET", `/api/calendar/availability?${q.toString()}`);
+  },
+  status: (formId: string) =>
+    request<{ items: FormCalendarEvent[] }>("GET", `/api/ticket-forms/${enc(formId)}/calendar`).then((r) => r.items),
+  retry: (formId: string) => request<{ retried: number }>("POST", `/api/ticket-forms/${enc(formId)}/calendar/retry`),
+};

@@ -10,9 +10,25 @@ public sealed record TicketFormContactOption(Guid Id, string Name, string Email)
 
 public interface ITicketFormRepository
 {
+    /// v0.1.61 — Invitees fields: any active servicedesk contact.
+    Task<IReadOnlyDictionary<Guid, (string Name, string Email)>> ResolveActiveContactsAsync(
+        IReadOnlyCollection<Guid> ids, CancellationToken ct);
+    /// v0.1.61 — Attachments fields: ready attachments of this ticket only —
+    /// staged on it (uploaded, no event yet) or already on one of its events.
+    /// <c>Staged</c> = still to be bound to the form's note.
+    Task<IReadOnlyDictionary<Guid, (string Name, long Size, string ContentType, bool Staged)>> ResolveTicketAttachmentsAsync(
+        Guid ticketId, IReadOnlyCollection<Guid> ids, CancellationToken ct);
+    /// Binds staged attachments to the form's note (they then show on the
+    /// note and download through the normal ticket-attachment endpoint).
+    Task BindAttachmentsToEventAsync(Guid ticketId, IReadOnlyCollection<Guid> ids, long eventId, CancellationToken ct);
+
     Task<IReadOnlyList<TicketFormSummary>> ListForTicketAsync(Guid ticketId, CancellationToken ct);
     Task<TicketFormDetail?> GetAsync(Guid formId, CancellationToken ct);
     Task<int> CountForTicketAsync(Guid ticketId, CancellationToken ct);
+    /// v0.1.61 — <paramref name="templateId"/> is the "Plan with form" of a
+    /// back-office form still Open on this ticket (Plan opens it there even
+    /// when it is not offered through `::` in the ticket's queue).
+    Task<bool> IsPlanFormOfOpenRequestAsync(Guid ticketId, Guid templateId, CancellationToken ct);
     /// <paramref name="sendToBackoffice"/> = the template's marking at fill
     /// time: the form starts Open on the back-office list (+ log row).
     Task<Guid> CreateAsync(Guid ticketId, Guid? templateId, string name, FormDefinition snapshot,
@@ -20,7 +36,7 @@ public interface ITicketFormRepository
     /// Optimistic update: only applies when the stored version equals
     /// <paramref name="expectedVersion"/>. Returns null on a version conflict
     /// / deleted form. A Handled back-office form goes back to Open
-    /// (bo_reopened); an In progress one stays claimed (logged as updated).
+    /// (bo_reopened); an Open one is logged as updated.
     Task<TicketFormUpdateResult?> UpdateAsync(Guid formId, int expectedVersion, JsonObject answers, string searchText,
         Guid userId, CancellationToken ct);
     Task SetVersionEventAsync(Guid formId, int version, long eventId, CancellationToken ct);
@@ -64,7 +80,6 @@ public sealed class TicketFormRepository : ITicketFormRepository
                COALESCE(NULLIF(uu.display_name, ''), uu.email) AS UpdatedByName,
                f.updated_utc        AS UpdatedUtc,
                f.bo_status          AS BoStatus,
-               COALESCE(NULLIF(clu.display_name, ''), clu.email) AS BoClaimedByName,
                COALESCE(NULLIF(hu.display_name, ''), hu.email) AS BoHandledByName,
                f.bo_handled_utc     AS BoHandledUtc
         """;
@@ -73,7 +88,6 @@ public sealed class TicketFormRepository : ITicketFormRepository
         FROM ticket_forms f
         LEFT JOIN users cu ON cu.id = f.created_by_user_id
         LEFT JOIN users uu ON uu.id = f.updated_by_user_id
-        LEFT JOIN users clu ON clu.id = f.bo_claimed_by_user_id
         LEFT JOIN users hu ON hu.id = f.bo_handled_by_user_id
         """;
 
@@ -109,6 +123,18 @@ public sealed class TicketFormRepository : ITicketFormRepository
         return await conn.ExecuteScalarAsync<int>(new CommandDefinition(
             "SELECT COUNT(*)::int FROM ticket_forms WHERE ticket_id = @ticketId AND deleted_utc IS NULL",
             new { ticketId }, cancellationToken: ct));
+    }
+
+    public async Task<bool> IsPlanFormOfOpenRequestAsync(Guid ticketId, Guid templateId, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+            SELECT EXISTS (
+                SELECT 1 FROM ticket_forms tf
+                JOIN form_templates ft ON ft.id = tf.template_id
+                WHERE tf.ticket_id = @ticketId AND tf.bo_status = 'Open' AND tf.deleted_utc IS NULL
+                  AND ft.bo_plan_template_id = @templateId)
+            """, new { ticketId, templateId }, cancellationToken: ct));
     }
 
     public async Task<Guid> CreateAsync(Guid ticketId, Guid? templateId, string name, FormDefinition snapshot,
@@ -274,6 +300,50 @@ public sealed class TicketFormRepository : ITicketFormRepository
         return rows.ToDictionary(r => r.Id, r => (r.Name, r.Email));
     }
 
+    public async Task<IReadOnlyDictionary<Guid, (string Name, string Email)>> ResolveActiveContactsAsync(
+        IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return new Dictionary<Guid, (string, string)>();
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<(Guid Id, string Name, string Email)>(new CommandDefinition("""
+            SELECT c.id, trim(c.first_name || ' ' || c.last_name), c.email::text
+            FROM contacts c
+            WHERE c.id = ANY(@ids) AND c.is_active = TRUE AND c.email <> ''
+            """, new { ids = ids.ToArray() }, cancellationToken: ct));
+        return rows.ToDictionary(r => r.Id, r => (r.Name, r.Email));
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, (string Name, long Size, string ContentType, bool Staged)>> ResolveTicketAttachmentsAsync(
+        Guid ticketId, IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return new Dictionary<Guid, (string, long, string, bool)>();
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<(Guid Id, string Name, long Size, string ContentType, bool Staged)>(new CommandDefinition("""
+            SELECT a.id, a.original_filename, a.size_bytes, a.mime_type, (a.event_id IS NULL)
+            FROM attachments a
+            WHERE a.id = ANY(@ids)
+              AND a.processing_state = 'Ready'
+              AND a.note_reply_id IS NULL
+              AND ((a.owner_kind = 'Ticket' AND a.owner_id = @ticketId AND a.event_id IS NULL)
+                   OR (a.event_id IS NOT NULL AND EXISTS (
+                        SELECT 1 FROM ticket_events e WHERE e.id = a.event_id AND e.ticket_id = @ticketId)))
+            """, new { ids = ids.ToArray(), ticketId }, cancellationToken: ct));
+        return rows.ToDictionary(r => r.Id, r => (r.Name, r.Size, r.ContentType, r.Staged));
+    }
+
+    public async Task BindAttachmentsToEventAsync(Guid ticketId, IReadOnlyCollection<Guid> ids, long eventId, CancellationToken ct)
+    {
+        if (ids.Count == 0) return;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        // Same ownership guard as a note's attachments: only rows still staged
+        // on this ticket move.
+        await conn.ExecuteAsync(new CommandDefinition("""
+            UPDATE attachments SET event_id = @eventId
+             WHERE id = ANY(@ids) AND owner_kind = 'Ticket' AND owner_id = @ticketId
+               AND event_id IS NULL AND note_reply_id IS NULL AND processing_state = 'Ready'
+            """, new { ids = ids.ToArray(), ticketId, eventId }, cancellationToken: ct));
+    }
+
     public async Task<IReadOnlyDictionary<Guid, (string Code, string Name)>> ResolveArticlesAsync(
         IReadOnlyCollection<Guid> ids, CancellationToken ct)
     {
@@ -357,7 +427,7 @@ public sealed class TicketFormRepository : ITicketFormRepository
     private static TicketFormSummary ToSummary(SummaryRow r) => new(
         r.Id, r.TicketId, r.Name, r.Version, r.CreatedByUserId, r.CreatedByName, r.CreatedUtc,
         r.UpdatedByUserId, r.UpdatedByName, r.UpdatedUtc,
-        r.BoStatus, r.BoClaimedByName, r.BoHandledByName, r.BoHandledUtc);
+        r.BoStatus, r.BoHandledByName, r.BoHandledUtc);
 
     private class SummaryRow
     {
@@ -372,7 +442,6 @@ public sealed class TicketFormRepository : ITicketFormRepository
         public string? UpdatedByName { get; set; }
         public DateTime UpdatedUtc { get; set; }
         public string? BoStatus { get; set; }
-        public string? BoClaimedByName { get; set; }
         public string? BoHandledByName { get; set; }
         public DateTime? BoHandledUtc { get; set; }
     }

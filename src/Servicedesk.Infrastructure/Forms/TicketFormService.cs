@@ -75,6 +75,7 @@ public sealed class TicketFormService : ITicketFormService
     private readonly IQueueAccessService _queueAccess;
     private readonly ITaxonomyRepository _taxonomy;
     private readonly IFormTriggerRunner _formTriggers;
+    private readonly Calendar.ICalendarSyncService _calendar;
     private readonly ILogger<TicketFormService> _logger;
 
     public TicketFormService(
@@ -90,8 +91,10 @@ public sealed class TicketFormService : ITicketFormService
         IQueueAccessService queueAccess,
         ITaxonomyRepository taxonomy,
         IFormTriggerRunner formTriggers,
+        Calendar.ICalendarSyncService calendar,
         ILogger<TicketFormService> logger)
     {
+        _calendar = calendar;
         _queueAccess = queueAccess;
         _taxonomy = taxonomy;
         _formTriggers = formTriggers;
@@ -131,9 +134,12 @@ public sealed class TicketFormService : ITicketFormService
 
     private async Task<FormTemplateDetail> RequireTemplateForTicketAsync(Ticket ticket, Guid templateId, CancellationToken ct)
     {
+        // v0.1.61 — offered in the ticket's queue through `::` or a header
+        // button, or the plan form of an open back-office request (Plan).
         var template = await _templates.GetAsync(templateId, ct);
         if (template is null || !template.IsActive
-            || (template.QueueIds.Count > 0 && !template.QueueIds.Contains(ticket.QueueId)))
+            || (!template.UsableIn(ticket.QueueId)
+                && !await _repo.IsPlanFormOfOpenRequestAsync(ticket.Id, templateId, ct)))
         {
             throw new FormRejectedException(FormRejectCode.TemplateNotAvailable,
                 "This form is not available for the ticket's current queue.");
@@ -152,7 +158,12 @@ public sealed class TicketFormService : ITicketFormService
         var settings = await _settings.GetAsync(ct);
         if (!settings.Enabled) return Array.Empty<FormTemplateSummary>();
         var ticket = await RequireTicketAsync(actor, ticketId, ct);
-        return await _templates.ListAvailableForQueueAsync(ticket.QueueId, ct);
+        // Resolved for this ticket's queue: InPicker = offered through `::`
+        // here; HeaderButtonLabel only when the button shows in this queue.
+        var q = ticket.QueueId;
+        return (await _templates.ListAvailableForQueueAsync(q, ct))
+            .Select(t => t with { InPicker = t.InPickerFor(q), HeaderButtonLabel = t.ButtonFor(q) ? t.HeaderButtonLabel : null })
+            .ToList();
     }
 
     public async Task<FormTemplateDetail> GetUsableTemplateAsync(TicketMutationActor actor, Guid ticketId, Guid templateId, CancellationToken ct)
@@ -182,7 +193,9 @@ public sealed class TicketFormService : ITicketFormService
                 $"A ticket can have at most {settings.MaxPerTicket} forms.");
 
         var snapshot = template.Definition;
+        await RequirePlannerAsync(actor, template.Outlook, ct);
         var normalized = await NormalizeAnswersAsync(actor, snapshot, answers, null, ticket, settings, ct);
+        CheckAppointment(template.Outlook, snapshot, normalized, ticket);
         var searchText = FormRenderer.FlattenForSearch(snapshot, normalized);
 
         var formId = await _repo.CreateAsync(ticketId, template.Id, template.Name, snapshot, normalized, searchText,
@@ -201,6 +214,7 @@ public sealed class TicketFormService : ITicketFormService
             throw;
         }
         await _repo.SetVersionEventAsync(formId, 1, eventId, ct);
+        await _repo.BindAttachmentsToEventAsync(ticketId, FormRenderer.AttachmentIds(snapshot, normalized), eventId, ct);
 
         await AuditAsync(actor, "ticket.form.created", ticketId,
             new { formId, templateId = template.Id, template.Name, answeredFields = normalized.Count,
@@ -211,6 +225,8 @@ public sealed class TicketFormService : ITicketFormService
 
         if (template.SendToBackoffice)
             await PublishBackofficeAsync(BackofficeFormEventKind.Submitted, formId, actor, ct);
+
+        await PlanCalendarAsync(template.Outlook, formId, ct);
 
         var detail = await _repo.GetAsync(formId, ct)
                      ?? throw new FormRejectedException(FormRejectCode.NotFound, "Form not found.");
@@ -235,7 +251,11 @@ public sealed class TicketFormService : ITicketFormService
         if (form.Summary.Version != expectedVersion)
             throw VersionConflict();
 
+        // The live template decides whether this form plans in Outlook.
+        var outlook = form.TemplateId is { } tid ? (await _templates.GetAsync(tid, ct))?.Outlook : null;
+        await RequirePlannerAsync(actor, outlook, ct);
         var normalized = await NormalizeAnswersAsync(actor, form.Snapshot, answers, form.Answers, ticket, settings, ct);
+        CheckAppointment(outlook, form.Snapshot, normalized, ticket);
         var changed = FormRenderer.ChangedFields(form.Snapshot, form.Answers, normalized);
         if (changed.Count == 0)
             throw new FormRejectedException(FormRejectCode.Invalid, "Nothing changed.");
@@ -248,6 +268,7 @@ public sealed class TicketFormService : ITicketFormService
         var eventId = await WriteNoteAsync(actor, ticket.Id, formId, form.Summary.Name, newVersion,
             form.Snapshot, normalized, form.Answers, changed, ct);
         await _repo.SetVersionEventAsync(formId, newVersion, eventId, ct);
+        await _repo.BindAttachmentsToEventAsync(ticket.Id, FormRenderer.AttachmentIds(form.Snapshot, normalized), eventId, ct);
 
         await AuditAsync(actor, "ticket.form.updated", ticket.Id,
             new { formId, form.Summary.Name, version = newVersion, changedFields = changed.Count }, ct);
@@ -262,9 +283,43 @@ public sealed class TicketFormService : ITicketFormService
                 ? BackofficeFormEventKind.Reopened : BackofficeFormEventKind.Updated, formId, actor, ct);
         }
 
+        await PlanCalendarAsync(outlook, formId, ct);
+
         var detail = await _repo.GetAsync(formId, ct)
                      ?? throw new FormRejectedException(FormRejectCode.NotFound, "Form not found.");
         return new TicketFormSaveResult(detail, eventId);
+    }
+
+    /// v0.1.61 — a form whose template plans in Outlook may only be saved by
+    /// someone with "Plan in calendars" signed in with Microsoft 365 (server
+    /// gate; the client only mirrors it).
+    private async Task RequirePlannerAsync(TicketMutationActor actor, FormOutlookMapping? outlook, CancellationToken ct)
+    {
+        if (outlook is not { Enabled: true }) return;
+        if (await _calendar.CheckPlannerAsync(actor.UserId, actor.Amr, ct) is { } reason)
+            throw new FormRejectedException(FormRejectCode.Forbidden, reason);
+    }
+
+    /// The appointment must make sense before anything is saved: end after
+    /// start, and no invitations leave a project ticket (internal only).
+    private static void CheckAppointment(FormOutlookMapping? outlook, FormDefinition def, JsonObject answers, Ticket ticket)
+    {
+        if (outlook is not { Enabled: true }) return;
+        var (start, end) = outlook.ReadTimes(def, answers);
+        if (start is not null && end is not null && end <= start)
+            throw new FormRejectedException(FormRejectCode.Invalid, "The appointment must end after it starts.", outlook.EndFieldId);
+        if (ticket.IsProject && outlook.InviteesFieldId is { } inv
+            && answers[inv.ToString()] is JsonArray people && people.Count > 0)
+            throw new FormRejectedException(FormRejectCode.Invalid,
+                "Project tickets are internal: you can't invite people from outside the team.", inv);
+    }
+
+    /// Best effort like the trigger pass: the form is saved; the calendar
+    /// plan is recorded and written by the worker (retried on failure).
+    private async Task PlanCalendarAsync(FormOutlookMapping? outlook, Guid formId, CancellationToken ct)
+    {
+        try { await _calendar.PlanAsync(formId, ct); }
+        catch (Exception ex) { _logger.LogError(ex, "Calendar plan failed for form {FormId}.", formId); }
     }
 
     private static FormRejectedException VersionConflict() => new(FormRejectCode.VersionConflict,
@@ -291,6 +346,9 @@ public sealed class TicketFormService : ITicketFormService
         await AuditAsync(actor, "ticket.form.deleted", ticket.Id,
             new { formId, form.Summary.Name, form.Summary.Version, reason = why }, ct);
 
+        try { await _calendar.CancelAllAsync(formId, ct); }
+        catch (Exception ex) { _logger.LogError(ex, "Cancelling the appointments of form {FormId} failed.", formId); }
+
         if (form.Summary.BoStatus is not null)
         {
             await _backoffice.PublishAsync(new BackofficeFormEvent(BackofficeFormEventKind.Removed, formId, ticket.Id,
@@ -303,7 +361,7 @@ public sealed class TicketFormService : ITicketFormService
     /// committed, so the trigger sees the post-change state.
     private async Task PublishBackofficeAsync(string kind, Guid formId, TicketMutationActor actor, CancellationToken ct)
     {
-        var item = await _backofficeRepo.GetItemAsync(formId, ct);
+        var item = await _backofficeRepo.GetItemAsync(formId, BackofficeFormService.ParseWaiting("Pending"), ct);
         if (item is null) return;
         await _backoffice.PublishAsync(BackofficeFormService.ToEvent(kind, item, actor.UserId), ct);
     }
@@ -376,7 +434,24 @@ public sealed class TicketFormService : ITicketFormService
         if (articles.Count != parsed.References.ArticleIds.Count)
             throw new FormRejectedException(FormRejectCode.Invalid, "A selected article no longer exists.");
 
-        return FormAnswerValidator.Build(def, parsed, new FormResolvedReferences(agents, contacts, articles) { Queues = queues });
+        // v0.1.61 — invitees: any active contact; attachments: this ticket's own.
+        var invitees = await _repo.ResolveActiveContactsAsync(parsed.References.InviteeContactIds.ToList(), ct);
+        if (invitees.Count != parsed.References.InviteeContactIds.Count)
+            throw new FormRejectedException(FormRejectCode.Invalid, "A selected contact no longer exists or has no e-mail address.");
+        var files = await _repo.ResolveTicketAttachmentsAsync(ticket.Id, parsed.References.AttachmentIds.ToList(), ct);
+        if (files.Count != parsed.References.AttachmentIds.Count)
+            throw new FormRejectedException(FormRejectCode.Invalid, "A file is not (or no longer) attached to this ticket. Upload it again.");
+        var maxBytes = settings.MaxAttachmentBytes;
+        if (maxBytes > 0 && files.Values.Sum(f => f.Size) > maxBytes)
+            throw new FormRejectedException(FormRejectCode.Invalid,
+                $"The files on this form are larger than {maxBytes / (1024 * 1024)} MB together. Remove a file or make it smaller.");
+
+        return FormAnswerValidator.Build(def, parsed, new FormResolvedReferences(agents, contacts, articles)
+        {
+            Queues = queues,
+            InviteeContacts = invitees,
+            Attachments = files.ToDictionary(kv => kv.Key, kv => (kv.Value.Name, kv.Value.Size, kv.Value.ContentType)),
+        });
     }
 
     /// Queue fields: only active queues the person filling in the form can

@@ -34,7 +34,7 @@ public static class FormTemplateEndpoints
             IFormTemplateRepository repo, IFormSettingsReader settings,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var (input, err) = await NormalizeAsync(req, settings, ct);
+            var (input, err) = await NormalizeAsync(req, settings, repo, ct);
             if (err is not null || input is null) return Results.BadRequest(new { error = err ?? "Invalid form." });
             if (input.IsActive && await repo.ActiveNameTakenAsync(input.Name, null, ct))
                 return Results.Conflict(new { error = "An active form with this name already exists." });
@@ -51,8 +51,10 @@ public static class FormTemplateEndpoints
             IFormTemplateRepository repo, IFormSettingsReader settings,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var (input, err) = await NormalizeAsync(req, settings, ct);
+            var (input, err) = await NormalizeAsync(req, settings, repo, ct);
             if (err is not null || input is null) return Results.BadRequest(new { error = err ?? "Invalid form." });
+            if (input.BoPlanTemplateId == id)
+                return Results.BadRequest(new { error = "'Plan with form' cannot be the form itself." });
             if (input.IsActive && await repo.ActiveNameTakenAsync(input.Name, id, ct))
                 return Results.Conflict(new { error = "An active form with this name already exists." });
 
@@ -75,7 +77,8 @@ public static class FormTemplateEndpoints
             var def = FormDefinition.Parse(src.Definition.ToJson());
             foreach (var f in def.Fields) f.Id = Guid.NewGuid();
             var copyId = await repo.CreateAsync(
-                new FormTemplateInput(name, src.Description, IsActive: false, src.QueueIds, def, src.SendToBackoffice),
+                new FormTemplateInput(name, src.Description, IsActive: false, src.QueueIds, def, src.SendToBackoffice,
+                    src.BoPlanTemplateId, null, src.HeaderButtonLabel, src.HeaderButtonQueueIds, src.InPicker),
                 CurrentUserId(http), ct);
             await Audit(audit, http, "form_template.duplicated", copyId, new { sourceId = id, name });
             var created = await repo.GetAsync(copyId, ct);
@@ -99,7 +102,7 @@ public static class FormTemplateEndpoints
         => Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
     private static async Task<(FormTemplateInput? Input, string? Error)> NormalizeAsync(
-        FormTemplateRequest req, IFormSettingsReader settings, CancellationToken ct)
+        FormTemplateRequest req, IFormSettingsReader settings, IFormTemplateRepository templates, CancellationToken ct)
     {
         if (req is null) return (null, "Invalid form.");
         var err = FormTemplateValidator.ValidateName(req.Name)
@@ -116,9 +119,44 @@ public static class FormTemplateEndpoints
 
         var queueIds = (req.QueueIds ?? Array.Empty<Guid>()).Where(q => q != Guid.Empty).Distinct().ToList();
         if (queueIds.Count > 500) return (null, "Too many queues.");
+
+        // v0.1.61 — "Plan with form" only on a back-office template; the
+        // target must exist (and is never the template itself — checked by
+        // the caller that knows the id).
+        var sendToBackoffice = req.SendToBackoffice ?? false;
+        Guid? planId = sendToBackoffice && req.BoPlanTemplateId is { } p && p != Guid.Empty ? p : null;
+        if (planId is { } pid && await templates.GetAsync(pid, ct) is null)
+            return (null, "The form chosen under 'Plan with form' no longer exists.");
+
+        // v0.1.61 — optional button next to the ticket title; empty = none.
+        var headerButtonLabel = string.IsNullOrWhiteSpace(req.HeaderButtonLabel) ? null : req.HeaderButtonLabel.Trim();
+        if (headerButtonLabel is not null)
+        {
+            if (headerButtonLabel.Length > FormLimits.HeaderButtonLabelMax)
+                return (null, $"The button label must be at most {FormLimits.HeaderButtonLabelMax} characters.");
+            if (headerButtonLabel.Any(char.IsControl))
+                return (null, "The button label contains invalid characters.");
+        }
+        var buttonQueueIds = headerButtonLabel is null
+            ? new List<Guid>()
+            : (req.HeaderButtonQueueIds ?? Array.Empty<Guid>()).Where(q => q != Guid.Empty).Distinct().ToList();
+        if (buttonQueueIds.Count > 500) return (null, "Too many queues.");
+        if (headerButtonLabel is not null && buttonQueueIds.Count == 0)
+            return (null, "Choose at least one queue for the ticket header button.");
+        var inPicker = req.InPicker ?? true;
+
+        var outlook = req.Outlook;
+        if (outlook is not null)
+        {
+            err = outlook.Validate(def);
+            if (err is not null) return (null, err);
+            if (!outlook.Enabled && outlook.ToJson() == new FormOutlookMapping().ToJson()) outlook = null;
+        }
+
         return (new FormTemplateInput(
             req.Name!.Trim(), (req.Description ?? string.Empty).Trim(),
-            req.IsActive ?? true, queueIds, def, req.SendToBackoffice ?? false), null);
+            req.IsActive ?? true, queueIds, def, sendToBackoffice, planId, outlook, headerButtonLabel,
+            buttonQueueIds, inPicker), null);
     }
 
     private static object MapSummary(FormTemplateSummary t) => new
@@ -130,6 +168,11 @@ public static class FormTemplateEndpoints
         queueIds = t.QueueIds,
         fieldCount = t.FieldCount,
         sendToBackoffice = t.SendToBackoffice,
+        boPlanTemplateId = t.BoPlanTemplateId,
+        outlookEnabled = t.OutlookEnabled,
+        headerButtonLabel = t.HeaderButtonLabel,
+        headerButtonQueueIds = t.HeaderButtonQueueIds ?? Array.Empty<Guid>(),
+        inPicker = t.InPicker,
         createdUtc = t.CreatedUtc,
         updatedUtc = t.UpdatedUtc,
     };
@@ -143,6 +186,11 @@ public static class FormTemplateEndpoints
         queueIds = t.QueueIds,
         fieldCount = t.FieldCount,
         sendToBackoffice = t.SendToBackoffice,
+        boPlanTemplateId = t.BoPlanTemplateId,
+        outlook = t.Outlook,
+        headerButtonLabel = t.HeaderButtonLabel,
+        headerButtonQueueIds = t.HeaderButtonQueueIds ?? Array.Empty<Guid>(),
+        inPicker = t.InPicker,
         createdUtc = t.CreatedUtc,
         updatedUtc = t.UpdatedUtc,
         fields = t.Definition.Fields,
@@ -167,5 +215,10 @@ public static class FormTemplateEndpoints
         bool? IsActive,
         IReadOnlyList<Guid>? QueueIds,
         List<FormField>? Fields,
-        bool? SendToBackoffice = null);
+        bool? SendToBackoffice = null,
+        Guid? BoPlanTemplateId = null,
+        FormOutlookMapping? Outlook = null,
+        string? HeaderButtonLabel = null,
+        IReadOnlyList<Guid>? HeaderButtonQueueIds = null,
+        bool? InPicker = null);
 }

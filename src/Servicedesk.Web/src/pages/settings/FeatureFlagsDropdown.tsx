@@ -21,10 +21,11 @@ import {
   FileSignature,
   MessageSquareText,
   MessageSquareLock,
+  CalendarPlus,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import type { UserAdminRow, FeatureFlagsUpdate } from "@/lib/ticket-api";
+import { adminUserApi, type UserAdminRow, type FeatureFlagsUpdate, type UserCalendarsResponse } from "@/lib/ticket-api";
 import { DASHBOARD_TILES, roleSatisfies } from "@/lib/dashboardTiles";
 
 type FlagKey = keyof FeatureFlagsUpdate;
@@ -33,6 +34,7 @@ type FlagSpec = {
   key: FlagKey;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  description?: string;
 };
 
 type Group = { title: string; flags: FlagSpec[] };
@@ -50,6 +52,18 @@ const FLAG_GROUPS: Group[] = [
       { key: "adsolutTimesheetEnabled", label: "Adsolut Timesheet", icon: Receipt },
       { key: "timesheetBackofficeEnabled", label: "Back office (Resolved/CWI)", icon: ClipboardCheck },
       { key: "backofficeFormsEnabled", label: "Back office forms", icon: ClipboardList },
+    ],
+  },
+  {
+    title: "Calendar",
+    flags: [
+      {
+        key: "calendarPlanningEnabled",
+        label: "Plan in calendars",
+        icon: CalendarPlus,
+        description:
+          "May save forms that plan appointments in Outlook. Needs a Microsoft 365 sign-in.",
+      },
     ],
   },
   {
@@ -111,6 +125,7 @@ export function FeatureFlagsDropdown({
   disabled,
   onToggleFlag,
   onToggleTile,
+  onChangeCalendar,
 }: {
   user: UserAdminRow;
   disabled: boolean;
@@ -124,6 +139,7 @@ export function FeatureFlagsDropdown({
     label: string,
     enabling: boolean,
   ) => void;
+  onChangeCalendar: (update: FeatureFlagsUpdate) => void;
 }) {
   const enabledFlagCount = ALL_FLAG_KEYS.reduce(
     (n, key) => n + (user[key as keyof UserAdminRow] ? 1 : 0),
@@ -169,6 +185,7 @@ export function FeatureFlagsDropdown({
                 return (
                   <label
                     key={flag.key}
+                    title={flag.description}
                     className={cn(
                       "flex items-center gap-2.5 rounded px-2 py-1.5 text-sm transition-colors",
                       disabled
@@ -201,6 +218,13 @@ export function FeatureFlagsDropdown({
                   </label>
                 );
               })}
+              {group.title === "Calendar" && user.calendarPlanningEnabled && (
+                <CalendarSelect
+                  user={user}
+                  disabled={disabled}
+                  onChange={onChangeCalendar}
+                />
+              )}
             </div>
           ))}
 
@@ -265,5 +289,73 @@ export function FeatureFlagsDropdown({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function CalendarSelect({
+  user,
+  disabled,
+  onChange,
+}: {
+  user: UserAdminRow;
+  disabled: boolean;
+  onChange: (update: FeatureFlagsUpdate) => void;
+}) {
+  const [data, setData] = React.useState<UserCalendarsResponse | null>(null);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    adminUserApi
+      .listCalendars(user.id)
+      .then((r) => {
+        if (!cancelled) setData(r);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled)
+          setLoadError(e instanceof Error ? e.message : "Could not load calendars.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user.id]);
+
+  const items = data?.items ?? [];
+  const current = user.calendarId ?? "";
+  const known = current === "" || items.some((c) => c.id === current);
+  const message = data?.error ?? loadError;
+
+  return (
+    <div className="space-y-1 px-2 pb-1 pt-1">
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Outlook calendar
+        <select
+          value={current}
+          disabled={disabled || (data === null && loadError === null)}
+          onChange={(e) => {
+            const id = e.target.value;
+            const name = items.find((c) => c.id === id)?.name ?? "";
+            onChange({ calendarId: id, calendarName: name });
+          }}
+          className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/60 disabled:opacity-50"
+        >
+          <option value="" className="bg-background">
+            Default calendar
+          </option>
+          {!known && (
+            <option value={current} className="bg-background">
+              {user.calendarName ?? "Selected calendar"}
+            </option>
+          )}
+          {items.map((c) => (
+            <option key={c.id} value={c.id} disabled={!c.canEdit} className="bg-background">
+              {c.name}
+              {c.canEdit ? "" : " (read-only)"}
+            </option>
+          ))}
+        </select>
+      </label>
+      {message && <p className="text-[11px] text-muted-foreground/80">{message}</p>}
+    </div>
   );
 }

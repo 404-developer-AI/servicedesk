@@ -176,6 +176,24 @@ public static class SettingKeys
         public const string MaxPerTicket = "Forms.MaxPerTicket";
         /// v0.1.54 — marking a back-office form as handled requires a note.
         public const string BackofficeHandleNoteRequired = "Forms.BackofficeHandleNoteRequired";
+        /// v0.1.61 — ticket status categories whose open back-office forms sit
+        /// in the "Waiting for customer" group (never counted for badges).
+        public const string BackofficeWaitingStateCategories = "Forms.BackofficeWaitingStateCategories";
+        /// v0.1.61 — combined size of the files on one form (MB); also the
+        /// cap for the files sent with an Outlook appointment.
+        public const string MaxAttachmentTotalMb = "Forms.MaxAttachmentTotalMb";
+    }
+
+    /// v0.1.61 — Outlook calendar planning from forms (Microsoft Graph,
+    /// application permission Calendars.ReadWrite scoped to the technicians'
+    /// mailboxes). Off by default.
+    public static class Calendar
+    {
+        public const string Enabled = "Calendar.Enabled";
+        public const string ShowAs = "Calendar.ShowAs";
+        public const string ReminderMinutes = "Calendar.ReminderMinutes";
+        public const string Category = "Calendar.Category";
+        public const string MaxAttempts = "Calendar.MaxAttempts";
     }
 
     /// v0.0.105 — project tickets (a normal ticket flagged as project;
@@ -2032,6 +2050,20 @@ public static class SettingDefaults
             "Maximum number of filled forms on one ticket."),
         new SettingDefault(SettingKeys.Forms.BackofficeHandleNoteRequired, "true", "bool", "Tickets",
             "Back office forms: a note is required when marking a form as handled (what was done, e.g. the contract number in the CRM). Turn off to allow handling without a note."),
+        new SettingDefault(SettingKeys.Calendar.Enabled, "false", "bool", "Calendar",
+            "Outlook calendar planning: a form template with an 'Outlook appointment' block creates the appointments in the technicians' Outlook calendars when the form is saved. Needs the Calendars.ReadWrite application permission on the Microsoft 365 app (scoped to the technicians' mailboxes) and, per user, 'Plan in calendars' (Settings → Users). Off = forms save as before and no appointment is made."),
+        new SettingDefault(SettingKeys.Calendar.ShowAs, "busy", "string", "Calendar",
+            "How planned appointments show in Outlook: busy, tentative, oof (out of office), workingElsewhere or free."),
+        new SettingDefault(SettingKeys.Calendar.ReminderMinutes, "15", "int", "Calendar",
+            "Reminder before a planned appointment, in minutes (0 = no reminder, at most 10080 = one week)."),
+        new SettingDefault(SettingKeys.Calendar.Category, "", "string", "Calendar",
+            "Outlook category put on planned appointments. Empty (default) = none, so each user keeps the colours they gave the technicians' calendars. A category gets its colour from each user's own Outlook category list."),
+        new SettingDefault(SettingKeys.Calendar.MaxAttempts, "8", "int", "Calendar",
+            "How often an appointment that could not be written to Outlook is retried automatically (with a growing pause, up to an hour) before it waits for a manual 'Retry'. 1 to 20."),
+        new SettingDefault(SettingKeys.Forms.MaxAttachmentTotalMb, "25", "int", "Tickets",
+            "Forms: the combined size (MB) of the files in the attachment fields of one form, 1 to 150. The same files go with the Outlook appointment, so keep this within your Exchange Online message size limit (25 MB by default for a tenant, up to 150 MB when raised). A form above the limit is refused with a clear message."),
+        new SettingDefault(SettingKeys.Forms.BackofficeWaitingStateCategories, "Pending", "string", "Tickets",
+            "Back office forms: open forms whose ticket has a status in one of these categories (comma-separated: New, Open, Pending, Resolved, Closed) are listed under 'Waiting for customer' and do not count for the badge or the red dot. Every other open form is 'Waiting for pickup' — including forms on resolved or closed tickets, because back office still has to handle them."),
         new SettingDefault(SettingKeys.Projects.Enabled, "true", "bool", "Tickets",
             "Project tickets: a ticket can be created as (or converted to) a project, other tickets link to it via 'Link to project', and the project ticket shows a panel with all linked tickets plus a time rollup for after-calculation. Projects are internal — customers never see them. Turn off to hide every project surface; existing flags and links are kept."),
         new SettingDefault(SettingKeys.Projects.LinkPromptEnabled, "true", "bool", "Tickets",

@@ -22,6 +22,7 @@ import { useAuth } from "@/auth/authStore";
 import { useTheme } from "@/app/ThemeProvider";
 import { OrderPillHost } from "@/pages/orders/OrderPillHost";
 import { MinimizedFormsTray } from "@/components/forms/MinimizedFormsTray";
+import { TicketOverlayHost } from "@/components/ticket-overlay/TicketOverlayHost";
 import { startRum } from "@/lib/rum";
 
 export function AppShell() {
@@ -93,6 +94,7 @@ export function AppShell() {
       <IncomingCallPopup />
       <KbChatWidget />
       <MinimizedFormsTray />
+      <TicketOverlayHost />
       {user?.adsolutOrdersEnabled && <OrderPillHost />}
     </div>
   );

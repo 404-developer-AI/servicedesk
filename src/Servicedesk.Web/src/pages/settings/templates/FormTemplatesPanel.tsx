@@ -35,13 +35,16 @@ import {
   Inbox,
   ListChecks,
   ListFilter,
+  MapPin,
   Package,
+  Paperclip,
   Pencil,
   Plus,
   ToggleLeft,
   Trash2,
   Type,
   UserCircle,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -65,9 +68,12 @@ import {
   TRIGGER_KEY_PATTERN,
   type FormField,
   type FormFieldType,
+  type FormOutlookMapping,
   type FormTemplateSummary,
 } from "@/lib/forms-api";
 import { cn } from "@/lib/utils";
+import { OutlookMappingCard } from "./OutlookMappingCard";
+import { emptyOutlook, outlookIsEmpty, outlookProblems, pruneOutlook } from "./outlookMapping";
 
 /// v0.1.52 — Settings → Templates → Forms: the Forms.* settings plus the
 /// catalogue of interactive form templates agents fill in via `::` in the
@@ -92,6 +98,9 @@ const TYPE_ICON: Record<FormFieldType, React.ComponentType<{ className?: string 
   Contact: Users,
   Article: Package,
   Queue: Inbox,
+  Address: MapPin,
+  Attachments: Paperclip,
+  Invitees: UserPlus,
 };
 
 const TYPE_HINT: Record<FormFieldType, string> = {
@@ -105,11 +114,14 @@ const TYPE_HINT: Record<FormFieldType, string> = {
   CheckboxGroup: "A list of options to tick off.",
   Date: "A calendar date.",
   DateTime: "Date and time, in server time.",
-  Duration: "Hours and minutes (h:mm).",
+  Duration: "Hours and quarter hours, picked from two lists.",
   Agent: "One of the agents.",
   Contact: "The requester or a contact of the ticket's company.",
   Article: "Adsolut articles with a quantity — contract articles first.",
   Queue: "One of the queues the agent filling in the form can access.",
+  Address: "A postal address; can default to the company address.",
+  Attachments: "Files already attached to the ticket.",
+  Invitees: "Contacts or e-mail addresses to invite.",
 };
 
 const newId = () =>
@@ -325,6 +337,9 @@ function FormTemplateList({ onNew, onEdit }: { onNew: () => void; onEdit: (id: s
                   {t.sendToBackoffice && (
                     <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-primary">Back office</span>
                   )}
+                  {t.outlookEnabled && (
+                    <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-primary">Outlook</span>
+                  )}
                 </div>
                 <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">
                   {t.fieldCount} field{t.fieldCount === 1 ? "" : "s"}
@@ -374,6 +389,11 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
   const [isActive, setIsActive] = React.useState(true);
   const [queueIds, setQueueIds] = React.useState<string[]>([]);
   const [sendToBackoffice, setSendToBackoffice] = React.useState(false);
+  const [boPlanTemplateId, setBoPlanTemplateId] = React.useState<string | null>(null);
+  const [headerButtonLabel, setHeaderButtonLabel] = React.useState("");
+  const [headerButtonQueueIds, setHeaderButtonQueueIds] = React.useState<string[]>([]);
+  const [inPicker, setInPicker] = React.useState(true);
+  const [outlook, setOutlook] = React.useState<FormOutlookMapping>(emptyOutlook);
   const [fields, setFields] = React.useState<FormField[]>([]);
   const [openFieldId, setOpenFieldId] = React.useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
@@ -387,13 +407,25 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
     setIsActive(t.isActive);
     setQueueIds(t.queueIds);
     setSendToBackoffice(t.sendToBackoffice);
+    setBoPlanTemplateId(t.boPlanTemplateId ?? null);
+    setHeaderButtonLabel(t.headerButtonLabel ?? "");
+    setHeaderButtonQueueIds(t.headerButtonQueueIds ?? []);
+    setInPicker(t.inPicker ?? true);
+    setOutlook(t.outlook ?? emptyOutlook);
     setFields(t.fields.map((f) => ({ ...f, options: f.options ?? null })));
     setLoaded(true);
   }, [existingQ.data, loaded]);
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { name: name.trim(), description: description.trim(), isActive, queueIds, fields, sendToBackoffice };
+      const body = {
+        name: name.trim(), description: description.trim(), isActive, queueIds, fields, sendToBackoffice,
+        boPlanTemplateId: sendToBackoffice ? boPlanTemplateId : null,
+        headerButtonLabel: headerButtonLabel.trim() || null,
+        headerButtonQueueIds: headerButtonLabel.trim() ? headerButtonQueueIds : [],
+        inPicker,
+        outlook: outlookIsEmpty(outlook) ? null : outlook,
+      };
       return templateId ? formTemplatesApi.update(templateId, body) : formTemplatesApi.create(body);
     },
     onSuccess: () => {
@@ -419,6 +451,34 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
     });
   };
 
+  const templatesQ = useQuery({ queryKey: LIST_KEY, queryFn: formTemplatesApi.list });
+  const planChoices = (templatesQ.data ?? []).filter((t) => t.id !== templateId);
+
+  // Keep the saved template consistent: a "show when" never points at a
+  // checkbox that is gone, changed type or sits below its field, and an
+  // Outlook mapping never points at a missing or retyped field.
+  React.useEffect(() => {
+    let changed = false;
+    const seenCheckboxes = new Set<string>();
+    const seenDateTimes = new Set<string>();
+    const next = fields.map((f) => {
+      let out = f;
+      if (f.showWhen && !seenCheckboxes.has(f.showWhen)) {
+        out = { ...out, showWhen: null, showWhenUnchecked: null };
+        changed = true;
+      }
+      if (f.durationFrom && (f.type !== "Duration" || !seenDateTimes.has(f.durationFrom))) {
+        out = { ...out, durationFrom: null };
+        changed = true;
+      }
+      if (f.type === "Checkbox") seenCheckboxes.add(f.id);
+      if (f.type === "DateTime") seenDateTimes.add(f.id);
+      return out;
+    });
+    if (changed) setFields(next);
+    setOutlook((m) => pruneOutlook(m, fields));
+  }, [fields]);
+
   const patch = (id: string, p: Partial<FormField>) => setFields((fs) => fs.map((f) => (f.id === id ? { ...f, ...p } : f)));
   const addField = (type: FormFieldType) => {
     const f = newField(type);
@@ -430,7 +490,8 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
   const inputCount = fields.filter((f) => f.type !== "SectionHeader").length;
   const labelsOk = fields.every((f) => f.label.trim().length > 0)
     && fields.every((f) => !hasOptions(f.type) || (f.options ?? []).some((o) => o.label.trim()));
-  const canSave = name.trim().length > 0 && inputCount > 0 && labelsOk && !save.isPending;
+  const outlookOk = outlookProblems(outlook, fields).length === 0;
+  const canSave = name.trim().length > 0 && inputCount > 0 && labelsOk && outlookOk && !save.isPending;
 
   if (templateId && !loaded) {
     return <Skeleton className="h-64 w-full" />;
@@ -445,7 +506,7 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
         <div className="flex items-center gap-2">
           {!canSave && name.trim() && (
             <span className="text-xs text-muted-foreground">
-              {inputCount === 0 ? "Add at least one input field." : !labelsOk ? "Every field needs a label (and options)." : ""}
+              {inputCount === 0 ? "Add at least one input field." : !labelsOk ? "Every field needs a label (and options)." : !outlookOk ? "Complete the Outlook appointment fields." : ""}
             </span>
           )}
           <Button variant="ghost" size="sm" onClick={onDone}>Cancel</Button>
@@ -473,7 +534,16 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
               <Input value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)}
                 placeholder="Shown to agents in the :: picker and at the top of the form" />
             </label>
-            <div className="space-y-2">
+            <label className="flex items-start gap-3">
+              <Switch className="mt-0.5" checked={inPicker} onCheckedChange={setInPicker} />
+              <span className="space-y-0.5">
+                <span className="block text-sm">Offer in the :: picker</span>
+                <span className="block text-[11px] text-muted-foreground/70">
+                  Off: agents cannot pick this form with :: or Insert form — only the ticket header button below (or Plan) opens it.
+                </span>
+              </span>
+            </label>
+            {inPicker && <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-muted-foreground">Available in queues</span>
                 {queueIds.length > 0 && (
@@ -497,6 +567,33 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
                 })}
               </div>
               <p className="text-[11px] text-muted-foreground/70">Leave empty to offer the form in every queue.</p>
+            </div>}
+            <div className="space-y-2 border-t border-glass pt-4">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Ticket header button</span>
+                <input value={headerButtonLabel} onChange={(e) => setHeaderButtonLabel(e.target.value)} maxLength={40}
+                  placeholder="e.g. Request intervention" className={cn(formInputCn, "h-9")} />
+              </label>
+              {headerButtonLabel.trim() !== "" && (
+                <div className="flex flex-wrap gap-2">
+                  {(queuesQ.data ?? []).map((q) => {
+                    const on = headerButtonQueueIds.includes(q.id);
+                    return (
+                      <button key={q.id} type="button" aria-pressed={on}
+                        onClick={() => setHeaderButtonQueueIds((ids) => (on ? ids.filter((x) => x !== q.id) : [...ids, q.id]))}
+                        className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
+                          on ? "border-primary/40 bg-primary/12 text-foreground" : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover")}>
+                        {on && <Check className="h-3.5 w-3.5" />}
+                        {q.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground/70">
+                A button with this label next to the ticket title opens this form, on tickets in the queues chosen here.
+                Leave the label empty for no button.
+              </p>
             </div>
             <label className="flex items-start gap-3 border-t border-glass pt-4">
               <Switch className="mt-0.5" checked={sendToBackoffice} onCheckedChange={setSendToBackoffice} />
@@ -508,6 +605,22 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
                 </span>
               </span>
             </label>
+            {sendToBackoffice && (
+              <label className="block space-y-1.5 pl-[2.75rem]">
+                <span className="text-xs font-medium text-muted-foreground">Plan with form</span>
+                <select value={boPlanTemplateId ?? ""} onChange={(e) => setBoPlanTemplateId(e.target.value || null)}
+                  className={cn(formInputCn, "h-9")}>
+                  <option value="">None</option>
+                  {planChoices.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}{t.isActive ? "" : " (inactive)"}</option>
+                  ))}
+                </select>
+                <span className="block text-[11px] text-muted-foreground/70">
+                  Back office's Plan button opens this form on the ticket. Saving it is what plans the intervention — a
+                  trigger on that form can then mark this request as handled.
+                </span>
+              </label>
+            )}
           </section>
 
           <section className="glass-card p-5">
@@ -531,6 +644,8 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
                     <FieldRow
                       key={f.id}
                       field={f}
+                      checkboxesAbove={fields.slice(0, fields.indexOf(f)).filter((x) => x.type === "Checkbox")}
+                      dateTimesAbove={fields.slice(0, fields.indexOf(f)).filter((x) => x.type === "DateTime")}
                       open={openFieldId === f.id}
                       onToggle={() => setOpenFieldId((id) => (id === f.id ? null : f.id))}
                       onChange={(p) => patch(f.id, p)}
@@ -586,6 +701,8 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
               )}
             </div>
           </section>
+
+          <OutlookMappingCard value={outlook} fields={fields} onChange={setOutlook} />
         </div>
 
         <aside className="glass-card sticky top-4 min-w-0 p-5">
@@ -655,6 +772,8 @@ function TextDefaultInput({ value, onChange }: { value: string; onChange: (v: st
 
 function FieldRow({
   field: f,
+  checkboxesAbove,
+  dateTimesAbove,
   open,
   onToggle,
   onChange,
@@ -662,6 +781,8 @@ function FieldRow({
   onDuplicate,
 }: {
   field: FormField;
+  checkboxesAbove: FormField[];
+  dateTimesAbove: FormField[];
   open: boolean;
   onToggle: () => void;
   onChange: (p: Partial<FormField>) => void;
@@ -734,7 +855,7 @@ function FieldRow({
               <input value={f.defaultValue} maxLength={500} onChange={(e) => onChange({ defaultValue: e.target.value })} className={cn(formInputCn, "h-9")} />
             </label>
           )}
-          {(f.type === "ShortText" || f.type === "LongText") && (
+          {(f.type === "ShortText" || f.type === "LongText" || f.type === "Address") && (
             <TextDefaultInput value={f.defaultValue} onChange={(v) => onChange({ defaultValue: v })} />
           )}
           {f.type === "Dropdown" && (
@@ -744,6 +865,56 @@ function FieldRow({
                 <option value="">None</option>
                 {(f.options ?? []).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
+            </label>
+          )}
+
+          {f.type === "Agent" && (
+            <label className="flex items-start gap-3">
+              <Switch className="mt-0.5" checked={f.multiple === true} onCheckedChange={(v) => onChange({ multiple: v ? true : null })} />
+              <span className="space-y-0.5">
+                <span className="block text-sm">Allow several agents</span>
+                <span className="block text-[11px] text-muted-foreground/70">
+                  Pick more than one agent, e.g. two technicians for one appointment.
+                </span>
+              </span>
+            </label>
+          )}
+          {f.type === "Duration" && (
+            <label className="block space-y-1">
+              <span className="text-[11px] font-medium text-muted-foreground">Counts from</span>
+              <select value={f.durationFrom ?? ""} onChange={(e) => onChange({ durationFrom: e.target.value || null })}
+                className={cn(formInputCn, "h-9")}>
+                <option value="">Nothing — a plain duration</option>
+                {dateTimesAbove.map((d) => <option key={d.id} value={d.id}>{d.label || "Untitled"}</option>)}
+              </select>
+              <span className="block text-[11px] leading-snug text-muted-foreground/70">
+                {dateTimesAbove.length === 0
+                  ? "Add a date and time field above this one to show when it ends."
+                  : "Shows the end (start + duration) while filling in; can be the end of the Outlook appointment."}
+              </span>
+            </label>
+          )}
+          {!isHeader && (
+            <label className="block space-y-1">
+              <span className="text-[11px] font-medium text-muted-foreground">Show when</span>
+              {/* Value "<id>" = while ticked, "<id>:off" = while not ticked. */}
+              <select value={f.showWhen ? `${f.showWhen}${f.showWhenUnchecked ? ":off" : ""}` : ""}
+                onChange={(e) => {
+                  const [id, mode] = e.target.value.split(":");
+                  onChange({ showWhen: id || null, showWhenUnchecked: id && mode === "off" ? true : null });
+                }}
+                className={cn(formInputCn, "h-9")}>
+                <option value="">Always shown</option>
+                {checkboxesAbove.map((c) => (
+                  <React.Fragment key={c.id}>
+                    <option value={c.id}>{c.label || "Untitled"} is ticked</option>
+                    <option value={`${c.id}:off`}>{c.label || "Untitled"} is not ticked</option>
+                  </React.Fragment>
+                ))}
+              </select>
+              <span className="block text-[11px] leading-snug text-muted-foreground/70">
+                Only shown — and only required — while that checkbox is in the chosen state.
+              </span>
             </label>
           )}
 

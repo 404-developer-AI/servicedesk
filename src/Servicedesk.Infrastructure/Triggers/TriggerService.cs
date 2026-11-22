@@ -337,6 +337,7 @@ public sealed class TriggerService : ITriggerService
     {
         "set_queue" => TriggerFieldKeys.TicketQueueId,
         "set_priority" => TriggerFieldKeys.TicketPriorityId,
+        "set_category" => TriggerFieldKeys.TicketCategoryId,
         "set_status" => TriggerFieldKeys.TicketStatusId,
         "set_owner" => TriggerFieldKeys.TicketOwnerId,
         // set_pending_till has no exposed condition-field key today (the

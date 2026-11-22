@@ -48,10 +48,12 @@ public sealed class FeatureFlagEnforcementTests
     [InlineData("GET", "/api/backoffice-forms/counts")]
     [InlineData("GET", "/api/backoffice-forms/templates")]
     [InlineData("GET", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001")]
-    [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/claim")]
-    [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/release")]
+    [InlineData("GET", "/api/backoffice-forms/presence")]
+    [InlineData("GET", "/api/backoffice-forms/ticket/00000000-0000-0000-0000-000000000001")]
     [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/handle")]
     [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/reopen")]
+    // calendar_planning_enabled (v0.1.61 — Outlook planning from forms)
+    [InlineData("GET", "/api/calendar/availability?userIds=00000000-0000-0000-0000-000000000001&start=2026-11-23T08:00:00Z&end=2026-11-23T10:00:00Z")]
     // order_management_enabled (v0.1.59 — TD SYNNEX orders)
     [InlineData("GET", "/api/order-management/summary")]
     [InlineData("GET", "/api/order-management/orders")]
@@ -142,6 +144,10 @@ public sealed class FeatureFlagEnforcementTests
         users.BackofficeFormsEnabled[userId] = true;
         Assert.True(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.BackofficeForms, default));
         Assert.False(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.TimesheetBackoffice, default));
+
+        Assert.False(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.CalendarPlanning, default));
+        users.CalendarPlanningEnabled[userId] = true;
+        Assert.True(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.CalendarPlanning, default));
     }
 
     [Fact]

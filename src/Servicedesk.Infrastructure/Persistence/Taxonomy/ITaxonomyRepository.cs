@@ -36,7 +36,7 @@ public interface ITaxonomyRepository
     Task<IReadOnlyList<Category>> ListCategoriesAsync(CancellationToken ct);
     Task<Category?> GetCategoryAsync(Guid id, CancellationToken ct);
     Task<Category> CreateCategoryAsync(Category c, CancellationToken ct);
-    Task<Category?> UpdateCategoryAsync(Guid id, Guid? parentId, string name, string slug, string description, int sortOrder, bool isActive, CancellationToken ct);
+    Task<Category?> UpdateCategoryAsync(Guid id, Guid? parentId, string name, string slug, string description, int sortOrder, bool isActive, bool isLocked, CancellationToken ct);
     Task<DeleteResult> DeleteCategoryAsync(Guid id, CancellationToken ct);
 
     // v0.0.39 — Ticket types. CRUD mirrors the other taxonomies: list/get

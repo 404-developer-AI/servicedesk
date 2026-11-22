@@ -27,11 +27,21 @@ public static class FormFieldType
     /// v0.1.58 — a queue the filler has access to (stored as {"id","name"});
     /// a trigger can move the ticket there (set_queue from a form field).
     public const string Queue = "Queue";
+    /// v0.1.61 — a postal address (plain multi-line text, default may hold
+    /// <c>{{company.address}}</c>); the Outlook appointment's location.
+    public const string Address = "Address";
+    /// v0.1.61 — files attached to the form (ticket attachments of this
+    /// ticket, stored as {"id","name","size","contentType"} rows).
+    public const string Attachments = "Attachments";
+    /// v0.1.61 — people to invite: servicedesk contacts and/or free e-mail
+    /// addresses (stored as {"contactId"?, "email", "name"} rows).
+    public const string Invitees = "Invitees";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         SectionHeader, ShortText, LongText, Number, Dropdown, MultiSelect, Checkbox,
         CheckboxGroup, Date, DateTime, Duration, Agent, Contact, Article, Queue,
+        Address, Attachments, Invitees,
     };
 
     public static bool HasOptions(string type) => type is Dropdown or MultiSelect or CheckboxGroup;
@@ -129,6 +139,29 @@ public sealed class FormField
     /// of the definition, so a form filled before a key was added has none.
     [JsonPropertyName("triggerKey")]
     public string? TriggerKey { get; set; }
+
+    /// v0.1.61 — Agent only: several agents may be picked (stored as an
+    /// array, optionally with an organizer). Null/false = one agent.
+    [JsonPropertyName("multiple")]
+    public bool? Multiple { get; set; }
+
+    /// v0.1.61 — conditional display: the field is shown (and validated)
+    /// only while this Checkbox field of the same form is ticked. A hidden
+    /// field is never required and its answer is dropped on save.
+    [JsonPropertyName("showWhen")]
+    public Guid? ShowWhen { get; set; }
+
+    /// v0.1.61 — inverts <see cref="ShowWhen"/>: shown only while that
+    /// checkbox is NOT ticked (never answered counts as not ticked).
+    /// Null/false = shown while ticked.
+    [JsonPropertyName("showWhenUnchecked")]
+    public bool? ShowWhenUnchecked { get; set; }
+
+    /// v0.1.61 — Duration only: the DateTime field (above this one) the
+    /// duration counts from, so the end is start + duration ("until 14:30";
+    /// an Outlook appointment can take its end from it). Null = a plain duration.
+    [JsonPropertyName("durationFrom")]
+    public Guid? DurationFrom { get; set; }
 }
 
 public sealed class FormFieldOption
@@ -146,6 +179,8 @@ public sealed class FormFieldOption
 public static class FormLimits
 {
     public const int NameMax = 200;
+    /// v0.1.61 — label of the optional button next to the ticket title.
+    public const int HeaderButtonLabelMax = 40;
     public const int DescriptionMax = 2000;
     public const int LabelMax = 300;
     public const int HelpMax = 1000;
@@ -167,6 +202,15 @@ public static class FormLimits
     public const int HardMaxPerTicket = 200;
     public const int TriggerKeyMax = 40;
     public const decimal HardMaxArticleQuantity = 10_000_000m;
+    /// v0.1.61
+    public const int AddressMax = 1000;
+    public const int AgentsMax = 20;
+    public const int InviteesMax = 100;
+    public const int InviteeNameMax = 200;
+    public const int EmailMax = 320;
+    public const int AttachmentsMax = 20;
+    /// Graph's upload-session ceiling for one appointment attachment.
+    public const int HardMaxAttachmentTotalMb = 150;
 }
 
 /// Validation + normalization of a template definition. Returns an English
@@ -287,9 +331,11 @@ public static class FormTemplateValidator
                 f.MaxRows = null;
             }
 
+            f.Multiple = f.Type == FormFieldType.Agent && f.Multiple == true ? true : null;
+
             // Defaults only for the types the fill dialog can pre-fill.
             if (f.Type is not (FormFieldType.ShortText or FormFieldType.LongText or FormFieldType.Number
-                or FormFieldType.Dropdown or FormFieldType.Checkbox))
+                or FormFieldType.Dropdown or FormFieldType.Checkbox or FormFieldType.Address))
             {
                 f.DefaultValue = string.Empty;
             }
@@ -298,7 +344,7 @@ public static class FormTemplateValidator
             // ({{company.name}}), filled in for the ticket when the form
             // opens. Only the supported set; a typo would otherwise surface
             // as an empty field on every ticket.
-            if (f.Type is FormFieldType.ShortText or FormFieldType.LongText
+            if (f.Type is FormFieldType.ShortText or FormFieldType.LongText or FormFieldType.Address
                 && UnknownToken(f.DefaultValue) is { } unknown)
             {
                 return $"'{Truncate(f.Label, 40)}': unknown variable {unknown}.";
@@ -310,8 +356,41 @@ public static class FormTemplateValidator
             }
         }
 
+        // v0.1.61 — "show when": the controlling field must be a Checkbox of
+        // this form that comes before the field (no cycles, no forward refs).
+        var seen = new Dictionary<Guid, FormField>();
+        foreach (var f in def.Fields)
+        {
+            if (f.ShowWhen is { } ctl)
+            {
+                if (f.Type == FormFieldType.SectionHeader) { f.ShowWhen = null; f.ShowWhenUnchecked = null; }
+                else if (!seen.TryGetValue(ctl, out var c) || c.Type != FormFieldType.Checkbox)
+                    return $"'{Truncate(f.Label, 40)}': 'Show when' must point to a checkbox above this field.";
+            }
+            else f.ShowWhenUnchecked = null;
+            if (f.ShowWhenUnchecked == false) f.ShowWhenUnchecked = null;
+            // v0.1.61 — "counts from": a DateTime field above this Duration.
+            if (f.DurationFrom is { } from)
+            {
+                if (f.Type != FormFieldType.Duration) f.DurationFrom = null;
+                else if (!seen.TryGetValue(from, out var s) || s.Type != FormFieldType.DateTime)
+                    return $"'{Truncate(f.Label, 40)}': 'Counts from' must point to a date and time field above this field.";
+            }
+            seen[f.Id] = f;
+        }
+
         if (def.InputFieldCount == 0) return "Add at least one input field.";
         return null;
+    }
+
+    /// v0.1.61 — whether a field is shown for these answers: no "show when",
+    /// or its controlling checkbox is ticked (or, with ShowWhenUnchecked,
+    /// not ticked — a missing answer counts as not ticked).
+    public static bool IsShown(FormField f, JsonObject answers)
+    {
+        if (f.ShowWhen is not { } ctl) return true;
+        var ticked = answers[ctl.ToString()] is JsonValue v && v.TryGetValue<bool>(out var b) && b;
+        return f.ShowWhenUnchecked == true ? !ticked : ticked;
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
@@ -349,6 +428,10 @@ public sealed record FormReferenceSet(
 {
     /// Queue fields; resolved against the filler's own queue access.
     public IReadOnlySet<Guid> QueueIds { get; init; } = new HashSet<Guid>();
+    /// v0.1.61 — Invitees fields: servicedesk contacts (any active contact).
+    public IReadOnlySet<Guid> InviteeContactIds { get; init; } = new HashSet<Guid>();
+    /// v0.1.61 — Attachments fields: attachments of this ticket.
+    public IReadOnlySet<Guid> AttachmentIds { get; init; } = new HashSet<Guid>();
 }
 
 /// Resolved display data for references (written into the stored answer so
@@ -359,6 +442,9 @@ public sealed record FormResolvedReferences(
     IReadOnlyDictionary<Guid, (string Code, string Name)> Articles)
 {
     public IReadOnlyDictionary<Guid, string> Queues { get; init; } = new Dictionary<Guid, string>();
+    public IReadOnlyDictionary<Guid, (string Name, string Email)> InviteeContacts { get; init; } = new Dictionary<Guid, (string, string)>();
+    public IReadOnlyDictionary<Guid, (string Name, long Size, string ContentType)> Attachments { get; init; }
+        = new Dictionary<Guid, (string, long, string)>();
 }
 
 public sealed class FormAnswerException : Exception
@@ -373,7 +459,11 @@ public sealed record FormRuntimeSettings(
     int MaxArticleRows,
     decimal MaxArticleQuantity,
     int LongTextMaxLength,
-    int MaxPerTicket);
+    int MaxPerTicket)
+{
+    /// v0.1.61 — combined size of the files on one form (0 = no cap).
+    public long MaxAttachmentBytes { get; init; } = 25L * 1024 * 1024;
+}
 
 /// Validates answers submitted for a form against its (frozen) definition.
 /// Two passes so the pure part is unit-testable without a database:
@@ -404,6 +494,13 @@ public static class FormAnswerValidator
     public sealed record DurationValue(int Minutes) : ParsedValue;
     public sealed record RefValue(Guid Id) : ParsedValue;
     public sealed record ArticleRowsValue(IReadOnlyList<(Guid ArticleId, decimal Quantity)> Rows) : ParsedValue;
+    /// v0.1.61 — an Agent field with "multiple": the picked agents in order
+    /// and the organizer (one of them, or null).
+    public sealed record AgentsValue(IReadOnlyList<Guid> Ids, Guid? OrganizerId) : ParsedValue;
+    /// v0.1.61 — invitees: a contact id (resolved to name + e-mail) or a free address.
+    public sealed record InviteesValue(IReadOnlyList<(Guid? ContactId, string Email, string Name)> People) : ParsedValue;
+    /// v0.1.61 — attachments of this ticket, in the order picked.
+    public sealed record AttachmentsValue(IReadOnlyList<Guid> Ids) : ParsedValue;
 
     /// <paramref name="sanitizeHtml"/> cleans a rich-text LongText answer
     /// (the ticket-note sanitizer in production). Without one, rich-text
@@ -424,10 +521,15 @@ public static class FormAnswerValidator
         var contacts = new HashSet<Guid>();
         var articles = new HashSet<Guid>();
         var queues = new HashSet<Guid>();
+        var invitees = new HashSet<Guid>();
+        var attachments = new HashSet<Guid>();
 
         foreach (var f in def.Fields)
         {
             if (!FormFieldType.IsInput(f.Type)) continue;
+            // v0.1.61 — a field hidden by its "show when" checkbox is never
+            // required and its answer (if the client still sent one) is dropped.
+            if (!FormTemplateValidator.IsShown(f, answers)) continue;
             answers.TryGetPropertyValue(f.Id.ToString(), out var node);
             var parsed = node is null ? null : ParseOne(f, node, limits, sanitizeHtml);
             if (parsed is null)
@@ -441,11 +543,17 @@ public static class FormAnswerValidator
                 case RefValue r when f.Type == FormFieldType.Contact: contacts.Add(r.Id); break;
                 case RefValue r when f.Type == FormFieldType.Queue: queues.Add(r.Id); break;
                 case ArticleRowsValue a: foreach (var row in a.Rows) articles.Add(row.ArticleId); break;
+                case AgentsValue av: foreach (var id in av.Ids) agents.Add(id); break;
+                case InviteesValue iv: foreach (var p in iv.People) if (p.ContactId is { } cid) invitees.Add(cid); break;
+                case AttachmentsValue at: foreach (var id in at.Ids) attachments.Add(id); break;
             }
             values[f.Id] = parsed;
         }
 
-        return new ParsedAnswers(values, new FormReferenceSet(agents, contacts, articles) { QueueIds = queues });
+        return new ParsedAnswers(values, new FormReferenceSet(agents, contacts, articles)
+        {
+            QueueIds = queues, InviteeContactIds = invitees, AttachmentIds = attachments,
+        });
     }
 
     /// Returns null for "no answer" (empty string, empty list, null).
@@ -584,6 +692,75 @@ public static class FormAnswerValidator
                 if (minutes == 0) return f.Required ? null : new DurationValue(0);
                 return new DurationValue(minutes);
             }
+            case FormFieldType.Agent when f.Multiple == true:
+            {
+                // {"ids": ["…"], "organizerId": "…" | null}
+                if (node is not JsonObject ao || ao["ids"] is not JsonArray idArr) throw Bad("expected a list of agents.");
+                var ids = new List<Guid>();
+                foreach (var item in idArr)
+                {
+                    var s = item is null ? null : ReadString(item);
+                    if (s is null || !Guid.TryParse(s, out var id) || id == Guid.Empty) throw Bad("invalid agent.");
+                    if (!ids.Contains(id)) ids.Add(id);
+                }
+                if (ids.Count == 0) return null;
+                if (ids.Count > FormLimits.AgentsMax) throw Bad($"at most {FormLimits.AgentsMax} agents.");
+                Guid? organizer = null;
+                if (ao["organizerId"] is { } on && ReadString(on) is { Length: > 0 } os)
+                {
+                    if (!Guid.TryParse(os, out var og) || !ids.Contains(og)) throw Bad("the organizer must be one of the picked agents.");
+                    organizer = og;
+                }
+                return new AgentsValue(ids, organizer);
+            }
+            case FormFieldType.Address:
+            {
+                var s = ReadString(node) ?? throw Bad("expected an address.");
+                s = s.Replace("\r\n", "\n").Trim();
+                if (s.Length == 0) return null;
+                if (s.Length > FormLimits.AddressMax) throw Bad($"at most {FormLimits.AddressMax} characters.");
+                return new TextValue(s);
+            }
+            case FormFieldType.Invitees:
+            {
+                // [{"contactId": "…"} | {"email": "…", "name": "…"}]
+                if (node is not JsonArray arr) throw Bad("expected a list of people.");
+                var people = new List<(Guid?, string, string)>();
+                foreach (var item in arr)
+                {
+                    if (item is not JsonObject po) throw Bad("invalid person.");
+                    if (po["contactId"] is { } cn && ReadString(cn) is { Length: > 0 } cs)
+                    {
+                        if (!Guid.TryParse(cs, out var cid) || cid == Guid.Empty) throw Bad("invalid contact.");
+                        if (people.All(x => x.Item1 != cid)) people.Add((cid, string.Empty, string.Empty));
+                        continue;
+                    }
+                    var email = (po["email"] is { } en ? ReadString(en) : null)?.Trim() ?? string.Empty;
+                    var name = (po["name"] is { } nn ? ReadString(nn) : null)?.Trim() ?? string.Empty;
+                    if (!IsEmail(email)) throw Bad($"'{(email.Length > 60 ? email[..60] : email)}' is not a valid e-mail address.");
+                    if (name.Length > FormLimits.InviteeNameMax) throw Bad("a name is too long.");
+                    if (people.All(x => !string.Equals(x.Item2, email, StringComparison.OrdinalIgnoreCase)))
+                        people.Add((null, email, name));
+                }
+                if (people.Count == 0) return null;
+                if (people.Count > FormLimits.InviteesMax) throw Bad($"at most {FormLimits.InviteesMax} people.");
+                return new InviteesValue(people);
+            }
+            case FormFieldType.Attachments:
+            {
+                if (node is not JsonArray arr) throw Bad("expected a list of files.");
+                var ids = new List<Guid>();
+                foreach (var item in arr)
+                {
+                    // An id string, or a stored row {"id": …} sent back on edit.
+                    var s = item is JsonObject ro && ro["id"] is { } idn ? ReadString(idn) : item is null ? null : ReadString(item);
+                    if (s is null || !Guid.TryParse(s, out var id) || id == Guid.Empty) throw Bad("invalid file.");
+                    if (!ids.Contains(id)) ids.Add(id);
+                }
+                if (ids.Count == 0) return null;
+                if (ids.Count > FormLimits.AttachmentsMax) throw Bad($"at most {FormLimits.AttachmentsMax} files.");
+                return new AttachmentsValue(ids);
+            }
             case FormFieldType.Agent:
             case FormFieldType.Contact:
             case FormFieldType.Queue:
@@ -652,6 +829,17 @@ public static class FormAnswerValidator
     private static string? ReadString(JsonNode node)
         => node is JsonValue v && v.GetValueKind() == System.Text.Json.JsonValueKind.String ? v.GetValue<string>() : null;
 
+    /// A pragmatic address check (one @, a dot in the domain, no spaces) —
+    /// the mail server is the real judge; this keeps typos out of invitations.
+    public static bool IsEmail(string s)
+    {
+        if (s.Length is < 3 or > FormLimits.EmailMax || s.Any(char.IsWhiteSpace)) return false;
+        var at = s.IndexOf('@');
+        if (at <= 0 || at != s.LastIndexOf('@') || at == s.Length - 1) return false;
+        var domain = s[(at + 1)..];
+        return domain.Contains('.') && !domain.StartsWith('.') && !domain.EndsWith('.');
+    }
+
     /// Reads a JSON number whatever backs the node (a parsed request body is
     /// JsonElement-backed, a node built in code holds a CLR primitive).
     internal static bool TryReadDecimal(JsonNode node, out decimal value)
@@ -690,6 +878,27 @@ public static class FormAnswerValidator
                 DateValue d => JsonValue.Create(d.Value.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)),
                 DateTimeValue dt => JsonValue.Create(dt.Value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture)),
                 DurationValue du => JsonValue.Create(du.Minutes),
+                AgentsValue av => new JsonArray(av.Ids.Select(id =>
+                {
+                    var o2 = new JsonObject { ["id"] = id.ToString(), ["name"] = refs.Agents[id] };
+                    if (av.OrganizerId == id) o2["organizer"] = true;
+                    return (JsonNode?)o2;
+                }).ToArray()),
+                InviteesValue iv => new JsonArray(iv.People.Select(p => p.ContactId is { } cid
+                    ? (JsonNode?)new JsonObject
+                    {
+                        ["contactId"] = cid.ToString(),
+                        ["name"] = refs.InviteeContacts[cid].Name,
+                        ["email"] = refs.InviteeContacts[cid].Email,
+                    }
+                    : new JsonObject { ["name"] = p.Name, ["email"] = p.Email }).ToArray()),
+                AttachmentsValue at => new JsonArray(at.Ids.Select(id => (JsonNode?)new JsonObject
+                {
+                    ["id"] = id.ToString(),
+                    ["name"] = refs.Attachments[id].Name,
+                    ["size"] = refs.Attachments[id].Size,
+                    ["contentType"] = refs.Attachments[id].ContentType,
+                }).ToArray()),
                 RefValue r when f.Type == FormFieldType.Agent => new JsonObject
                 {
                     ["id"] = r.Id.ToString(),
@@ -725,6 +934,33 @@ public static class FormAnswerValidator
 /// (server-rendered, every value HTML-encoded) and the flattened search text.
 public static class FormRenderer
 {
+    /// A stored DateTime answer as UTC; null when empty or unreadable.
+    public static DateTime? ReadUtc(JsonNode? v)
+        => v is JsonValue jv && jv.GetValueKind() == System.Text.Json.JsonValueKind.String
+           && DateTimeOffset.TryParse(jv.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture,
+               System.Globalization.DateTimeStyles.AssumeUniversal, out var d)
+            ? d.UtcDateTime : null;
+
+    /// v0.1.61 — the end of a Duration field that counts from a DateTime
+    /// field: start + duration. Null when it does not count from one, or the
+    /// start or a positive duration is missing.
+    public static DateTime? DurationEndUtc(FormDefinition def, FormField f, JsonObject? answers)
+    {
+        if (answers is null || f.Type != FormFieldType.Duration || f.DurationFrom is not { } from) return null;
+        if (!def.Fields.Any(x => x.Id == from && x.Type == FormFieldType.DateTime)) return null;
+        var start = ReadUtc(answers[from.ToString()]);
+        if (start is null || answers[f.Id.ToString()] is not { } node
+            || !FormAnswerValidator.TryReadDecimal(node, out var minutes) || minutes <= 0) return null;
+        return start.Value.AddMinutes((double)minutes);
+    }
+
+    /// A Duration that counts from a start reads "2:00 (until …)" in notes.
+    private static string WithDurationEnd(string text, FormDefinition def, FormField f, JsonObject? answers,
+        Func<DateTimeOffset, string> formatDateTime)
+        => text.Length > 0 && DurationEndUtc(def, f, answers) is { } end
+            ? $"{text} (until {formatDateTime(new DateTimeOffset(end, TimeSpan.Zero))})"
+            : text;
+
     public static string DisplayValue(FormField f, JsonNode? v, Func<DateTimeOffset, string> formatDateTime)
     {
         if (v is null) return string.Empty;
@@ -773,9 +1009,23 @@ public static class FormRenderer
                     var m = FormAnswerValidator.TryReadDecimal(v, out var md) ? (int)md : 0;
                     return $"{m / 60}:{m % 60:00}";
                 }
+                case FormFieldType.Agent when v is JsonArray agents:
+                    return string.Join(", ", agents.OfType<JsonObject>().Select(a =>
+                        Str(a["name"]) + (a["organizer"] is JsonValue ov && ov.GetValueKind() == System.Text.Json.JsonValueKind.True ? " (organizer)" : "")));
                 case FormFieldType.Agent:
                 case FormFieldType.Queue:
                     return v["name"]?.GetValue<string>() ?? string.Empty;
+                case FormFieldType.Address:
+                    return v.GetValue<string>();
+                case FormFieldType.Invitees:
+                    return string.Join(", ", v.AsArray().OfType<JsonObject>().Select(p =>
+                    {
+                        var name = Str(p["name"]);
+                        var email = Str(p["email"]);
+                        return name.Length > 0 && email.Length > 0 ? $"{name} <{email}>" : name + email;
+                    }));
+                case FormFieldType.Attachments:
+                    return string.Join(", ", v.AsArray().OfType<JsonObject>().Select(a => Str(a["name"])));
                 case FormFieldType.Contact:
                 {
                     var name = v["name"]?.GetValue<string>() ?? string.Empty;
@@ -910,14 +1160,15 @@ public static class FormRenderer
             }
             var key = f.Id.ToString();
             if (changedFieldIds is not null && !changedFieldIds.Contains(f.Id)) continue;
-            var now = DisplayValue(f, answers[key], formatDateTime);
+            var now = WithDurationEnd(DisplayValue(f, answers[key], formatDateTime), def, f, answers, formatDateTime);
             string cell;
             if (changedFieldIds is not null)
             {
                 // Plain text on the old side (a pill there would re-link an
                 // order the agent removed); a short text's new side keeps its
                 // order pills so an order added on edit is linked too.
-                var before = f.Type == FormFieldType.Article ? ArticleLines(previous?[key]) : DisplayValue(f, previous?[key], formatDateTime);
+                var before = f.Type == FormFieldType.Article ? ArticleLines(previous?[key])
+                    : WithDurationEnd(DisplayValue(f, previous?[key], formatDateTime), def, f, previous, formatDateTime);
                 var after = f.Type == FormFieldType.ShortText ? CellHtml(f, answers[key], now)
                     : f.Type == FormFieldType.Article ? Lines(ArticleLines(answers[key]) is { Length: > 0 } al ? al : "—")
                     : Lines(now.Length == 0 ? "—" : now);
@@ -945,6 +1196,23 @@ public static class FormRenderer
         else
             sb.Append("<p>No fields filled in.</p>");
         return sb.ToString();
+    }
+
+    /// v0.1.61 — every attachment id in the Attachments fields of an answer set.
+    public static IReadOnlyList<Guid> AttachmentIds(FormDefinition def, JsonObject answers)
+    {
+        var ids = new List<Guid>();
+        foreach (var f in def.Fields)
+        {
+            if (f.Type != FormFieldType.Attachments || answers[f.Id.ToString()] is not JsonArray arr) continue;
+            foreach (var row in arr)
+            {
+                if (row is JsonObject o && o["id"] is JsonValue v && v.GetValueKind() == System.Text.Json.JsonValueKind.String
+                    && Guid.TryParse(v.GetValue<string>(), out var id) && !ids.Contains(id))
+                    ids.Add(id);
+            }
+        }
+        return ids;
     }
 
     public static string FlattenForSearch(FormDefinition def, JsonObject answers)
@@ -1008,28 +1276,62 @@ public static class FormRenderer
     }
 }
 
+/// <paramref name="BoPlanTemplateId"/> (v0.1.61): for a back-office
+/// template, the form that "Plan" opens (e.g. the planning form).
+/// <paramref name="Outlook"/> (v0.1.61): the Outlook appointment mapping.
+/// <paramref name="HeaderButtonLabel"/> + <paramref name="HeaderButtonQueueIds"/>
+/// (v0.1.61): a button with this label next to the ticket title opens the
+/// form on tickets in those queues. <paramref name="InPicker"/> false: not
+/// offered through <c>::</c> (<see cref="QueueIds"/> unused).
 public sealed record FormTemplateSummary(
     Guid Id, string Name, string Description, bool IsActive, IReadOnlyList<Guid> QueueIds,
-    int FieldCount, DateTime CreatedUtc, DateTime UpdatedUtc, bool SendToBackoffice = false);
+    int FieldCount, DateTime CreatedUtc, DateTime UpdatedUtc, bool SendToBackoffice = false,
+    Guid? BoPlanTemplateId = null, bool OutlookEnabled = false, string? HeaderButtonLabel = null,
+    IReadOnlyList<Guid>? HeaderButtonQueueIds = null, bool InPicker = true)
+{
+    public bool InPickerFor(Guid queueId) => FormTemplateScope.InPicker(InPicker, QueueIds, queueId);
+    public bool ButtonFor(Guid queueId) => FormTemplateScope.Button(HeaderButtonLabel, HeaderButtonQueueIds, queueId);
+}
 
 public sealed record FormTemplateDetail(
     Guid Id, string Name, string Description, bool IsActive, IReadOnlyList<Guid> QueueIds,
     FormDefinition Definition, int FieldCount, DateTime CreatedUtc, DateTime UpdatedUtc,
-    bool SendToBackoffice = false);
+    bool SendToBackoffice = false, Guid? BoPlanTemplateId = null, FormOutlookMapping? Outlook = null,
+    string? HeaderButtonLabel = null, IReadOnlyList<Guid>? HeaderButtonQueueIds = null, bool InPicker = true)
+{
+    /// Fillable on a ticket in this queue through `::` or the header button.
+    public bool UsableIn(Guid queueId)
+        => IsActive && (FormTemplateScope.InPicker(InPicker, QueueIds, queueId)
+                        || FormTemplateScope.Button(HeaderButtonLabel, HeaderButtonQueueIds, queueId));
+}
+
+/// v0.1.61 — where a form template is offered. One rule for the usable list,
+/// the save check and (mirrored in SQL) <c>ListAvailableForQueueAsync</c>.
+public static class FormTemplateScope
+{
+    /// Offered through `::`: picker on, and no queue scope (= every queue) or this queue.
+    public static bool InPicker(bool inPicker, IReadOnlyList<Guid> queueIds, Guid queueId)
+        => inPicker && (queueIds.Count == 0 || queueIds.Contains(queueId));
+
+    /// A header button: a label and this queue among the button's queues.
+    public static bool Button(string? label, IReadOnlyList<Guid>? queueIds, Guid queueId)
+        => !string.IsNullOrEmpty(label) && queueIds is not null && queueIds.Contains(queueId);
+}
 
 /// <paramref name="SendToBackoffice"/> (v0.1.54): forms filled from this
 /// template land on the Back office forms work list.
 public sealed record FormTemplateInput(
     string Name, string Description, bool IsActive, IReadOnlyList<Guid> QueueIds, FormDefinition Definition,
-    bool SendToBackoffice = false);
+    bool SendToBackoffice = false, Guid? BoPlanTemplateId = null, FormOutlookMapping? Outlook = null,
+    string? HeaderButtonLabel = null, IReadOnlyList<Guid>? HeaderButtonQueueIds = null, bool InPicker = true);
 
-/// <paramref name="BoStatus"/> (v0.1.54): Open / InProgress / Handled for a
+/// <paramref name="BoStatus"/> (v0.1.54): Open / Handled for a
 /// back-office form, null otherwise; the side panel shows it to the agent.
 public sealed record TicketFormSummary(
     Guid Id, Guid TicketId, string Name, int Version,
     Guid? CreatedByUserId, string? CreatedByName, DateTime CreatedUtc,
     Guid? UpdatedByUserId, string? UpdatedByName, DateTime UpdatedUtc,
-    string? BoStatus = null, string? BoClaimedByName = null,
+    string? BoStatus = null,
     string? BoHandledByName = null, DateTime? BoHandledUtc = null);
 
 /// Result of an optimistic form update: the new version and the back-office

@@ -50,7 +50,12 @@ public sealed class ComposeTokenResolver : IComposeTokenResolver
                    COALESCE(NULLIF(c.phone_e164, ''),  c.phone)        AS ContactPhone,
                    COALESCE(NULLIF(c.mobile_phone_e164, ''), c.mobile_phone) AS ContactMobile,
                    co.name                                           AS CompanyName,
-                   co.code::text                                     AS CompanyCode
+                   co.code::text                                     AS CompanyCode,
+                   co.address_line1                                  AS AddressLine1,
+                   co.address_line2                                  AS AddressLine2,
+                   co.postal_code                                    AS PostalCode,
+                   co.city                                           AS City,
+                   co.country                                        AS Country
             FROM tickets t
             LEFT JOIN contacts c   ON c.id = t.requester_contact_id
             LEFT JOIN companies co ON co.id = t.company_id
@@ -103,7 +108,9 @@ public sealed class ComposeTokenResolver : IComposeTokenResolver
         if (companyId is not null)
         {
             const string companySql = """
-                SELECT name AS CompanyName, code::text AS CompanyCode
+                SELECT name AS CompanyName, code::text AS CompanyCode,
+                       address_line1 AS AddressLine1, address_line2 AS AddressLine2,
+                       postal_code AS PostalCode, city AS City, country AS Country
                 FROM companies
                 WHERE id = @companyId
                 LIMIT 1
@@ -115,6 +122,11 @@ public sealed class ComposeTokenResolver : IComposeTokenResolver
                 row ??= new ContextRow();
                 row.CompanyName = co.CompanyName;
                 row.CompanyCode = co.CompanyCode;
+                row.AddressLine1 = co.AddressLine1;
+                row.AddressLine2 = co.AddressLine2;
+                row.PostalCode = co.PostalCode;
+                row.City = co.City;
+                row.Country = co.Country;
             }
         }
 
@@ -146,6 +158,7 @@ public sealed class ComposeTokenResolver : IComposeTokenResolver
             dict[ComposeTokens.ContactMobile]   = row.ContactMobile ?? string.Empty;
             dict[ComposeTokens.CompanyName]     = row.CompanyName   ?? string.Empty;
             dict[ComposeTokens.CompanyCode]     = row.CompanyCode   ?? string.Empty;
+            dict[ComposeTokens.CompanyAddress]  = FormatAddress(row.AddressLine1, row.AddressLine2, row.PostalCode, row.City, row.Country);
             dict[ComposeTokens.TicketNumber]    = row.TicketNumber > 0 ? row.TicketNumber.ToString() : string.Empty;
             dict[ComposeTokens.TicketSubject]   = row.TicketSubject ?? string.Empty;
         }
@@ -168,11 +181,31 @@ public sealed class ComposeTokenResolver : IComposeTokenResolver
         public string? ContactMobile { get; set; }
         public string? CompanyName { get; set; }
         public string? CompanyCode { get; set; }
+        // The company's address parts; {{company.address}} is formatted from
+        // them in Build (one rule for the ticket and the contact path).
+        public string? AddressLine1 { get; set; }
+        public string? AddressLine2 { get; set; }
+        public string? PostalCode { get; set; }
+        public string? City { get; set; }
+        public string? Country { get; set; }
+    }
+
+    /// "street, line 2, 3500 Hasselt, Belgium" — empty parts skipped.
+    public static string FormatAddress(string? line1, string? line2, string? postalCode, string? city, string? country)
+    {
+        var place = string.Join(" ", new[] { postalCode, city }.Select(x => (x ?? string.Empty).Trim()).Where(x => x.Length > 0));
+        return string.Join(", ", new[] { line1, line2, place, country }
+            .Select(x => (x ?? string.Empty).Trim()).Where(x => x.Length > 0));
     }
 
     private sealed class CompanyRow
     {
         public string? CompanyName { get; set; }
         public string? CompanyCode { get; set; }
+        public string? AddressLine1 { get; set; }
+        public string? AddressLine2 { get; set; }
+        public string? PostalCode { get; set; }
+        public string? City { get; set; }
+        public string? Country { get; set; }
     }
 }

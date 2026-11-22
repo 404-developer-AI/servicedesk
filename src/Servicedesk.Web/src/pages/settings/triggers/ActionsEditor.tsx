@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Trash2, GripVertical } from "lucide-react";
+import { Plus, Trash2, GripVertical, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -28,6 +28,7 @@ import {
   type TriggerTemplateVariable,
 } from "@/lib/api";
 import { surveysAgentApi } from "@/lib/surveys-api";
+import { formTemplatesApi } from "@/lib/forms-api";
 import { userApi } from "@/lib/ticket-api";
 import { TriggerTemplateField } from "./TriggerTemplateField";
 import { AgentPicker } from "@/components/AgentPicker";
@@ -352,6 +353,20 @@ function ActionForm({
         </FieldRow>
       );
     }
+    case "set_category":
+      return (
+        <FieldRow label="Category">
+          <NativeSelect
+            value={action.category_id ?? ""}
+            onChange={(v) => onChange({ ...action, category_id: v || null })}
+          >
+            <option value="">Clear category</option>
+            {(taxonomies.categories ?? []).map((c) => (
+              <option key={c.id} value={c.id}>{c.name}{!c.isActive ? " (inactive)" : ""}</option>
+            ))}
+          </NativeSelect>
+        </FieldRow>
+      );
     case "set_owner":
       return (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -568,6 +583,8 @@ function ActionForm({
       return <SendSurveyFields action={action} onChange={onChange} />;
     case "notify_agent":
       return <NotifyAgentFields action={action} onChange={onChange} variables={variables} />;
+    case "handle_backoffice_form":
+      return <HandleBackofficeFormFields action={action} onChange={onChange} variables={variables} />;
     case "create_linked_ticket":
       return (
         <CreateLinkedTicketFields
@@ -754,6 +771,61 @@ function NotifyAgentFields({
       </FieldRow>
       <p className="text-[11px] text-muted-foreground/80">
         Shows in the bell and as a toast. Only active agents receive it, and never the person whose own action started the trigger.
+      </p>
+    </div>
+  );
+}
+
+function HandleBackofficeFormFields({
+  action,
+  onChange,
+  variables,
+}: {
+  action: Extract<TriggerAction, { kind: "handle_backoffice_form" }>;
+  onChange: (next: TriggerAction) => void;
+  variables: TriggerTemplateVariable[];
+}) {
+  const templatesQ = useQuery({
+    queryKey: ["form-templates", "admin-list"],
+    queryFn: () => formTemplatesApi.list(),
+    staleTime: 60_000,
+  });
+  const templates = (templatesQ.data ?? []).filter((t) => t.sendToBackoffice);
+  return (
+    <div className="space-y-3">
+      <FieldRow label="Form templates">
+        <div className="flex flex-wrap gap-2">
+          {templates.map((t) => {
+            const on = action.template_ids.includes(t.id);
+            return (
+              <button key={t.id} type="button" aria-pressed={on}
+                onClick={() => onChange({
+                  ...action,
+                  template_ids: on ? action.template_ids.filter((x) => x !== t.id) : [...action.template_ids, t.id],
+                })}
+                className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
+                  on ? "border-primary/40 bg-primary/12 text-foreground" : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover")}>
+                {on && <Check className="h-3.5 w-3.5" />}
+                {t.name}{!t.isActive ? " (inactive)" : ""}
+              </button>
+            );
+          })}
+          {templatesQ.isSuccess && templates.length === 0 && (
+            <span className="text-[11px] text-muted-foreground/70">No form templates are sent to the back office.</span>
+          )}
+        </div>
+      </FieldRow>
+      <FieldRow label="Note (optional)">
+        <TriggerTemplateField
+          mode="plain"
+          variables={variables}
+          value={action.note}
+          onChange={(v) => onChange({ ...action, note: v })}
+          placeholder="Handling note — supports #{variables}"
+        />
+      </FieldRow>
+      <p className="text-[11px] text-muted-foreground/80">
+        Marks every open back-office form of these templates on the ticket as handled. Use it on the planning form's save trigger so the intervention request is handled wherever the planning form was filled in. A form handled this way does not start a 'handled' trigger pass.
       </p>
     </div>
   );

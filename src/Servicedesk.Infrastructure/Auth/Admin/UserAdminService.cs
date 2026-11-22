@@ -60,7 +60,10 @@ public sealed class UserAdminService : IUserAdminService
                     u.feedback_enabled  AS FeedbackEnabled,
                     u.feedback_own_only AS FeedbackOwnOnly,
                     u.insights_enabled  AS InsightsEnabled,
-                    u.order_management_enabled AS OrderManagementEnabled
+                    u.order_management_enabled AS OrderManagementEnabled,
+                    u.calendar_planning_enabled AS CalendarPlanningEnabled,
+                    u.calendar_id       AS CalendarId,
+                    u.calendar_name     AS CalendarName
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             -- v0.1.0: customer-portal accounts have their own admin surface
@@ -117,7 +120,10 @@ public sealed class UserAdminService : IUserAdminService
                     u.feedback_enabled  AS FeedbackEnabled,
                     u.feedback_own_only AS FeedbackOwnOnly,
                     u.insights_enabled  AS InsightsEnabled,
-                    u.order_management_enabled AS OrderManagementEnabled
+                    u.order_management_enabled AS OrderManagementEnabled,
+                    u.calendar_planning_enabled AS CalendarPlanningEnabled,
+                    u.calendar_id       AS CalendarId,
+                    u.calendar_name     AS CalendarName
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
@@ -853,7 +859,10 @@ public sealed class UserAdminService : IUserAdminService
             && update.FeedbackEnabled is null
             && update.FeedbackOwnOnly is null
             && update.InsightsEnabled is null
-            && update.OrderManagementEnabled is null)
+            && update.OrderManagementEnabled is null
+            && update.CalendarPlanningEnabled is null
+            && update.CalendarId is null
+            && update.CalendarName is null)
         {
             return new UpdateFeatureFlagsResult.NoChange();
         }
@@ -904,7 +913,10 @@ public sealed class UserAdminService : IUserAdminService
                 feedback_enabled = COALESCE(@feedbackEnabled, feedback_enabled),
                 feedback_own_only = COALESCE(@feedbackOwnOnly, feedback_own_only),
                 insights_enabled = COALESCE(@insightsEnabled, insights_enabled),
-                order_management_enabled = COALESCE(@orderManagementEnabled, order_management_enabled)
+                order_management_enabled = COALESCE(@orderManagementEnabled, order_management_enabled),
+                calendar_planning_enabled = COALESCE(@calendarPlanningEnabled, calendar_planning_enabled),
+                calendar_id   = CASE WHEN @calendarId   IS NULL THEN calendar_id   ELSE NULLIF(@calendarId, '')   END,
+                calendar_name = CASE WHEN @calendarName IS NULL THEN calendar_name ELSE NULLIF(@calendarName, '') END
             WHERE id = @id
             """,
             new
@@ -929,6 +941,9 @@ public sealed class UserAdminService : IUserAdminService
                 feedbackOwnOnly = update.FeedbackOwnOnly,
                 insightsEnabled = update.InsightsEnabled,
                 orderManagementEnabled = update.OrderManagementEnabled,
+                calendarPlanningEnabled = update.CalendarPlanningEnabled,
+                calendarId = update.CalendarId,
+                calendarName = update.CalendarName,
             },
             tx,
             cancellationToken: ct));

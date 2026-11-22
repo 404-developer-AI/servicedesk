@@ -103,6 +103,9 @@ public static class FormTriggerFields
             if (f.TriggerKey is null || !FormFieldType.IsInput(f.Type)) continue;
             var v = answers[f.Id.ToString()];
             var display = FormRenderer.DisplayValue(f, v, formatDateTime);
+            // An unanswered checkbox (hidden by "show when", or an older
+            // answer set) is not ticked: conditions compare "No", never empty.
+            if (f.Type == FormFieldType.Checkbox && display.Length == 0) display = "No";
             Guid? refId = null;
             DateTime? utc = null;
             if (f.Type is FormFieldType.Agent or FormFieldType.Contact or FormFieldType.Queue
@@ -111,6 +114,17 @@ public static class FormTriggerFields
                 && Guid.TryParse(idv.GetValue<string>(), out var id))
             {
                 refId = id;
+            }
+            // v0.1.61 — a multi-agent field: the organizer, else the first
+            // agent, is the one a "set owner from form field" action takes.
+            if (f.Type == FormFieldType.Agent && v is JsonArray agents)
+            {
+                var pick = agents.OfType<JsonObject>().FirstOrDefault(a =>
+                               a["organizer"] is JsonValue ov && ov.GetValueKind() == System.Text.Json.JsonValueKind.True)
+                           ?? agents.OfType<JsonObject>().FirstOrDefault();
+                if (pick?["id"] is JsonValue pv && pv.GetValueKind() == System.Text.Json.JsonValueKind.String
+                    && Guid.TryParse(pv.GetValue<string>(), out var pid))
+                    refId = pid;
             }
             if (f.Type == FormFieldType.DateTime && v is JsonValue dv
                 && dv.GetValueKind() == System.Text.Json.JsonValueKind.String

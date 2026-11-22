@@ -57,13 +57,20 @@ import { buildMailContext, flattenQueueMailboxes } from "./mailContext";
 import { InTicketSearchProvider, useInTicketSearch } from "./components/InTicketSearch";
 import { stripBaseTags } from "@/lib/sanitize";
 import { TicketFormHost } from "@/components/forms/TicketFormHost";
+import { FormHeaderButtons } from "@/components/forms/FormHeaderButtons";
 import type { TicketFormSummary } from "@/lib/forms-api";
 import { formatBytes } from "@/lib/format";
 import { FollowButton } from "./components/FollowButton";
 import { TicketOrdersButton } from "./components/TicketOrdersButton";
+import { BackofficeLockBanner } from "./components/BackofficeLockBanner";
+import { useCategoryLocked } from "./components/useCategoryLocked";
 
 type TicketDetailPageProps = {
   ticketId: string;
+  /// v0.1.61 — rendered inside the ticket overlay: fills its container
+  /// instead of the viewport, and never shows the back-office soft lock
+  /// (the overlay *is* the back-office way of working).
+  embedded?: boolean;
 };
 
 
@@ -126,12 +133,14 @@ function TicketNumber({ number }: { number: number }) {
 
 function EditableSubject({
   ticketId,
+  queueId,
   number,
   value,
   ticketTypeId,
   onSave,
 }: {
   ticketId: string;
+  queueId: string;
   number: number;
   value: string;
   ticketTypeId?: string | null;
@@ -182,6 +191,7 @@ function EditableSubject({
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
+        <FormHeaderButtons ticketId={ticketId} queueId={queueId} />
       </div>
     );
   }
@@ -389,7 +399,7 @@ export function TicketDetailPage(props: TicketDetailPageProps) {
   );
 }
 
-function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
+function TicketDetailPageInner({ ticketId, embedded = false }: TicketDetailPageProps) {
   const queryClient = useQueryClient();
   const addTicket = useRecentTicketsStore((s) => s.addTicket);
   useViewingTicket(ticketId);
@@ -993,6 +1003,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     <>
       <TicketDetailBody
         ticketId={ticketId}
+        embedded={embedded}
         ticket={ticket}
         body={body}
         events={events}
@@ -1127,7 +1138,7 @@ const EMPTY_TAGGED_ORDERS: { id: string; label: string }[] = [];
 const EMPTY_TICKET_FORMS: TicketFormSummary[] = [];
 
 function TicketDetailBody({
-  ticketId, ticket, body, events, timeline, eventTypeCounts, latestMailReceived, pinnedEventsOutsidePage,
+  ticketId, embedded, ticket, body, events, timeline, eventTypeCounts, latestMailReceived, pinnedEventsOutsidePage,
   serverTaggedOrders, ticketForms, pinnedEvents, pinnedEventIds, updateMutation, queryClient,
   onSidePanelUpdate,
   requesterEmail,
@@ -1162,6 +1173,7 @@ function TicketDetailBody({
   onTimeAlertBlockingChange,
 }: {
   ticketId: string;
+  embedded: boolean;
   ticket: any;
   body: any;
   events: any[];
@@ -1341,17 +1353,39 @@ function TicketDetailBody({
     setSidePanelExpanded(sidePanelPinned);
   }, [ticketId, sidePanelPinned]);
 
+  // v0.1.61 — soft lock: a ticket in a "Locked" category is worked on via
+  // Back office forms. On the normal page the side-panel fields are greyed
+  // (notes stay open) until the agent chooses "Edit anyway" for this visit —
+  // in the ticket overlay too (its banner adds Mark as handled). UI only —
+  // the server never refuses.
+  const { locked: categoryLocked, name: lockedCategoryName } = useCategoryLocked(ticket?.categoryId);
+  const [editAnyway, setEditAnyway] = React.useState(false);
+  React.useEffect(() => setEditAnyway(false), [ticketId]);
+  const softLocked = categoryLocked && !editAnyway;
+
   return (
-    <div className="flex gap-6 pt-3 h-[calc(100vh-0.75rem)] overflow-hidden">
+    <div className={cn("flex gap-6 pt-3 overflow-hidden", embedded ? "h-full" : "h-[calc(100vh-0.75rem)]")}>
       <TicketFormHost ticketId={ticketId} ticketNumber={ticket?.number ?? null} />
       {/* Left column — header + description static, activity scrolls, reply pinned bottom */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
         <SearchContextBar ticketId={ticketId} />
+        {softLocked && (
+          <BackofficeLockBanner
+            ticketId={ticketId}
+            ticketNumber={ticket.number}
+            subject={ticket.subject}
+            categoryName={lockedCategoryName}
+            forms={ticketForms ?? []}
+            embedded={embedded}
+            onEditAnyway={() => setEditAnyway(true)}
+          />
+        )}
         {/* Static: ticket number + subject on one line, full width — action pills
             live on the Description label row below so long subjects stay visible */}
         <div className="shrink-0 pb-4">
           <EditableSubject
             ticketId={ticketId}
+            queueId={ticket.queueId}
             number={ticket.number}
             value={ticket.subject}
             ticketTypeId={ticket.ticketTypeId}
@@ -1709,6 +1743,7 @@ function TicketDetailBody({
             contactNotLinkedWarning={contactNotLinkedWarning}
             taggedOrders={taggedOrders}
             ticketForms={ticketForms}
+            softLocked={softLocked}
           />
         </div>
         )}

@@ -26,8 +26,6 @@ public sealed record BackofficeFormEvent(
 public static class BackofficeFormEventKind
 {
     public const string Submitted = "submitted";
-    public const string Claimed = "claimed";
-    public const string Released = "released";
     public const string Handled = "handled";
     public const string Reopened = "reopened";
     public const string Updated = "updated";
@@ -56,11 +54,12 @@ public sealed record BackofficeFormView(
 
 public interface IBackofficeFormService
 {
+    /// <paramref name="query"/>'s waiting categories are filled in from the setting.
     Task<BackofficeFormPage> ListAsync(BackofficeFormListQuery query, CancellationToken ct);
     Task<BackofficeFormCounts> CountsAsync(CancellationToken ct);
     Task<BackofficeFormView> GetAsync(Guid formId, CancellationToken ct);
-    Task<BackofficeFormListItem> ClaimAsync(TicketMutationActor actor, Guid formId, bool takeOver, CancellationToken ct);
-    Task<BackofficeFormListItem> ReleaseAsync(TicketMutationActor actor, Guid formId, CancellationToken ct);
+    /// Open back-office forms on one ticket (ticket banner, overlay bar).
+    Task<IReadOnlyList<BackofficeFormListItem>> ListOpenOnTicketAsync(Guid ticketId, CancellationToken ct);
     Task<BackofficeFormListItem> HandleAsync(TicketMutationActor actor, Guid formId, string? note, int expectedVersion, CancellationToken ct);
     Task<BackofficeFormListItem> ReopenAsync(TicketMutationActor actor, Guid formId, string? note, CancellationToken ct);
 }
@@ -70,11 +69,11 @@ public interface IBackofficeFormService
 /// route); there is deliberately no queue check here — back office follows
 /// up every marked form (owner decision). Every transition is one guarded
 /// UPDATE in the repository, so concurrent back-office users can never both
-/// claim or both handle the same form. What happens on the ticket when a
+/// handle the same form. v0.1.61 — no claim step: who works on a form is
+/// live presence (TicketPresenceHub), never stored. What happens on the ticket when a
 /// form is handled is decided by the admin's triggers, never hard-coded.
 public sealed class BackofficeFormService : IBackofficeFormService
 {
-    public const string AlreadyClaimed = "already_claimed";
     public const string WrongState = "wrong_state";
 
     private readonly IBackofficeFormRepository _repo;
@@ -94,17 +93,18 @@ public sealed class BackofficeFormService : IBackofficeFormService
         _audit = audit;
     }
 
-    private static bool IsAdmin(TicketMutationActor actor)
-        => string.Equals(actor.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+    public async Task<BackofficeFormPage> ListAsync(BackofficeFormListQuery query, CancellationToken ct)
+        => await _repo.ListAsync(query with { WaitingStateCategories = await WaitingAsync(ct) }, ct);
 
-    public Task<BackofficeFormPage> ListAsync(BackofficeFormListQuery query, CancellationToken ct)
-        => _repo.ListAsync(query, ct);
+    public async Task<BackofficeFormCounts> CountsAsync(CancellationToken ct)
+        => await _repo.CountsAsync(await WaitingAsync(ct), ct);
 
-    public Task<BackofficeFormCounts> CountsAsync(CancellationToken ct) => _repo.CountsAsync(ct);
+    public async Task<IReadOnlyList<BackofficeFormListItem>> ListOpenOnTicketAsync(Guid ticketId, CancellationToken ct)
+        => await _repo.ListOpenOnTicketAsync(ticketId, await WaitingAsync(ct), ct);
 
     public async Task<BackofficeFormView> GetAsync(Guid formId, CancellationToken ct)
     {
-        var detail = await _repo.GetDetailAsync(formId, ct)
+        var detail = await _repo.GetDetailAsync(formId, await WaitingAsync(ct), ct)
                      ?? throw new FormRejectedException(FormRejectCode.NotFound, "Form not found.");
         var changes = new List<BackofficeFormChange>();
         if (detail.HandledAnswers is not null && detail.Item.HandledVersion is { } hv && detail.Item.Version > hv)
@@ -124,47 +124,6 @@ public sealed class BackofficeFormService : IBackofficeFormService
         return new BackofficeFormView(detail, changes);
     }
 
-    public async Task<BackofficeFormListItem> ClaimAsync(TicketMutationActor actor, Guid formId, bool takeOver, CancellationToken ct)
-    {
-        var before = await RequireItemAsync(formId, ct);
-        if (before.Status == BackofficeFormStatus.InProgress && before.ClaimedByUserId == actor.UserId)
-            return before; // already mine — idempotent
-
-        var result = await _repo.ClaimAsync(formId, actor.UserId, takeOver, ct);
-        if (result is null)
-        {
-            var now = await RequireItemAsync(formId, ct);
-            throw now.Status == BackofficeFormStatus.InProgress
-                ? new FormRejectedException(AlreadyClaimed,
-                    $"{now.ClaimedByName ?? "Someone else"} is already handling this form.")
-                : new FormRejectedException(WrongState, "This form has already been handled.");
-        }
-
-        var item = await RequireItemAsync(formId, ct);
-        await AuditAsync(actor, "ticket.form.backoffice.claimed", item,
-            new { takeOverFrom = before.Status == BackofficeFormStatus.InProgress ? before.ClaimedByUserId : null }, ct);
-        await PublishAsync(BackofficeFormEventKind.Claimed, item, actor, ct);
-        return item;
-    }
-
-    public async Task<BackofficeFormListItem> ReleaseAsync(TicketMutationActor actor, Guid formId, CancellationToken ct)
-    {
-        await RequireItemAsync(formId, ct);
-        var result = await _repo.ReleaseAsync(formId, actor.UserId, IsAdmin(actor), ct);
-        if (result is null)
-        {
-            var now = await RequireItemAsync(formId, ct);
-            throw new FormRejectedException(WrongState, now.Status == BackofficeFormStatus.InProgress
-                ? "Only the person handling this form can release it."
-                : "Nobody is handling this form any more.");
-        }
-
-        var item = await RequireItemAsync(formId, ct);
-        await AuditAsync(actor, "ticket.form.backoffice.released", item, null, ct);
-        await PublishAsync(BackofficeFormEventKind.Released, item, actor, ct);
-        return item;
-    }
-
     public async Task<BackofficeFormListItem> HandleAsync(TicketMutationActor actor, Guid formId, string? note, int expectedVersion, CancellationToken ct)
     {
         var text = await ValidateNoteAsync(note, required: await NoteRequiredAsync(ct));
@@ -172,17 +131,14 @@ public sealed class BackofficeFormService : IBackofficeFormService
         if (before.Status == BackofficeFormStatus.Handled)
             throw new FormRejectedException(WrongState, "This form has already been handled.");
 
-        var result = await _repo.HandleAsync(formId, actor.UserId, text, IsAdmin(actor), expectedVersion, ct);
+        var result = await _repo.HandleAsync(formId, actor.UserId, text, expectedVersion, ct);
         if (result is null)
         {
             var now = await RequireItemAsync(formId, ct);
             if (now.Status != BackofficeFormStatus.Handled && now.Version != expectedVersion)
                 throw new FormRejectedException(FormRejectCode.VersionConflict,
                     "The form was changed while you had it open. Check the latest version and handle it again.");
-            throw now.Status == BackofficeFormStatus.InProgress
-                ? new FormRejectedException(AlreadyClaimed,
-                    $"{now.ClaimedByName ?? "Someone else"} is handling this form. Take it over first.")
-                : new FormRejectedException(WrongState, "This form has already been handled.");
+            throw new FormRejectedException(WrongState, "This form has already been handled.");
         }
 
         var item = await RequireItemAsync(formId, ct);
@@ -205,8 +161,29 @@ public sealed class BackofficeFormService : IBackofficeFormService
     }
 
     private async Task<BackofficeFormListItem> RequireItemAsync(Guid formId, CancellationToken ct)
-        => await _repo.GetItemAsync(formId, ct)
+        => await _repo.GetItemAsync(formId, await WaitingAsync(ct), ct)
            ?? throw new FormRejectedException(FormRejectCode.NotFound, "Form not found.");
+
+    /// The setting's ticket status categories for "Waiting for customer";
+    /// unknown names are dropped, a broken value falls back to Pending.
+    private async Task<IReadOnlyList<string>> WaitingAsync(CancellationToken ct)
+    {
+        string raw;
+        try { raw = await _settings.GetAsync<string>(SettingKeys.Forms.BackofficeWaitingStateCategories, ct) ?? "Pending"; }
+        catch { raw = "Pending"; }
+        return ParseWaiting(raw);
+    }
+
+    public static IReadOnlyList<string> ParseWaiting(string raw)
+    {
+        string[] known = ["New", "Open", "Pending", "Resolved", "Closed"];
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(v => known.FirstOrDefault(k => string.Equals(k, v, StringComparison.OrdinalIgnoreCase)))
+            .Where(v => v is not null)
+            .Select(v => v!)
+            .Distinct()
+            .ToList();
+    }
 
     private async Task<bool> NoteRequiredAsync(CancellationToken ct)
     {
@@ -272,8 +249,7 @@ public sealed class BackofficeFormEventPublisher : IBackofficeFormEvents
 
         // Back-office steps don't touch the ticket itself, but the side
         // panel shows the form's back-office status: refresh open pages.
-        if (evt.Kind is BackofficeFormEventKind.Claimed or BackofficeFormEventKind.Released
-            or BackofficeFormEventKind.Handled or BackofficeFormEventKind.Reopened)
+        if (evt.Kind is BackofficeFormEventKind.Handled or BackofficeFormEventKind.Reopened)
         {
             try { await _tickets.NotifyUpdatedAsync(evt.TicketId, ct); }
             catch (Exception ex) { _logger.LogWarning(ex, "Ticket refresh push failed for ticket {TicketId}.", evt.TicketId); }

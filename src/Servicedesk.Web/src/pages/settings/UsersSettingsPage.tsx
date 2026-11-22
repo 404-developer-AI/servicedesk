@@ -417,6 +417,12 @@ function UserRow({
               `${label} ${enabling ? "enabled" : "disabled"}`,
             )
           }
+          onChangeCalendar={(update) =>
+            runAction(
+              () => adminUserApi.setFeatureFlags(user.id, update),
+              "Outlook calendar updated",
+            )
+          }
           onToggleTile={(nextTileIds, label, enabling) =>
             runAction(
               () => adminUserApi.setDashboardTiles(user.id, nextTileIds),

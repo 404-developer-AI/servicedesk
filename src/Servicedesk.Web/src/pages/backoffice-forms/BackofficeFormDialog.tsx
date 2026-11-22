@@ -1,17 +1,8 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useRouterState } from "@tanstack/react-router";
 import { toast } from "sonner";
-import {
-  ArrowUpRight,
-  CheckCircle2,
-  ClipboardList,
-  Hand,
-  History,
-  RotateCcw,
-  Undo2,
-  UserRoundCheck,
-} from "lucide-react";
+import { ArrowUpRight, CheckCircle2, ClipboardList, History, RotateCcw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +15,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { FormAnswersView } from "@/components/forms/FormDialogs";
 import { formInputCn } from "@/components/forms/FormFieldInput";
-import { useAuth } from "@/auth/authStore";
 import { useServerTimeZone } from "@/hooks/useServerTime";
 import { formatDateTime } from "@/lib/dateFormat";
 import { errorMessage } from "@/lib/http";
@@ -36,7 +26,9 @@ import {
   type BackofficeFormItem,
   type BackofficeFormLogEntry,
 } from "@/lib/backoffice-forms-api";
+import { useTicketOverlayStore } from "@/stores/useTicketOverlayStore";
 import { BackofficeStatusChip } from "./BackofficeStatusChip";
+import { presenceName } from "./backofficeLabels";
 
 const LOG_LABEL: Record<BackofficeFormLogEntry["action"], string> = {
   submitted: "Submitted",
@@ -47,30 +39,42 @@ const LOG_LABEL: Record<BackofficeFormLogEntry["action"], string> = {
   updated: "Form edited",
 };
 
-/// One back-office form: read it (View), or claim it (Handle) and mark it
-/// handled with a note. Every action is a guarded server transition; a 409
-/// (someone else was quicker) refreshes the dialog with the real state.
+/// One back-office form, read-only, with the two back-office steps: Mark as
+/// handled (with a note) and Reopen. Every step is a guarded server
+/// transition; a 409 (someone else was quicker, or the form changed) shows
+/// the message and refreshes the dialog with the real state.
+/// v0.1.61 — no claim step; "Open ticket" opens the ticket overlay.
 export function BackofficeFormDialog({
   formId,
   onOpenChange,
+  startInHandle = false,
+  hideOpenTicket = false,
+  onHandled,
 }: {
   formId: string | null;
   onOpenChange: (open: boolean) => void;
+  /** Open straight in the "Mark as handled" step (overlay primary action). */
+  startInHandle?: boolean;
+  /** Inside the ticket overlay the ticket is already open. */
+  hideOpenTicket?: boolean;
+  /** Called after the form was marked as handled (the overlay closes its ticket). */
+  onHandled?: () => void;
 }) {
   const open = formId !== null;
   const qc = useQueryClient();
   const zone = useServerTimeZone();
-  const navigate = useNavigate();
   const confirm = useConfirm();
-  const { user } = useAuth();
-  const isAdmin = user?.role === "Admin";
+  const openOverlay = useTicketOverlayStore((s) => s.open);
+  const location = useRouterState({ select: (s) => s.location });
+  const [handling, setHandling] = React.useState(false);
   const [note, setNote] = React.useState("");
   const [showLog, setShowLog] = React.useState(false);
 
   React.useEffect(() => {
     setNote("");
     setShowLog(false);
-  }, [formId]);
+    setHandling(startInHandle);
+  }, [formId, startInHandle]);
 
   const detail = useQuery({
     queryKey: backofficeFormKeys.detail(formId ?? ""),
@@ -91,27 +95,16 @@ export function BackofficeFormDialog({
 
   const data = detail.data;
   const item = data?.item;
-  const mine = item?.status === "InProgress" && item.claimedByUserId === user?.id;
-  const othersClaim = item?.status === "InProgress" && !mine;
 
-  const claim = async (takeOver: boolean) => {
-    if (!item) return;
-    if (takeOver) {
-      const ok = await confirm({
-        title: "Take over this form?",
-        description: `${item.claimedByName ?? "Someone else"} is handling it. They will see that you took it over.`,
-        confirmLabel: "Take over",
-      });
-      if (!ok) return;
-    }
-    act.mutate(() => backofficeFormsApi.claim(item.id, takeOver));
-  };
   const handle = () => {
     if (!item) return;
     act.mutate(async () => {
       const r = await backofficeFormsApi.handle(item.id, note, item.version);
       toast.success("Form marked as handled");
       setNote("");
+      setHandling(false);
+      onOpenChange(false);
+      onHandled?.();
       return r;
     });
   };
@@ -128,7 +121,12 @@ export function BackofficeFormDialog({
   const openTicket = () => {
     if (!item) return;
     onOpenChange(false);
-    void navigate({ to: `/tickets/${item.ticketId}?form=${item.id}` as string });
+    openOverlay({
+      ticketId: item.ticketId,
+      ticketNumber: item.ticketNumber,
+      subject: item.ticketSubject,
+      source: { path: location.pathname, search: location.searchStr, tab: null },
+    });
   };
 
   return (
@@ -142,17 +140,17 @@ export function BackofficeFormDialog({
             <div className="min-w-0 flex-1">
               <DialogTitle className="flex flex-wrap items-center gap-2 text-lg">
                 <span className="truncate">{item?.name ?? "Form"}</span>
-                {item && <BackofficeStatusChip item={item} />}
+                {item && <BackofficeStatusChip item={{ status: item.status, handledByName: item.handledByName }} />}
               </DialogTitle>
               <DialogDescription className="mt-0.5">
                 {item
-                  ? `Filled in by ${item.submittedByName ?? "unknown"} · ${formatDateTime(item.submittedUtc, zone)}`
+                  ? `Submitted by ${item.submittedByName ? presenceName(item.submittedByName) : "unknown"} · ${formatDateTime(item.submittedUtc, zone)}`
                   : "Loading…"}
               </DialogDescription>
-              {item && (
+              {item && !hideOpenTicket && (
                 <button type="button" onClick={openTicket}
                   className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-md border border-glass-strong bg-glass px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-glass-hover">
-                  <span className="font-mono tabular-nums text-muted-foreground">#{item.ticketNumber}</span>
+                  <span className="tabular-nums text-muted-foreground">#{item.ticketNumber}</span>
                   <span className="truncate">{item.ticketSubject}</span>
                   {item.companyName && <span className="truncate text-muted-foreground">· {item.companyName}</span>}
                   <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -169,7 +167,7 @@ export function BackofficeFormDialog({
               <Skeleton className="h-10 w-2/3" />
             </div>
           ) : detail.isError || !data || !item ? (
-            <p className="py-6 text-sm text-rose-600 dark:text-rose-400">
+            <p className="py-6 text-sm text-destructive">
               This form could not be loaded. It may have been removed from its ticket.
             </p>
           ) : (
@@ -177,32 +175,20 @@ export function BackofficeFormDialog({
               {item.reopened && data.changesSinceHandled.length > 0 && (
                 <section className="rounded-lg border border-amber-400/40 bg-amber-100/60 px-4 py-3 text-amber-900 dark:bg-amber-400/10 dark:text-amber-100">
                   <p className="text-xs font-medium">
-                    Changed after it was handled{item.updatedByName ? ` by ${item.updatedByName}` : ""}
+                    Changed after it was handled{item.updatedByName ? ` by ${presenceName(item.updatedByName)}` : ""}
                   </p>
                   <ChangesTable changes={data.changesSinceHandled} />
                 </section>
-              )}
-              {item.updatedSinceClaim && (
-                <p className="rounded-lg border border-amber-400/40 bg-amber-100/60 px-4 py-2.5 text-xs text-amber-900 dark:bg-amber-400/10 dark:text-amber-100">
-                  The form was edited after {mine ? "you" : item.claimedByName ?? "someone"} started handling it.
-                </p>
               )}
               {item.status === "Handled" && (
                 <section className="rounded-lg border border-glass-strong bg-glass px-4 py-3">
                   <p className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                     <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
-                    Handled by {item.handledByName ?? "unknown"}
+                    Handled by {item.handledByName ? presenceName(item.handledByName) : "a trigger"}
                     {item.handledUtc && <span className="font-normal text-muted-foreground">· {formatDateTime(item.handledUtc, zone)}</span>}
                   </p>
                   {item.handledNote && <p className="mt-1.5 whitespace-pre-wrap text-sm text-foreground">{item.handledNote}</p>}
                 </section>
-              )}
-              {othersClaim && (
-                <p className="flex items-center gap-1.5 rounded-lg border border-primary/25 bg-primary/8 px-4 py-2.5 text-xs text-foreground">
-                  <UserRoundCheck className="h-3.5 w-3.5 text-primary" />
-                  {item.claimedByName ?? "Someone else"} is handling this form
-                  {item.claimedUtc && <span className="text-muted-foreground">since {formatDateTime(item.claimedUtc, zone)}</span>}
-                </p>
               )}
 
               <FormAnswersView fields={data.fields} answers={data.answers} />
@@ -218,7 +204,7 @@ export function BackofficeFormDialog({
                     {data.log.map((l) => (
                       <li key={l.id} className="text-xs">
                         <span className="font-medium text-foreground">{LOG_LABEL[l.action] ?? l.action}</span>
-                        <span className="text-muted-foreground"> · {l.userName ?? "unknown"} · {formatDateTime(l.createdUtc, zone)} · v{l.formVersion}</span>
+                        <span className="text-muted-foreground"> · {l.userName ? presenceName(l.userName) : "trigger"} · {formatDateTime(l.createdUtc, zone)} · v{l.formVersion}</span>
                         {l.note && <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{l.note}</p>}
                       </li>
                     ))}
@@ -231,47 +217,34 @@ export function BackofficeFormDialog({
 
         {item && (
           <div className="border-t border-glass px-6 py-3.5">
-            {mine && (
+            {handling && item.status === "Open" && (
               <textarea autoFocus rows={3} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)}
                 placeholder="What was done — e.g. licences activated, contract updated in the CRM"
                 className={cn(formInputCn, "mb-3 min-h-20 resize-y py-2")} />
             )}
-            <div className="flex flex-wrap items-center gap-2">
-              {mine && (
-                <Button variant="ghost" size="sm" disabled={act.isPending}
-                  onClick={() => act.mutate(() => backofficeFormsApi.release(item.id))}>
-                  <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Release
-                </Button>
-              )}
-              {othersClaim && isAdmin && (
-                <Button variant="ghost" size="sm" disabled={act.isPending}
-                  onClick={() => act.mutate(() => backofficeFormsApi.release(item.id))}>
-                  <Undo2 className="mr-1.5 h-3.5 w-3.5" /> Release
-                </Button>
-              )}
-              <div className="ml-auto flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Close</Button>
-                {item.status === "Open" && (
-                  <Button size="sm" disabled={act.isPending} onClick={() => void claim(false)}>
-                    <Hand className="mr-1.5 h-3.5 w-3.5" /> Handle
-                  </Button>
-                )}
-                {othersClaim && (
-                  <Button size="sm" variant="secondary" disabled={act.isPending} onClick={() => void claim(true)}>
-                    <Hand className="mr-1.5 h-3.5 w-3.5" /> Take over
-                  </Button>
-                )}
-                {mine && (
+            <div className="flex items-center justify-end gap-2">
+              {handling && item.status === "Open" ? (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => setHandling(false)}>Back</Button>
                   <Button size="sm" disabled={act.isPending} onClick={handle}>
-                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Mark as handled
+                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Confirm handled
                   </Button>
-                )}
-                {item.status === "Handled" && (
-                  <Button size="sm" variant="secondary" disabled={act.isPending} onClick={() => void reopen()}>
-                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reopen
-                  </Button>
-                )}
-              </div>
+                </>
+              ) : (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Close</Button>
+                  {item.status === "Open" && (
+                    <Button size="sm" disabled={act.isPending} onClick={() => setHandling(true)}>
+                      <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Mark as handled
+                    </Button>
+                  )}
+                  {item.status === "Handled" && (
+                    <Button size="sm" variant="secondary" disabled={act.isPending} onClick={() => void reopen()}>
+                      <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reopen
+                    </Button>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}

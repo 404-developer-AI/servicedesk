@@ -348,6 +348,12 @@ internal sealed class SystemFieldDescriptor
         updateSql: "UPDATE tickets SET priority_id = @newValue, updated_utc = now() WHERE id = @ticketId AND is_deleted = FALSE",
         eventType: "PriorityChange");
 
+    public static readonly SystemFieldDescriptor Category = new(
+        columnName: "category_id",
+        lookupSql: "SELECT name FROM categories WHERE id = @id",
+        updateSql: "UPDATE tickets SET category_id = @newValue, updated_utc = now() WHERE id = @ticketId AND is_deleted = FALSE",
+        eventType: "CategoryChange");
+
     public static readonly SystemFieldDescriptor Owner = new(
         columnName: "assignee_user_id",
         lookupSql: "SELECT email FROM users WHERE id = @id",

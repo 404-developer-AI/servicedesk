@@ -6998,6 +6998,87 @@ public sealed class DatabaseBootstrapper : IHostedService
         UPDATE tdsynnex_orders SET first_ship_date = NULL, eta_date = NULL
          WHERE status IN ('COMPLETED','REJECTED')
            AND (first_ship_date IS NOT NULL OR eta_date IS NOT NULL);
+
+        -- ===================================================================
+        -- v0.1.61 — Back-office intervention flow.
+        -- * categories.is_locked: tickets in a locked category are handled via
+        --   Back office forms — a UI-only soft lock (banner, greyed fields,
+        --   notes always allowed); never an access rule.
+        -- * form_templates.bo_plan_template_id: the form "Plan" opens for a
+        --   back-office template. outlook_mapping: the Outlook appointment
+        --   block (FormOutlookMapping JSON).
+        -- * The claim step is gone (who works on a form is live presence):
+        --   In progress forms go back to Open once, and the status CHECK no
+        --   longer allows InProgress. Historical claimed / released log rows
+        --   stay readable.
+        -- ===================================================================
+        ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_locked BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE form_templates ADD COLUMN IF NOT EXISTS bo_plan_template_id UUID NULL
+            REFERENCES form_templates(id) ON DELETE SET NULL;
+        ALTER TABLE form_templates ADD COLUMN IF NOT EXISTS outlook_mapping JSONB NULL;
+        -- header_button_label + header_button_queue_ids: a button with this
+        -- label next to the ticket title opens the form, on tickets in those
+        -- queues. in_picker = FALSE: not offered through `::` (queue_ids then
+        -- unused) — the button (or Plan) is then the only way to fill it.
+        ALTER TABLE form_templates ADD COLUMN IF NOT EXISTS header_button_label TEXT NULL;
+        ALTER TABLE form_templates ADD COLUMN IF NOT EXISTS header_button_queue_ids UUID[] NOT NULL DEFAULT '{}';
+        ALTER TABLE form_templates ADD COLUMN IF NOT EXISTS in_picker BOOLEAN NOT NULL DEFAULT TRUE;
+
+        UPDATE ticket_forms
+           SET bo_status = 'Open', bo_claimed_by_user_id = NULL, bo_claimed_utc = NULL, bo_claimed_version = NULL
+         WHERE bo_status = 'InProgress';
+        ALTER TABLE ticket_forms DROP CONSTRAINT IF EXISTS chk_ticket_forms_bo_status;
+        ALTER TABLE ticket_forms ADD CONSTRAINT chk_ticket_forms_bo_status
+            CHECK (bo_status IS NULL OR bo_status IN ('Open','Handled'));
+
+        -- Open forms per ticket (overlay bar, ticket strip, trigger action).
+        CREATE INDEX IF NOT EXISTS ix_ticket_forms_bo_open_ticket
+            ON ticket_forms (ticket_id) WHERE bo_status = 'Open' AND deleted_utc IS NULL;
+
+        -- ===================================================================
+        -- v0.1.61 — Outlook calendar planning from forms.
+        -- * users.calendar_planning_enabled: per-user flag "Plan in calendars"
+        --   (access boundary, server-enforced; planning also needs an M365
+        --   sign-in). users.calendar_id / calendar_name: which of the user's
+        --   calendars receives their appointments (NULL = default calendar).
+        -- * ticket_form_calendar_events: one row per appointment a form keeps
+        --   in sync — one per technician, or one Teams meeting held by the
+        --   organizer. One-way sync (servicedesk → Outlook); Graph failures
+        --   never block a save: the row is retried by CalendarSyncWorker.
+        -- ===================================================================
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_planning_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_id TEXT NULL;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_name TEXT NULL;
+
+        CREATE TABLE IF NOT EXISTS ticket_form_calendar_events (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            form_id             UUID        NOT NULL REFERENCES ticket_forms(id) ON DELETE CASCADE,
+            ticket_id           UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            user_id             UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            is_teams            BOOLEAN     NOT NULL DEFAULT FALSE,
+            status              TEXT        NOT NULL DEFAULT 'Pending',
+            recreate            BOOLEAN     NOT NULL DEFAULT FALSE,
+            graph_event_id      TEXT        NULL,
+            ical_uid            TEXT        NULL,
+            web_link            TEXT        NULL,
+            join_url            TEXT        NULL,
+            synced_version      INT         NOT NULL DEFAULT 0,
+            synced_attachments  TEXT        NOT NULL DEFAULT '',
+            attempts            INT         NOT NULL DEFAULT 0,
+            next_attempt_utc    TIMESTAMPTZ NULL,
+            last_error          TEXT        NOT NULL DEFAULT '',
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_ticket_form_calendar_events_status
+                CHECK (status IN ('Pending','Synced','Failed','CancelPending','Cancelled')),
+            CONSTRAINT ux_ticket_form_calendar_events_form_user UNIQUE (form_id, user_id)
+        );
+        -- The worker's queue: rows with work left, oldest due first.
+        CREATE INDEX IF NOT EXISTS ix_ticket_form_calendar_events_due
+            ON ticket_form_calendar_events (next_attempt_utc NULLS FIRST, updated_utc)
+            WHERE status IN ('Pending','Failed','CancelPending');
+        CREATE INDEX IF NOT EXISTS ix_ticket_form_calendar_events_form
+            ON ticket_form_calendar_events (form_id);
         """;
 
     private readonly NpgsqlDataSource _dataSource;

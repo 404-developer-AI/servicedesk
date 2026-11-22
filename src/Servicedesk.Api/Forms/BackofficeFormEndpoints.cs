@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tickets;
+using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Forms;
 
 namespace Servicedesk.Api.Forms;
@@ -31,14 +32,16 @@ public static class BackofficeFormEndpoints
             var st = status is not null && BackofficeFormStatus.All.Contains(status) ? status : null;
             var page = await svc.ListAsync(new BackofficeFormListQuery(
                 st, templateId, companyId, submittedBy, q,
-                Math.Max(0, offset ?? 0), Math.Clamp(limit ?? PageSize, 1, 200)), ct);
+                Math.Max(0, offset ?? 0), Math.Clamp(limit ?? PageSize, 1, 200), Array.Empty<string>()), ct);
             return Results.Ok(new { items = page.Items.Select(MapItem), total = page.Total });
         }).WithName("ListBackofficeForms");
 
         group.MapGet("/counts", async (IBackofficeFormService svc, CancellationToken ct) =>
         {
             var c = await svc.CountsAsync(ct);
-            return Results.Ok(new { open = c.Open, inProgress = c.InProgress });
+            // ready = waiting for pickup (badge + red dot); waiting = the
+            // ticket waits for the customer (never counted).
+            return Results.Ok(new { ready = c.Ready, waiting = c.Waiting });
         }).WithName("CountBackofficeForms");
 
         // Template filter for the list: the marked templates (name only —
@@ -49,7 +52,7 @@ public static class BackofficeFormEndpoints
             return Results.Ok(new
             {
                 items = list.Where(t => t.SendToBackoffice)
-                    .Select(t => new { id = t.Id, name = t.Name, isActive = t.IsActive }),
+                    .Select(t => new { id = t.Id, name = t.Name, isActive = t.IsActive, planTemplateId = t.BoPlanTemplateId }),
             });
         }).WithName("ListBackofficeFormTemplates");
 
@@ -74,17 +77,37 @@ public static class BackofficeFormEndpoints
                 });
             })).WithName("GetBackofficeForm");
 
-        group.MapPost("/{formId:guid}/claim", async (
-            Guid formId, [FromBody] ClaimRequest? req, HttpContext http, IBackofficeFormService svc, CancellationToken ct) =>
-            await Run(async () => Results.Ok(MapItem(
-                await svc.ClaimAsync(TicketEndpoints.ResolveMutationActor(http), formId, req?.TakeOver ?? false, ct))))
-        ).WithName("ClaimBackofficeForm");
+        // v0.1.61 — who is working on what: the tickets back-office users have
+        // open right now (live presence, never stored). Only ids + names of
+        // flag holders; the list matches them to its rows by ticket id.
+        group.MapGet("/presence", async (IUserService users, CancellationToken ct) =>
+        {
+            var viewers = Servicedesk.Api.Presence.TicketPresenceHub.GetBackofficeViewers();
+            var names = new Dictionary<Guid, string>();
+            foreach (var id in viewers.Values.SelectMany(v => v).Distinct())
+            {
+                var u = await users.FindByIdAsync(id, ct);
+                if (u is not null && u.IsActive) names[id] = u.Email;
+            }
+            return Results.Ok(new
+            {
+                items = viewers.Select(kv => new
+                {
+                    ticketId = kv.Key,
+                    users = kv.Value.Where(names.ContainsKey).Select(id => new { userId = id, name = names[id] }),
+                }),
+            });
+        }).WithName("BackofficeFormsPresence");
 
-        group.MapPost("/{formId:guid}/release", async (
-            Guid formId, HttpContext http, IBackofficeFormService svc, CancellationToken ct) =>
-            await Run(async () => Results.Ok(MapItem(
-                await svc.ReleaseAsync(TicketEndpoints.ResolveMutationActor(http), formId, ct))))
-        ).WithName("ReleaseBackofficeForm");
+        // v0.1.61 — the open back-office forms on one ticket: the bar on top
+        // of the ticket overlay and the back-office strip on the ticket page.
+        // Flag-gated like the rest; the ticket content itself stays behind
+        // the ticket's own queue-gated endpoints.
+        group.MapGet("/ticket/{ticketId:guid}", async (Guid ticketId, IBackofficeFormService svc, CancellationToken ct) =>
+        {
+            var items = await svc.ListOpenOnTicketAsync(ticketId, ct);
+            return Results.Ok(new { items = items.Select(MapItem) });
+        }).WithName("ListBackofficeFormsOnTicket");
 
         group.MapPost("/{formId:guid}/handle", async (
             Guid formId, [FromBody] HandleRequest? req, HttpContext http, IBackofficeFormService svc, CancellationToken ct) =>
@@ -134,9 +157,6 @@ public static class BackofficeFormEndpoints
         submittedUtc = i.SubmittedUtc,
         updatedByName = i.UpdatedByName,
         updatedUtc = i.UpdatedUtc,
-        claimedByUserId = i.ClaimedByUserId,
-        claimedByName = i.ClaimedByName,
-        claimedUtc = i.ClaimedUtc,
         handledByUserId = i.HandledByUserId,
         handledByName = i.HandledByName,
         handledUtc = i.HandledUtc,
@@ -144,12 +164,15 @@ public static class BackofficeFormEndpoints
         handledNote = i.HandledNote,
         // Changed after it was handled (back to Open by an edit).
         reopened = i.Reopened,
-        // Edited while someone was handling it.
-        updatedSinceClaim = i.Status == BackofficeFormStatus.InProgress
-                            && i.ClaimedVersion is { } cv && i.Version > cv,
+        ticketStatusName = i.TicketStatusName,
+        ticketStateCategory = i.TicketStateCategory,
+        ticketPendingTillUtc = i.TicketPendingTillUtc,
+        // Open form whose ticket waits for the customer (setting-driven group).
+        waiting = i.Waiting,
+        // The form template's "Plan with form" (the planning form to open).
+        planTemplateId = i.PlanTemplateId,
     };
 
-    public sealed record ClaimRequest(bool TakeOver);
     public sealed record NoteRequest(string? Note);
     /// <paramref name="ExpectedVersion"/> = the form version the handler saw.
     public sealed record HandleRequest(string? Note, int ExpectedVersion);

@@ -10,4 +10,8 @@ public sealed record Category(
     bool IsActive,
     bool IsSystem,
     DateTime CreatedUtc,
-    DateTime UpdatedUtc);
+    DateTime UpdatedUtc,
+    /// v0.1.61 — tickets in this category are handled via Back office
+    /// forms: a UI-only soft lock (banner, greyed side-panel fields, notes
+    /// always allowed). Never an access rule.
+    bool IsLocked = false);

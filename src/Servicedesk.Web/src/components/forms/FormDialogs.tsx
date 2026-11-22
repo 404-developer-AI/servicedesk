@@ -15,19 +15,26 @@ import { useAuth } from "@/auth/authStore";
 import { useServerTimeZone } from "@/hooks/useServerTime";
 import { formatDateTime } from "@/lib/dateFormat";
 import {
+  calendarApi,
   formApiError,
   ticketFormKeys,
   ticketFormsApi,
   type FormAnswerValue,
   type FormAnswers,
   type FormField,
+  type FormOutlookMapping,
   type RichTextAnswer,
   type ShortTextOrdersAnswer,
   type TicketFormDetail,
 } from "@/lib/forms-api";
 import { SafeHtml } from "@/components/SafeHtml";
 import { formDraftKey, useWorkspaceStore } from "@/stores/useWorkspaceStore";
-import { draftFromAnswers, draftToInput, emptyDraft, shortTextSegments, validateDraft, type FormDraft } from "@/lib/formDraft";
+import {
+  draftFromAnswers, draftToInput, durationEndIso, durationEndIsoFromAnswers, durationEndLabel, emptyDraft, isFieldShown,
+  shortTextSegments, validateDraft, type FormDraft,
+} from "@/lib/formDraft";
+import { AppointmentAvailability } from "./AppointmentAvailability";
+import { FormCalendarStatus } from "./FormCalendarStatus";
 import { cn } from "@/lib/utils";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { FormFieldInput, formInputCn, type FieldPicker } from "./FormFieldInput";
@@ -40,6 +47,14 @@ import { formFieldPickerItems } from "./formFieldPicker";
 
 /* ─── shared form body ─── */
 
+/// v0.1.61 — the technicians picked in the mapped field (one or several).
+function pickedTechnicians(draft: FormDraft, fieldId: string | null | undefined): { id: string; organizer?: boolean }[] {
+  const v = fieldId ? draft[fieldId] : undefined;
+  if (v?.kind === "agents") return v.value;
+  if (v?.kind === "ref" && v.value) return [v.value];
+  return [];
+}
+
 function FormBody({
   fields,
   draft,
@@ -48,6 +63,9 @@ function FormBody({
   ticketId,
   disabled,
   picker,
+  outlook,
+  formId,
+  checkAvailability,
 }: {
   fields: FormField[];
   draft: FormDraft;
@@ -56,10 +74,47 @@ function FormBody({
   ticketId: string | null;
   disabled?: boolean;
   picker?: FieldPicker;
+  /** v0.1.61 — the template's Outlook mapping (appointment helpers). */
+  outlook?: FormOutlookMapping | null;
+  formId?: string | null;
+  checkAvailability?: boolean;
 }) {
+  const teams = outlook?.teamsFieldId ? draft[outlook.teamsFieldId] : undefined;
+  const organizerMode = teams?.kind === "bool" && teams.value === true;
+  const zone = useServerTimeZone();
+  const startV = outlook?.startFieldId ? draft[outlook.startFieldId] : undefined;
+  const endV = outlook?.endFieldId ? draft[outlook.endFieldId] : undefined;
+  const endField = outlook?.endFieldId ? fields.find((x) => x.id === outlook.endFieldId) : undefined;
+  const startUtc = startV?.kind === "datetime" ? startV.value : null;
+  // The end is a DateTime field, or start + duration for a Duration end field.
+  const endUtc = endField?.type === "Duration"
+    ? durationEndIso(endField, draft)
+    : endV?.kind === "datetime" ? endV.value : null;
+  const techIds = pickedTechnicians(draft, outlook?.techniciansFieldId).map((t) => t.id);
+
+  const change = (f: FormField, v: FormDraft[string]) => setDraft((d) => {
+    const next = { ...d, [f.id]: v };
+    // A start picked while the end is still empty: the end follows (1 hour),
+    // so the agent only adjusts it when the intervention is longer.
+    if (outlook?.startFieldId === f.id && outlook.endFieldId && v.kind === "datetime" && v.value) {
+      const end = d[outlook.endFieldId];
+      if (end?.kind === "datetime" && !end.value)
+        next[outlook.endFieldId] = { kind: "datetime", value: new Date(Date.parse(v.value) + 60 * 60_000).toISOString() };
+    }
+    // Same for a duration that counts from this start: 1 hour until changed.
+    if (f.type === "DateTime" && v.kind === "datetime" && v.value) {
+      for (const dur of fields) {
+        const cur = d[dur.id];
+        if (dur.type === "Duration" && dur.durationFrom === f.id && cur?.kind === "text" && cur.value.trim() === "")
+          next[dur.id] = { kind: "text", value: "1:00" };
+      }
+    }
+    return next;
+  });
+
   return (
     <div className="sd-form-body grid grid-cols-2 gap-x-4 gap-y-4">
-      {fields.map((f) => (
+      {fields.filter((f) => isFieldShown(f, draft)).map((f) => (
         <FormFieldInput
           key={f.id}
           field={f}
@@ -68,10 +123,38 @@ function FormBody({
           error={errors[f.id]}
           disabled={disabled}
           picker={picker}
-          onChange={(v) => setDraft((d) => ({ ...d, [f.id]: v }))}
+          organizerMode={outlook?.techniciansFieldId === f.id && organizerMode}
+          below={<FieldBelow field={f} draft={draft} zone={zone}
+            availability={checkAvailability && outlook?.endFieldId === f.id
+              ? <AppointmentAvailability userIds={techIds} startUtc={startUtc} endUtc={endUtc} excludeFormId={formId} />
+              : null} />}
+          onChange={(v) => change(f, v)}
         />
       ))}
     </div>
+  );
+}
+
+/// Under a field: the computed end of a duration that counts from a start
+/// ("Ends at 14:30"), and the technicians' availability under the end field.
+function FieldBelow({ field: f, draft, zone, availability }: {
+  field: FormField;
+  draft: FormDraft;
+  zone: string | null;
+  availability: React.ReactNode;
+}) {
+  const end = durationEndIso(f, draft);
+  const start = f.durationFrom ? draft[f.durationFrom] : undefined;
+  if (!end && !availability) return null;
+  return (
+    <>
+      {end && (
+        <p className="sd-form-duration-end text-xs text-muted-foreground">
+          Ends {durationEndLabel(end, start?.kind === "datetime" ? start.value : null, zone).replace(/^until /, "at ")}
+        </p>
+      )}
+      {availability}
+    </>
   );
 }
 
@@ -114,6 +197,9 @@ export function FormFillDialog({
 
   const fields: FormField[] | null =
     target?.mode === "edit" ? target.form.fields : template.data?.fields ?? null;
+  // v0.1.61 — Outlook planning: the live template's mapping (null = none).
+  const outlook: FormOutlookMapping | null =
+    (target?.mode === "edit" ? target.form.outlook : template.data?.outlook) ?? null;
   const title = target?.mode === "edit" ? target.form.name : template.data?.name ?? "Form";
   const description = target?.mode === "edit"
     ? `Editing saves version ${target.form.version + 1} and adds an internal note with the changes.`
@@ -129,6 +215,14 @@ export function FormFillDialog({
     staleTime: 60_000,
   });
   const tokenMap = tokens.data?.tokens;
+  const calendarSettings = useQuery({
+    queryKey: ["settings", "calendar"],
+    queryFn: calendarApi.settings,
+    enabled: open && !!outlook,
+    staleTime: 60_000,
+  });
+  const planning = !!outlook && calendarSettings.data?.enabled === true;
+  const mayPlan = planning && !!user?.calendarPlanningEnabled;
   const ordersEnabled = !!user?.adsolutOrdersEnabled;
   const kbEnabled = !!user?.kbEnabled;
   const picker = React.useCallback<FieldPicker>(
@@ -256,7 +350,23 @@ export function FormFillDialog({
 
   const minimize = () => {
     if (save.isPending) return;
-    if (draftKey) setFormDraftMinimized(draftKey, true);
+    if (draftKey && target && fields && live && !useWorkspaceStore.getState().formDrafts[draftKey]) {
+      // The minimise button keeps the form even before anything is typed
+      // (an unchanged form only lives in the store once it is minimised).
+      setFormDraft({
+        key: draftKey,
+        ticketId: target.ticketId,
+        ticketNumber: ticketNumber ?? null,
+        formName: title,
+        mode: target.mode,
+        templateId: target.mode === "create" ? target.templateId : undefined,
+        formId: target.mode === "edit" ? target.form.id : undefined,
+        version: target.mode === "edit" ? baseVersion.current : undefined,
+        draft,
+        baseline: baseline.current,
+        minimized: true,
+      });
+    } else if (draftKey) setFormDraftMinimized(draftKey, true);
     setInitialised(null);
     onOpenChange(false);
   };
@@ -329,8 +439,23 @@ export function FormFillDialog({
               <Skeleton className="h-24 w-full" />
             </div>
           ) : (
-            <FormBody fields={fields} draft={draft} setDraft={setDraft} errors={errors}
-              ticketId={target?.ticketId ?? null} disabled={save.isPending} picker={picker} />
+            <>
+              {planning && !mayPlan && (
+                <p className="mb-4 rounded-md border border-amber-400/45 bg-amber-100/60 px-3 py-2.5 text-xs text-amber-900 dark:bg-amber-400/10 dark:text-amber-100">
+                  This form plans appointments in Outlook. Saving it needs “Plan in calendars” — ask an admin.
+                </p>
+              )}
+              <FormBody fields={fields} draft={draft} setDraft={setDraft} errors={errors}
+                ticketId={target?.ticketId ?? null} disabled={save.isPending} picker={picker}
+                outlook={planning ? outlook : null} formId={target?.mode === "edit" ? target.form.id : null}
+                checkAvailability={mayPlan} />
+              {planning && target?.mode === "edit" && organizerChanged(outlook!, fields, target.form.answers, draft) && (
+                <p className="mt-4 rounded-md border border-amber-400/45 bg-amber-100/60 px-3 py-2.5 text-xs text-amber-900 dark:bg-amber-400/10 dark:text-amber-100">
+                  You changed the organizer of the Teams meeting. Saving cancels the current meeting and sends a new
+                  invitation — the Teams link changes.
+                </p>
+              )}
+            </>
           )}
         </div>
 
@@ -390,11 +515,19 @@ function displayValue(f: FormField, v: FormAnswerValue | undefined, zone: string
     case "Agent":
     case "Contact":
     case "Queue": {
+      if (Array.isArray(v))
+        return (v as { name?: string; organizer?: boolean }[])
+          .map((a) => `${a.name ?? ""}${a.organizer ? " (organizer)" : ""}`).join(", ");
       const r = v as { name?: string; email?: string };
       return r.name && r.email ? `${r.name} · ${r.email}` : r.name || r.email || "";
     }
     case "ShortText":
       return typeof v === "object" && !Array.isArray(v) && "text" in v ? (v as ShortTextOrdersAnswer).text : String(v);
+    case "Invitees":
+      return (Array.isArray(v) ? (v as { name?: string; email?: string }[]) : [])
+        .map((p) => (p.name && p.email ? `${p.name} · ${p.email}` : p.name || p.email || "")).join(", ");
+    case "Attachments":
+      return (Array.isArray(v) ? (v as { name?: string }[]) : []).map((a) => a.name ?? "").join(", ");
     default:
       return String(v);
   }
@@ -464,7 +597,10 @@ export function FormAnswersView({ fields, answers }: { fields: FormField[]; answ
             </div>
           );
         }
-        const text = displayValue(f, v, zone);
+        const base = displayValue(f, v, zone);
+        const end = base ? durationEndIsoFromAnswers(f, answers) : null;
+        const from = f.durationFrom ? answers[f.durationFrom] : null;
+        const text = end ? `${base} (${durationEndLabel(end, typeof from === "string" ? from : null, zone)})` : base;
         return (
           <div key={f.id} className={span}>
             <dt className="text-xs font-medium text-muted-foreground">{f.label}</dt>
@@ -580,6 +716,7 @@ export function FormViewDialog({
                     </button>
                   </div>
                 )}
+                {viewVersion === null && <FormCalendarStatus formId={data.id} ticketId={ticketId} />}
                 <FormAnswersView fields={data.fields} answers={shownAnswers ?? {}} />
               </>
             )}
@@ -645,4 +782,18 @@ export function FormViewDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/// v0.1.61 — an edit that moves a Teams meeting to another organizer (Graph
+/// cannot change the organizer: cancel + recreate, new Teams link).
+function organizerChanged(outlook: FormOutlookMapping, fields: FormField[], saved: TicketFormDetail["answers"], draft: FormDraft): boolean {
+  if (!outlook.teamsFieldId || !outlook.techniciansFieldId) return false;
+  const teams = draft[outlook.teamsFieldId];
+  if (teams?.kind !== "bool" || !teams.value || saved[outlook.teamsFieldId] !== true) return false;
+  const before = draftFromAnswers(fields, saved);
+  const org = (d: FormDraft) => {
+    const t = pickedTechnicians(d, outlook.techniciansFieldId);
+    return (t.find((x) => x.organizer) ?? t[0])?.id ?? null;
+  };
+  return org(before) !== org(draft);
 }

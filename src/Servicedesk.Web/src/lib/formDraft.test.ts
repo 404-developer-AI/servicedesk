@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FormField } from "@/lib/forms-api";
-import { draftFromAnswers, draftToInput, emptyDraft, parseDuration, shortTextSegments, validateDraft } from "@/lib/formDraft";
+import { draftFromAnswers, draftToInput, durationEndIso, durationEndIsoFromAnswers, emptyDraft, isFieldShown, parseDuration, shortTextSegments, validateDraft } from "@/lib/formDraft";
 
 const field = (over: Partial<FormField> & Pick<FormField, "id" | "type">): FormField => ({
   label: over.id,
@@ -17,6 +17,9 @@ describe("parseDuration", () => {
     expect(parseDuration("1,5")).toBe(90);
     expect(parseDuration("2h")).toBe(120);
     expect(parseDuration("45m")).toBe(45);
+    expect(parseDuration("02h00")).toBe(120);
+    expect(parseDuration("2u30")).toBe(150);
+    expect(parseDuration("1h 15m")).toBe(75);
     expect(parseDuration("")).toBeNull();
     expect(parseDuration("1:75")).toBeNull();
   });
@@ -150,5 +153,44 @@ describe("short text with linked orders", () => {
       { text: "OR12 · Example Ltd", order },
       { text: " b" },
     ]);
+  });
+});
+
+describe("show when", () => {
+  const box = field({ id: "box", type: "Checkbox" });
+  const whenTicked = field({ id: "a", type: "ShortText", showWhen: "box" });
+  const whenNotTicked = field({ id: "b", type: "ShortText", showWhen: "box", showWhenUnchecked: true });
+
+  it("shows a field while its checkbox is ticked, or while it is not", () => {
+    const on = { box: { kind: "bool", value: true } } as const;
+    const off = { box: { kind: "bool", value: false } } as const;
+    expect(isFieldShown(whenTicked, on)).toBe(true);
+    expect(isFieldShown(whenTicked, off)).toBe(false);
+    expect(isFieldShown(whenNotTicked, on)).toBe(false);
+    expect(isFieldShown(whenNotTicked, off)).toBe(true);
+    // Never answered counts as not ticked.
+    expect(isFieldShown(whenNotTicked, {})).toBe(true);
+    expect(isFieldShown(box, {})).toBe(true);
+  });
+});
+
+describe("duration counting from a start", () => {
+  const dur = field({ id: "dur", type: "Duration", durationFrom: "start" });
+  const plain = field({ id: "plain", type: "Duration" });
+
+  it("ends at start + duration, also across midnight", () => {
+    const draft = {
+      start: { kind: "datetime", value: "2030-07-02T22:30:00.000Z" },
+      dur: { kind: "text", value: "2:30" },
+      plain: { kind: "text", value: "2:30" },
+    } as const;
+    expect(durationEndIso(dur, draft)).toBe("2030-07-03T01:00:00.000Z");
+    expect(durationEndIso(plain, draft)).toBeNull();
+    expect(durationEndIsoFromAnswers(dur, { start: "2030-07-02T22:30:00.000Z", dur: 150 })).toBe("2030-07-03T01:00:00.000Z");
+  });
+
+  it("has no end without a start or a duration", () => {
+    expect(durationEndIso(dur, { start: { kind: "datetime", value: null }, dur: { kind: "text", value: "1:00" } })).toBeNull();
+    expect(durationEndIso(dur, { start: { kind: "datetime", value: "2030-07-02T08:00:00.000Z" }, dur: { kind: "text", value: "" } })).toBeNull();
   });
 });

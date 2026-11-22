@@ -854,7 +854,14 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             events.Add(("PriorityChange", System.Text.Json.JsonSerializer.Serialize(
                 new { from = current.PriorityId, to = update.PriorityId, fromName, toName })));
         }
-        if (update.CategoryId.HasValue && update.CategoryId != current.CategoryId)
+        if (update.ClearCategory && current.CategoryId.HasValue)
+        {
+            sets.Add("category_id = NULL");
+            var fromName = await LookupNameAsync("categories", current.CategoryId);
+            events.Add(("CategoryChange", System.Text.Json.JsonSerializer.Serialize(
+                new { from = current.CategoryId, to = (Guid?)null, fromName, toName = (string?)null })));
+        }
+        else if (!update.ClearCategory && update.CategoryId.HasValue && update.CategoryId != current.CategoryId)
         {
             sets.Add("category_id = @NewCategoryId");
             var fromName = await LookupNameAsync("categories", current.CategoryId);

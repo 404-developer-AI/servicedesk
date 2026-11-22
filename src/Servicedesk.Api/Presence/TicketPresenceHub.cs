@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Dashboard;
+using Servicedesk.Infrastructure.Realtime;
 
 namespace Servicedesk.Api.Presence;
 
@@ -47,18 +49,56 @@ public sealed class TicketPresenceHub : Hub
         SignalRAgentActivityBroadcaster.AdminsGroup;
 
     private readonly IAgentActivityBroadcaster _agentActivityBroadcaster;
+    private readonly IUserService _users;
+    private readonly IBackofficeFormNotifier _backoffice;
 
-    public TicketPresenceHub(IAgentActivityBroadcaster agentActivityBroadcaster)
+    public TicketPresenceHub(
+        IAgentActivityBroadcaster agentActivityBroadcaster, IUserService users, IBackofficeFormNotifier backoffice)
     {
         _agentActivityBroadcaster = agentActivityBroadcaster;
+        _users = users;
+        _backoffice = backoffice;
+    }
+
+    /// v0.1.61 — "In progress by X" on the Back office forms list: the tickets
+    /// back-office users have open right now (from the list's overlay, the
+    /// queue or the ticket page alike). Only connections whose user had the
+    /// back-office flag at connect time count, so a technician reading a
+    /// ticket never marks its form as being worked on. Key: ticket id.
+    public static IReadOnlyDictionary<string, IReadOnlyList<Guid>> GetBackofficeViewers()
+    {
+        var map = new Dictionary<string, HashSet<Guid>>(StringComparer.Ordinal);
+        foreach (var conn in Connections.Values)
+        {
+            if (!conn.IsBackoffice || conn.ViewingTicketId is null) continue;
+            if (!Guid.TryParse(conn.UserId, out var uid)) continue;
+            if (!map.TryGetValue(conn.ViewingTicketId, out var set)) map[conn.ViewingTicketId] = set = new HashSet<Guid>();
+            set.Add(uid);
+        }
+        return map.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Guid>)kv.Value.ToList(), StringComparer.Ordinal);
+    }
+
+    private async Task PingBackofficePresenceAsync(ConnectionState state)
+    {
+        if (!state.IsBackoffice) return;
+        try { await _backoffice.BackofficePresenceChangedAsync(CancellationToken.None); }
+        catch { /* presence is cosmetic; the next ping corrects it */ }
     }
 
     public override async Task OnConnectedAsync()
     {
+        var userIdClaim = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var isBackoffice = false;
+        if (Guid.TryParse(userIdClaim, out var connUserId))
+        {
+            try { isBackoffice = await _users.GetBackofficeFormsEnabledAsync(connUserId, Context.ConnectionAborted); }
+            catch { isBackoffice = false; }
+        }
         var state = new ConnectionState
         {
-            UserId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? "",
+            UserId = userIdClaim,
             Email = Context.User?.FindFirstValue(ClaimTypes.Email) ?? "",
+            IsBackoffice = isBackoffice,
         };
         Connections[Context.ConnectionId] = state;
 
@@ -98,6 +138,7 @@ public sealed class TicketPresenceHub : Hub
             // The disconnected agent may go fully offline (last tab) — push
             // an AgentActivity update so the dashboard tile flips them grey.
             await BroadcastAgentActivity(state.UserId);
+            if (state.ViewingTicketId is not null) await PingBackofficePresenceAsync(state);
         }
         await base.OnDisconnectedAsync(exception);
     }
@@ -214,6 +255,7 @@ public sealed class TicketPresenceHub : Hub
         if (previousTicketId != ticketId)
         {
             await BroadcastAgentActivity(state.UserId);
+            await PingBackofficePresenceAsync(state);
         }
     }
 
@@ -232,6 +274,7 @@ public sealed class TicketPresenceHub : Hub
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"ticket:{previousTicketId}");
             await BroadcastTicketPresence(previousTicketId);
             await BroadcastAgentActivity(state.UserId);
+            await PingBackofficePresenceAsync(state);
         }
     }
 
@@ -385,6 +428,8 @@ public sealed class TicketPresenceHub : Hub
     {
         public required string UserId { get; init; }
         public required string Email { get; init; }
+        /// Back-office flag at connect time (presence on the BO list only).
+        public bool IsBackoffice { get; init; }
         public string? ViewingTicketId { get; set; }
         public HashSet<string> RecentTicketIds { get; set; } = [];
     }
