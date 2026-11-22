@@ -250,9 +250,7 @@ public sealed class TicketSearchSource : ISearchSource
         var partial = false;
         if (!request.Deep && !string.IsNullOrEmpty(tsqueryText))
         {
-            var window = 20000;
-            try { window = await _settings.GetAsync<int>(SettingKeys.Search.RecentMessageWindow, ct); }
-            catch { /* default */ }
+            var window = await _settings.GetOrAsync(SettingKeys.Search.RecentMessageWindow, 20000, ct);
             if (window > 0)
             {
                 var bounds = await conn.QueryFirstAsync<EventBounds>(new CommandDefinition(
@@ -324,15 +322,8 @@ public sealed class TicketSearchSource : ISearchSource
 
     private async Task<string> GetPrefixAsync(CancellationToken ct)
     {
-        try
-        {
-            var raw = await _settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
-            return string.IsNullOrWhiteSpace(raw) ? TicketReference.DefaultPrefix : raw;
-        }
-        catch
-        {
-            return TicketReference.DefaultPrefix;
-        }
+        var raw = await _settings.GetOrAsync<string?>(SettingKeys.Tickets.ReferencePrefix, null, ct);
+        return string.IsNullOrWhiteSpace(raw) ? TicketReference.DefaultPrefix : raw;
     }
 
     private sealed record TicketHitRow(

@@ -562,8 +562,7 @@ public static class AuthEndpoints
         // v0.1.25 — global SLA switch (in-memory setting, no query): the SPA
         // hides the SLA log nav and the Due values when it is off.
         bool slaEnabled;
-        try { slaEnabled = await settings.GetAsync<bool>(SettingKeys.Sla.Enabled, ct); }
-        catch { slaEnabled = true; }
+        slaEnabled = await settings.GetOrAsync<bool>(SettingKeys.Sla.Enabled, true, ct);
 
         return Results.Ok(new
         {

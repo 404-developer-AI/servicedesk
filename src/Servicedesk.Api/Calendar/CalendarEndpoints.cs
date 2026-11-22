@@ -25,8 +25,7 @@ public static class CalendarEndpoints
         app.MapGet("/api/settings/calendar", async (ISettingsService settings, CancellationToken ct) =>
         {
             bool enabled;
-            try { enabled = await settings.GetAsync<bool>(SettingKeys.Calendar.Enabled, ct); }
-            catch { enabled = false; }
+            enabled = await settings.GetOrAsync<bool>(SettingKeys.Calendar.Enabled, false, ct);
             return Results.Ok(new { enabled });
         })
         .WithTags("Settings")
@@ -38,8 +37,7 @@ public static class CalendarEndpoints
             ISettingsService settings, ICalendarSyncRepository repo, IGraphCalendarClient graph, CancellationToken ct) =>
         {
             bool enabled;
-            try { enabled = await settings.GetAsync<bool>(SettingKeys.Calendar.Enabled, ct); }
-            catch { enabled = false; }
+            enabled = await settings.GetOrAsync<bool>(SettingKeys.Calendar.Enabled, false, ct);
             if (!enabled) return Results.Ok(new { enabled = false, users = Array.Empty<object>() });
 
             if (start is null || end is null) return Results.BadRequest(new { error = "start and end are required." });

@@ -22,17 +22,9 @@ public static class AutoSubmittedSenderAllowList
     public static async Task<bool> IsAllowedAsync(
         ISettingsService settings, string fromAddress, ILogger? logger, CancellationToken ct)
     {
-        try
-        {
-            var raw = await settings.GetAsync<string>(SettingKeys.Mail.AutoSubmittedAllowedSenders, ct);
-            return Matches(raw, fromAddress);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex)
-        {
-            logger?.LogWarning(ex, "Failed to read Mail.AutoSubmittedAllowedSenders; treating as empty.");
-            return false;
-        }
+        // A failed read is treated as an empty list (null never matches).
+        var raw = await settings.GetOrAsync<string?>(SettingKeys.Mail.AutoSubmittedAllowedSenders, null, ct, logger);
+        return Matches(raw, fromAddress);
     }
 
     public static bool Matches(string? rawList, string? fromAddress)

@@ -67,15 +67,7 @@ public sealed class HealthReportCache : IHealthReportCache
 
     private async Task<TimeSpan> GetTtlAsync(CancellationToken ct)
     {
-        int seconds;
-        try
-        {
-            seconds = await _settings.GetAsync<int>(SettingKeys.Health.ReportCacheSeconds, ct);
-        }
-        catch
-        {
-            seconds = TtlFallbackSeconds;
-        }
+        var seconds = await _settings.GetOrAsync(SettingKeys.Health.ReportCacheSeconds, TtlFallbackSeconds, ct);
         return TimeSpan.FromSeconds(Math.Clamp(seconds, TtlFloorSeconds, TtlCeilingSeconds));
     }
 

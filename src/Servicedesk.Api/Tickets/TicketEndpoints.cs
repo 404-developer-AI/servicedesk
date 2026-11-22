@@ -114,8 +114,7 @@ public static class TicketEndpoints
             // limit → fall back to the setting. The repo clamps to a hard
             // ceiling regardless.
             int maxRows;
-            try { maxRows = await settings.GetAsync<int>(SettingKeys.Tickets.ListPageSize, ct); }
-            catch { maxRows = 1000; }
+            maxRows = await settings.GetOrAsync<int>(SettingKeys.Tickets.ListPageSize, 1000, ct);
             if (maxRows < 1) maxRows = 1000;
 
             var query = new TicketQuery(
@@ -1250,8 +1249,7 @@ public static class TicketEndpoints
             if (req.EventType == "Call" && ticket.IsCallback)
             {
                 bool clearOnCall;
-                try { clearOnCall = await settings.GetAsync<bool>(SettingKeys.Tickets.CallbackClearOnCall, ct); }
-                catch { clearOnCall = true; }
+                clearOnCall = await settings.GetOrAsync<bool>(SettingKeys.Tickets.CallbackClearOnCall, true, ct);
                 if (clearOnCall)
                 {
                     var clear = new TicketFieldUpdate(IsCallback: false);
@@ -1291,8 +1289,7 @@ public static class TicketEndpoints
             if (ticket.IsProject)
             {
                 bool projectsOn;
-                try { projectsOn = await settings.GetAsync<bool>(SettingKeys.Projects.Enabled, ct); }
-                catch { projectsOn = true; }
+                projectsOn = await settings.GetOrAsync<bool>(SettingKeys.Projects.Enabled, true, ct);
                 if (projectsOn)
                     return Results.Conflict(new
                     {
@@ -2159,16 +2156,8 @@ public static class TicketEndpoints
         string? search, ISettingsService settings, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(search)) return search;
-        string prefix;
-        try
-        {
-            var raw = await settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
-            prefix = string.IsNullOrWhiteSpace(raw) ? TicketReference.DefaultPrefix : raw;
-        }
-        catch
-        {
-            prefix = TicketReference.DefaultPrefix;
-        }
+        var raw = await settings.GetOrAsync<string?>(SettingKeys.Tickets.ReferencePrefix, null, ct);
+        var prefix = string.IsNullOrWhiteSpace(raw) ? TicketReference.DefaultPrefix : raw;
         return TicketReference.NormalizeSearchTerm(search, prefix);
     }
 
@@ -2629,8 +2618,7 @@ public static class TicketEndpoints
     private static async Task<int> ResolveTimelinePageSizeAsync(ISettingsService settings, CancellationToken ct)
     {
         int raw;
-        try { raw = await settings.GetAsync<int>(SettingKeys.Tickets.TimelinePageSize, ct); }
-        catch { raw = 50; }
+        raw = await settings.GetOrAsync<int>(SettingKeys.Tickets.TimelinePageSize, 50, ct);
         return raw <= 0 ? 0 : Math.Clamp(raw, 10, 1000);
     }
 

@@ -225,14 +225,12 @@ public static class TicketProjectEndpoints
 
     private static async Task<bool> ProjectsEnabledAsync(ISettingsService settings, CancellationToken ct)
     {
-        try { return await settings.GetAsync<bool>(SettingKeys.Projects.Enabled, ct); }
-        catch { return true; }
+        return await settings.GetOrAsync<bool>(SettingKeys.Projects.Enabled, true, ct);
     }
 
     private static async Task<bool> LinkPromptEnabledAsync(ISettingsService settings, CancellationToken ct)
     {
-        try { return await settings.GetAsync<bool>(SettingKeys.Projects.LinkPromptEnabled, ct); }
-        catch { return true; }
+        return await settings.GetOrAsync<bool>(SettingKeys.Projects.LinkPromptEnabled, true, ct);
     }
 
     private static IResult ProjectsDisabled() =>

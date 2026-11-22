@@ -149,17 +149,9 @@ public sealed class ZammadDryRunWorker : BackgroundService
                 // attachments are skipped (the ticket still imports; the
                 // per-record reasons list captures which files were
                 // dropped) rather than failing the whole ticket.
-                long maxAttachmentBytes;
-                try
-                {
-                    maxAttachmentBytes = await settings.GetAsync<long>(
-                        SettingKeys.Storage.MaxAttachmentBytes, stoppingToken);
-                    if (maxAttachmentBytes <= 0) maxAttachmentBytes = 26_214_400;
-                }
-                catch
-                {
-                    maxAttachmentBytes = 26_214_400;
-                }
+                var maxAttachmentBytes = await settings.GetOrAsync<long>(
+                    SettingKeys.Storage.MaxAttachmentBytes, 26_214_400, stoppingToken);
+                if (maxAttachmentBytes <= 0) maxAttachmentBytes = 26_214_400;
                 var blobs = scope.ServiceProvider.GetRequiredService<IBlobStore>();
 
                 await ProcessImportRunAsync(

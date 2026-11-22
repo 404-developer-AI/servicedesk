@@ -98,16 +98,7 @@ public sealed class ContactLookupService : IContactLookupService
 
     private async Task<Company?> TryAutoLinkAsync(string email, CancellationToken ct)
     {
-        bool enabled;
-        try
-        {
-            enabled = await _settings.GetAsync<bool>(SettingKeys.Mail.AutoLinkCompanyByDomain, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to read AutoLinkCompanyByDomain setting; defaulting to enabled.");
-            enabled = true;
-        }
+        var enabled = await _settings.GetOrAsync(SettingKeys.Mail.AutoLinkCompanyByDomain, true, ct, _logger);
         if (!enabled) return null;
 
         var domain = ExtractDomain(email);

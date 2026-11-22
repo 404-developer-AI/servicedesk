@@ -60,16 +60,16 @@ public sealed class WorkflowReportService : IWorkflowReportService
 
     public async Task<WorkflowLimits> GetLimitsAsync(CancellationToken ct = default)
     {
-        var csv = await GetOrAsync(SettingKeys.Insights.WorkflowWfpStatusIds, "", ct) ?? "";
+        var csv = await _settings.GetOrAsync(SettingKeys.Insights.WorkflowWfpStatusIds, "", ct) ?? "";
         var wfp = csv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             .Select(s => Guid.TryParse(s, out var g) ? g : Guid.Empty).Where(g => g != Guid.Empty).ToList();
         return new WorkflowLimits(
-            Math.Clamp(await GetOrAsync(SettingKeys.Insights.WorkflowMailAfterTemplateMinutes, 15, ct), 0, 240),
-            Math.Clamp(await GetOrAsync(SettingKeys.Insights.WorkflowLimitPriorityMinutes, 60, ct), 1, 600),
-            Math.Clamp(await GetOrAsync(SettingKeys.Insights.WorkflowLimitCallbackMinutes, 15, ct), 1, 600),
-            Math.Clamp(await GetOrAsync(SettingKeys.Insights.WorkflowLimitWfpMinutes, 15, ct), 1, 600),
-            Math.Clamp(await GetOrAsync(SettingKeys.Insights.WorkflowLimitResearchMinutes, 60, ct), 1, 600),
-            Math.Clamp(await GetOrAsync(SettingKeys.Insights.WorkflowMaxResearchPerAgent, 2, ct), 1, 20),
+            Math.Clamp(await _settings.GetOrAsync(SettingKeys.Insights.WorkflowMailAfterTemplateMinutes, 15, ct), 0, 240),
+            Math.Clamp(await _settings.GetOrAsync(SettingKeys.Insights.WorkflowLimitPriorityMinutes, 60, ct), 1, 600),
+            Math.Clamp(await _settings.GetOrAsync(SettingKeys.Insights.WorkflowLimitCallbackMinutes, 15, ct), 1, 600),
+            Math.Clamp(await _settings.GetOrAsync(SettingKeys.Insights.WorkflowLimitWfpMinutes, 15, ct), 1, 600),
+            Math.Clamp(await _settings.GetOrAsync(SettingKeys.Insights.WorkflowLimitResearchMinutes, 60, ct), 1, 600),
+            Math.Clamp(await _settings.GetOrAsync(SettingKeys.Insights.WorkflowMaxResearchPerAgent, 2, ct), 1, 20),
             wfp);
     }
 
@@ -557,7 +557,7 @@ public sealed class WorkflowReportService : IWorkflowReportService
     }
 
     private async Task<TimeZoneInfo> ResolveZoneAsync(CancellationToken ct)
-        => InsightsCalendar.ResolveTimeZone(await GetOrAsync<string?>(SettingKeys.App.TimeZone, null, ct));
+        => InsightsCalendar.ResolveTimeZone(await _settings.GetOrAsync<string?>(SettingKeys.App.TimeZone, null, ct));
 
     private static DateOnly LocalDate(DateTime utc, TimeZoneInfo tz) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(utc, tz));
 
@@ -567,12 +567,5 @@ public sealed class WorkflowReportService : IWorkflowReportService
         // A local time inside a DST gap does not exist; nudge forward an hour.
         if (tz.IsInvalidTime(local)) local = local.AddHours(1);
         return TimeZoneInfo.ConvertTimeToUtc(local, tz);
-    }
-
-    private async Task<T> GetOrAsync<T>(string key, T fallback, CancellationToken ct)
-    {
-        try { return await _settings.GetAsync<T>(key, ct); }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch { return fallback; }
     }
 }

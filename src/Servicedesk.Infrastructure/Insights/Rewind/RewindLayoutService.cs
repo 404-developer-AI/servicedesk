@@ -41,17 +41,17 @@ public sealed class RewindLayoutService : IRewindLayoutService
     {
         // Same cap as the list (single-load model): a view shows at most
         // Tickets.ListPageSize rows.
-        var limit = await GetOrAsync(SettingKeys.Tickets.ListPageSize, 1000, ct);
+        var limit = await _settings.GetOrAsync(SettingKeys.Tickets.ListPageSize, 1000, ct);
         if (limit < 1) limit = 1000;
-        var prefix = await GetOrAsync<string?>(SettingKeys.Tickets.ReferencePrefix, TicketReference.DefaultPrefix, ct);
+        var prefix = await _settings.GetOrAsync<string?>(SettingKeys.Tickets.ReferencePrefix, TicketReference.DefaultPrefix, ct);
         var groupSort = new RewindGroupSort(
-            await GetOrAsync(SettingKeys.Tickets.GroupSortEnabled, false, ct),
-            await GetOrAsync(SettingKeys.Tickets.GroupSortPendingField, "pendingTillUtc", ct) ?? "pendingTillUtc",
-            await GetOrAsync(SettingKeys.Tickets.GroupSortPendingDirection, "asc", ct) ?? "asc",
-            await GetOrAsync(SettingKeys.Tickets.GroupSortOpenNewField, "updatedUtc", ct) ?? "updatedUtc",
-            await GetOrAsync(SettingKeys.Tickets.GroupSortOpenNewDirection, "asc", ct) ?? "asc");
-        var callbackColor = await GetOrAsync(SettingKeys.Tickets.CallbackColor, "#22c55e", ct) ?? "#22c55e";
-        var researchColor = await GetOrAsync(SettingKeys.Tickets.ResearchColor, "#3b82f6", ct) ?? "#3b82f6";
+            await _settings.GetOrAsync(SettingKeys.Tickets.GroupSortEnabled, false, ct),
+            await _settings.GetOrAsync(SettingKeys.Tickets.GroupSortPendingField, "pendingTillUtc", ct) ?? "pendingTillUtc",
+            await _settings.GetOrAsync(SettingKeys.Tickets.GroupSortPendingDirection, "asc", ct) ?? "asc",
+            await _settings.GetOrAsync(SettingKeys.Tickets.GroupSortOpenNewField, "updatedUtc", ct) ?? "updatedUtc",
+            await _settings.GetOrAsync(SettingKeys.Tickets.GroupSortOpenNewDirection, "asc", ct) ?? "asc");
+        var callbackColor = await _settings.GetOrAsync(SettingKeys.Tickets.CallbackColor, "#22c55e", ct) ?? "#22c55e";
+        var researchColor = await _settings.GetOrAsync(SettingKeys.Tickets.ResearchColor, "#3b82f6", ct) ?? "#3b82f6";
         return new Session(this, limit, prefix, groupSort, callbackColor, researchColor);
     }
 
@@ -97,12 +97,5 @@ public sealed class RewindLayoutService : IRewindLayoutService
         var map = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var (id, sortOrder) in rows) map[id.ToString()] = sortOrder;
         return map;
-    }
-
-    private async Task<T> GetOrAsync<T>(string key, T fallback, CancellationToken ct)
-    {
-        try { return await _settings.GetAsync<T>(key, ct); }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch { return fallback; }
     }
 }

@@ -376,15 +376,8 @@ public static class HealthEndpoints
     /// unreadable so a settings hiccup never turns into a hammering client.
     private static async Task<int> ResolvePollIntervalAsync(ISettingsService settings, CancellationToken ct)
     {
-        try
-        {
-            var raw = await settings.GetAsync<int>(SettingKeys.Health.PollIntervalSeconds, ct);
-            return Math.Clamp(raw, PollFloorSeconds, PollCeilingSeconds);
-        }
-        catch
-        {
-            return PollFallbackSeconds;
-        }
+        var raw = await settings.GetOrAsync(SettingKeys.Health.PollIntervalSeconds, PollFallbackSeconds, ct);
+        return Math.Clamp(raw, PollFloorSeconds, PollCeilingSeconds);
     }
 
     private static object ToDto(IncidentRow r) => new

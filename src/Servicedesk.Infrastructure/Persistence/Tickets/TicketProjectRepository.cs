@@ -14,14 +14,10 @@ public static class ProjectQueuePin
 {
     public static async Task<Guid?> GetPinnedQueueIdAsync(ISettingsService settings, CancellationToken ct)
     {
-        bool enabled;
-        try { enabled = await settings.GetAsync<bool>(SettingKeys.Projects.Enabled, ct); }
-        catch { enabled = true; }
+        var enabled = await settings.GetOrAsync<bool>(SettingKeys.Projects.Enabled, true, ct);
         if (!enabled) return null;
 
-        string raw;
-        try { raw = await settings.GetAsync<string>(SettingKeys.Projects.QueueId, ct) ?? string.Empty; }
-        catch { return null; }
+        var raw = (await settings.GetOrAsync<string>(SettingKeys.Projects.QueueId, string.Empty, ct)) ?? string.Empty;
         return Guid.TryParse(raw, out var id) && id != Guid.Empty ? id : null;
     }
 }

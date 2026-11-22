@@ -19,8 +19,7 @@ public sealed class FormSettingsReader : IFormSettingsReader
     public async Task<FormRuntimeSettings> GetAsync(CancellationToken ct)
     {
         bool enabled;
-        try { enabled = await _settings.GetAsync<bool>(SettingKeys.Forms.Enabled, ct); }
-        catch { enabled = true; }
+        enabled = await _settings.GetOrAsync<bool>(SettingKeys.Forms.Enabled, true, ct);
 
         var maxFields = await IntAsync(SettingKeys.Forms.MaxFieldsPerTemplate, 60, 1, FormLimits.HardMaxFields, ct);
         var maxRows = await IntAsync(SettingKeys.Forms.MaxArticleRows, 50, 1, FormLimits.HardMaxArticleRows, ct);
@@ -38,8 +37,7 @@ public sealed class FormSettingsReader : IFormSettingsReader
     private async Task<int> IntAsync(string key, int fallback, int min, int max, CancellationToken ct)
     {
         int v;
-        try { v = await _settings.GetAsync<int>(key, ct); }
-        catch { v = fallback; }
+        v = await _settings.GetOrAsync<int>(key, fallback, ct);
         if (v <= 0) v = fallback;
         return Math.Clamp(v, min, max);
     }

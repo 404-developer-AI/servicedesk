@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Servicedesk.Infrastructure.Access;
+using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Insights.Rewind;
 
@@ -84,9 +85,8 @@ public sealed class RewindService : IRewindService
 
     public async Task<int> GetIntervalAsync(CancellationToken ct = default)
     {
-        try { return RewindSlots.NormalizeInterval(await _settings.GetAsync<int>(Settings.SettingKeys.Insights.RewindIntervalMinutes, ct)); }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch { return RewindSlots.DefaultIntervalMinutes; }
+        return RewindSlots.NormalizeInterval(
+            await _settings.GetOrAsync(Settings.SettingKeys.Insights.RewindIntervalMinutes, RewindSlots.DefaultIntervalMinutes, ct));
     }
 
     public async Task<RewindSeries> GetSeriesAsync(

@@ -82,8 +82,7 @@ public sealed class SlaEngine : ISlaEngine
 
     public async Task<bool> IsEnabledAsync(CancellationToken ct)
     {
-        try { return await _settings.GetAsync<bool>(SettingKeys.Sla.Enabled, ct); }
-        catch { return true; }
+        return await _settings.GetOrAsync<bool>(SettingKeys.Sla.Enabled, true, ct);
     }
 
     public async Task RecalcAsync(Guid ticketId, CancellationToken ct)

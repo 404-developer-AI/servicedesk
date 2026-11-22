@@ -123,8 +123,7 @@ internal sealed class SendMailHandler : ITriggerActionHandler
         if (ctx.Ticket.IsProject && string.Equals(toSpec.Trim(), "customer", StringComparison.OrdinalIgnoreCase))
         {
             bool projectsOn;
-            try { projectsOn = await _settings.GetAsync<bool>(SettingKeys.Projects.Enabled, ct); }
-            catch { projectsOn = true; }
+            projectsOn = await _settings.GetOrAsync<bool>(SettingKeys.Projects.Enabled, true, ct);
             if (projectsOn)
             {
                 _logger.LogInformation(

@@ -149,14 +149,7 @@ public sealed class PerfFlushService : BackgroundService
 
     private async Task<string?> TryBlobRootAsync(CancellationToken ct)
     {
-        try
-        {
-            return await _settingsStore.GetAsync<string>(SettingKeys.Storage.BlobRoot, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return null;
-        }
+        return await _settingsStore.GetOrAsync<string?>(SettingKeys.Storage.BlobRoot, null, ct);
     }
 
     private void LogRateLimited(Exception ex, string message)

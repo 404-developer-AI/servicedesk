@@ -34,9 +34,8 @@ public sealed class RewindWorker : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             int interval;
-            try { interval = RewindSlots.NormalizeInterval(await _settings.GetAsync<int>(SettingKeys.Insights.RewindIntervalMinutes, stoppingToken)); }
+            try { interval = RewindSlots.NormalizeInterval(await _settings.GetOrAsync(SettingKeys.Insights.RewindIntervalMinutes, RewindSlots.DefaultIntervalMinutes, stoppingToken)); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
-            catch { interval = RewindSlots.DefaultIntervalMinutes; }
 
             var now = _time.GetUtcNow().UtcDateTime;
             var slot = RewindSlots.Floor(now, interval).AddMinutes(interval);

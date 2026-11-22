@@ -169,8 +169,7 @@ public sealed class BackofficeFormService : IBackofficeFormService
     private async Task<IReadOnlyList<string>> WaitingAsync(CancellationToken ct)
     {
         string raw;
-        try { raw = await _settings.GetAsync<string>(SettingKeys.Forms.BackofficeWaitingStateCategories, ct) ?? "Pending"; }
-        catch { raw = "Pending"; }
+        raw = (await _settings.GetOrAsync<string>(SettingKeys.Forms.BackofficeWaitingStateCategories, "Pending", ct)) ?? "Pending";
         return ParseWaiting(raw);
     }
 
@@ -187,8 +186,7 @@ public sealed class BackofficeFormService : IBackofficeFormService
 
     private async Task<bool> NoteRequiredAsync(CancellationToken ct)
     {
-        try { return await _settings.GetAsync<bool>(SettingKeys.Forms.BackofficeHandleNoteRequired, ct); }
-        catch { return true; }
+        return await _settings.GetOrAsync<bool>(SettingKeys.Forms.BackofficeHandleNoteRequired, true, ct);
     }
 
     private static Task<string> ValidateNoteAsync(string? note, bool required)

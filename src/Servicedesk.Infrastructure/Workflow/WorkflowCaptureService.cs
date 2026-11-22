@@ -115,9 +115,8 @@ public sealed class WorkflowCaptureService : IWorkflowCaptureService
         try
         {
             var now = _time.GetUtcNow().UtcDateTime;
-            string? tzId = null;
-            try { tzId = await _settings.GetAsync<string>(SettingKeys.App.TimeZone, bt); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { /* host zone below */ }
+            // Settings failure → null → host zone below.
+            var tzId = await _settings.GetOrAsync<string?>(SettingKeys.App.TimeZone, null, bt);
             var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(now, InsightsCalendar.ResolveTimeZone(tzId)));
 
             await using var conn = await _dataSource.OpenConnectionAsync(bt);

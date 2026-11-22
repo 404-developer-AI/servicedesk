@@ -402,20 +402,17 @@ public sealed class CalendarSyncService : ICalendarSyncService
 
     private async Task<bool> EnabledAsync(CancellationToken ct)
     {
-        try { return await _settings.GetAsync<bool>(SettingKeys.Calendar.Enabled, ct); }
-        catch { return false; }
+        return await _settings.GetOrAsync<bool>(SettingKeys.Calendar.Enabled, false, ct);
     }
 
     private async Task<int> IntAsync(string key, int fallback, CancellationToken ct)
     {
-        try { return await _settings.GetAsync<int>(key, ct); }
-        catch { return fallback; }
+        return await _settings.GetOrAsync<int>(key, fallback, ct);
     }
 
     private async Task<string> StringAsync(string key, string fallback, CancellationToken ct)
     {
-        try { return await _settings.GetAsync<string>(key, ct) ?? fallback; }
-        catch { return fallback; }
+        return (await _settings.GetOrAsync<string>(key, fallback, ct)) ?? fallback;
     }
 
     private static JsonObject ParseAnswers(string json)

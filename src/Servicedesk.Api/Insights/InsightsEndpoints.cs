@@ -389,16 +389,14 @@ public static class InsightsEndpoints
     private static async Task<int> GetCompareMaxAsync(ISettingsService settings, CancellationToken ct)
     {
         int value;
-        try { value = await settings.GetAsync<int>(SettingKeys.Insights.AgentCompareMax, ct); }
-        catch { value = 3; }
+        value = await settings.GetOrAsync<int>(SettingKeys.Insights.AgentCompareMax, 3, ct);
         return Math.Clamp(value, CompareMaxFloor, CompareMaxCeiling);
     }
 
     private static async Task<int> GetMinOpenSecondsAsync(ISettingsService settings, CancellationToken ct)
     {
         int value;
-        try { value = await settings.GetAsync<int>(SettingKeys.Insights.OpenedNoActionMinSeconds, ct); }
-        catch { value = 3; }
+        value = await settings.GetOrAsync<int>(SettingKeys.Insights.OpenedNoActionMinSeconds, 3, ct);
         return Math.Clamp(value, 0, 3600);
     }
 

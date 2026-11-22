@@ -651,17 +651,9 @@ if (app.Environment.IsDevelopment())
 // defaults so the endpoint never 500s — CI's boot probe depends on it.
 app.MapGet("/api/system/version", async (ISettingsService settings, CancellationToken ct) =>
 {
-    var refreshMode = "auto";
-    var checkOnFocus = true;
-    try
-    {
-        refreshMode = await settings.GetAsync<string>(SettingKeys.App.UpdateRefreshMode, ct);
-        checkOnFocus = await settings.GetAsync<bool>(SettingKeys.App.UpdateCheckOnFocus, ct);
-    }
-    catch
-    {
-        // Settings store unreachable — report the defaults above.
-    }
+    // Settings store unreachable — each read falls back to its default.
+    var refreshMode = await settings.GetOrAsync<string>(SettingKeys.App.UpdateRefreshMode, "auto", ct);
+    var checkOnFocus = await settings.GetOrAsync<bool>(SettingKeys.App.UpdateCheckOnFocus, true, ct);
 
     return Results.Ok(new
     {
@@ -684,15 +676,8 @@ app.MapGet("/api/system/version", async (ISettingsService settings, Cancellation
 // endpoint never 500s — clients depend on it for every live-clock tick.
 app.MapGet("/api/system/time", async (ISettingsService settings, CancellationToken ct) =>
 {
-    string configured = string.Empty;
-    try
-    {
-        configured = await settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
-    }
-    catch
-    {
-        // Settings store unreachable — drop through to the host default below.
-    }
+    // Settings store unreachable — an empty value drops through to the host default below.
+    var configured = await settings.GetOrAsync<string>(SettingKeys.App.TimeZone, string.Empty, ct);
 
     var tz = ResolveDisplayTimeZone(configured);
     var nowUtc = DateTimeOffset.UtcNow;
@@ -722,19 +707,11 @@ app.MapGet("/api/system/time", async (ISettingsService settings, CancellationTok
 // are tolerated so a half-configured window never 500s the login page.
 app.MapGet("/api/system/maintenance", async (ISettingsService settings, CancellationToken ct) =>
 {
-    var enabled = false;
-    string startRaw = string.Empty, endRaw = string.Empty, message = string.Empty;
-    try
-    {
-        enabled = await settings.GetAsync<bool>(SettingKeys.App.MaintenanceEnabled, ct);
-        startRaw = await settings.GetAsync<string>(SettingKeys.App.MaintenanceStartUtc, ct);
-        endRaw = await settings.GetAsync<string>(SettingKeys.App.MaintenanceEndUtc, ct);
-        message = await settings.GetAsync<string>(SettingKeys.App.MaintenanceMessage, ct);
-    }
-    catch
-    {
-        // Settings store unreachable — fall through and report inactive.
-    }
+    // Settings store unreachable — each read falls back to inactive / empty.
+    var enabled = await settings.GetOrAsync<bool>(SettingKeys.App.MaintenanceEnabled, false, ct);
+    var startRaw = await settings.GetOrAsync<string>(SettingKeys.App.MaintenanceStartUtc, string.Empty, ct);
+    var endRaw = await settings.GetOrAsync<string>(SettingKeys.App.MaintenanceEndUtc, string.Empty, ct);
+    var message = await settings.GetOrAsync<string>(SettingKeys.App.MaintenanceMessage, string.Empty, ct);
 
     DateTimeOffset? start = TryParseUtc(startRaw);
     DateTimeOffset? end = TryParseUtc(endRaw);
@@ -772,18 +749,10 @@ app.MapGet("/api/system/maintenance", async (ISettingsService settings, Cancella
 // disabled — the login page must keep loading even if settings 500.
 app.MapGet("/api/system/login-banner", async (ISettingsService settings, CancellationToken ct) =>
 {
-    var enabled = false;
-    string type = "info", message = string.Empty;
-    try
-    {
-        enabled = await settings.GetAsync<bool>(SettingKeys.App.LoginBannerEnabled, ct);
-        type = await settings.GetAsync<string>(SettingKeys.App.LoginBannerType, ct);
-        message = await settings.GetAsync<string>(SettingKeys.App.LoginBannerMessage, ct);
-    }
-    catch
-    {
-        // Settings store unreachable — report disabled and let the login render.
-    }
+    // Settings store unreachable — report disabled and let the login render.
+    var enabled = await settings.GetOrAsync<bool>(SettingKeys.App.LoginBannerEnabled, false, ct);
+    var type = await settings.GetOrAsync<string>(SettingKeys.App.LoginBannerType, "info", ct);
+    var message = await settings.GetOrAsync<string>(SettingKeys.App.LoginBannerMessage, string.Empty, ct);
 
     var normalizedType = (type ?? "info").Trim().ToLowerInvariant() switch
     {
@@ -812,15 +781,8 @@ app.MapGet("/api/system/login-banner", async (ISettingsService settings, Cancell
 // factory default — the login page must always load.
 app.MapGet("/api/system/default-theme", async (ISettingsService settings, CancellationToken ct) =>
 {
-    string? raw = null;
-    try
-    {
-        raw = await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct);
-    }
-    catch
-    {
-        // Fall through with the factory default.
-    }
+    // Settings store unreachable — null falls through to the factory default.
+    var raw = await settings.GetOrAsync<string?>(SettingKeys.Ui.DefaultTheme, null, ct);
     return Results.Ok(new { theme = UiThemes.NormalizeOrFactory(raw) });
 })
 .WithName("GetSystemDefaultTheme");
@@ -832,16 +794,9 @@ app.MapGet("/api/system/default-theme", async (ISettingsService settings, Cancel
 // copy button always has a sane prefix.
 app.MapGet("/api/system/ticket-reference-prefix", async (ISettingsService settings, CancellationToken ct) =>
 {
-    var prefix = TicketReference.DefaultPrefix;
-    try
-    {
-        var raw = await settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
-        if (!string.IsNullOrWhiteSpace(raw)) prefix = raw;
-    }
-    catch
-    {
-        // Settings store unreachable — fall through with the factory default.
-    }
+    // Settings store unreachable — null falls through with the factory default.
+    var raw = await settings.GetOrAsync<string?>(SettingKeys.Tickets.ReferencePrefix, null, ct);
+    var prefix = string.IsNullOrWhiteSpace(raw) ? TicketReference.DefaultPrefix : raw;
     return Results.Ok(new { prefix });
 })
 .WithName("GetTicketReferencePrefix");

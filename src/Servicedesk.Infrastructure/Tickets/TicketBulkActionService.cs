@@ -109,8 +109,7 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
         TicketMutationActor actor, TicketBulkActionRequest request, CancellationToken ct)
     {
         bool enabled;
-        try { enabled = await _settings.GetAsync<bool>(SettingKeys.Tickets.BulkActionsEnabled, ct); }
-        catch { enabled = true; }
+        enabled = await _settings.GetOrAsync<bool>(SettingKeys.Tickets.BulkActionsEnabled, true, ct);
         if (!enabled)
             throw new TicketBulkActionRejectedException("bulk_disabled", "Bulk actions are disabled.");
 
@@ -130,8 +129,7 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
             throw new TicketBulkActionRejectedException("no_tickets", "Select at least one ticket.");
 
         int max;
-        try { max = await _settings.GetAsync<int>(SettingKeys.Tickets.BulkActionsMaxSelection, ct); }
-        catch { max = 100; }
+        max = await _settings.GetOrAsync<int>(SettingKeys.Tickets.BulkActionsMaxSelection, 100, ct);
         if (max <= 0) max = 100;
         max = Math.Min(max, HardMaxSelection);
         if (ids.Count > max)

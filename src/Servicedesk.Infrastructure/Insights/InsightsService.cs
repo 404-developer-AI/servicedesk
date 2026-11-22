@@ -103,9 +103,8 @@ public sealed class InsightsService : IInsightsService
 
     public async Task<InsightsClock> GetClockAsync(CancellationToken ct = default)
     {
-        string? tzId = null;
-        try { tzId = await _settings.GetAsync<string>(SettingKeys.App.TimeZone, ct); }
-        catch { /* settings store hiccup — host zone below */ }
+        // Settings store hiccup → null → host zone below.
+        var tzId = await _settings.GetOrAsync<string?>(SettingKeys.App.TimeZone, null, ct);
         var tz = InsightsCalendar.ResolveTimeZone(tzId);
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz));
         return new InsightsClock(tz, today);

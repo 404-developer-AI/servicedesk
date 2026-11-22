@@ -121,27 +121,13 @@ public sealed class SearchService : ISearchService
 
     private async Task<int> GetMaxConcurrentSourcesAsync(CancellationToken ct)
     {
-        try
-        {
-            var raw = await _settings.GetAsync<int>(SettingKeys.Search.MaxConcurrentSources, ct);
-            return Math.Clamp(raw, ConcurrencyFloor, ConcurrencyCeiling);
-        }
-        catch
-        {
-            return ConcurrencyFallback;
-        }
+        var raw = await _settings.GetOrAsync(SettingKeys.Search.MaxConcurrentSources, ConcurrencyFallback, ct);
+        return Math.Clamp(raw, ConcurrencyFloor, ConcurrencyCeiling);
     }
 
     private async Task<int> GetSourceTimeoutMsAsync(CancellationToken ct)
     {
-        try
-        {
-            var raw = await _settings.GetAsync<int>(SettingKeys.Search.SourceTimeoutMs, ct);
-            return Math.Clamp(raw, TimeoutFloorMs, TimeoutCeilingMs);
-        }
-        catch
-        {
-            return TimeoutFallbackMs;
-        }
+        var raw = await _settings.GetOrAsync(SettingKeys.Search.SourceTimeoutMs, TimeoutFallbackMs, ct);
+        return Math.Clamp(raw, TimeoutFloorMs, TimeoutCeilingMs);
     }
 }

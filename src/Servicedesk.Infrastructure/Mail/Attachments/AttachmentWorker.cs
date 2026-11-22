@@ -313,15 +313,8 @@ public sealed class AttachmentWorker : BackgroundService
     {
         using var scope = _services.CreateScope();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-        try
-        {
-            var v = await settings.GetAsync<int>(key, ct);
-            return v > 0 ? v : fallback;
-        }
-        catch
-        {
-            return fallback;
-        }
+        var v = await settings.GetOrAsync(key, fallback, ct);
+        return v > 0 ? v : fallback;
     }
 
     private static JobPayload ParsePayload(string json)

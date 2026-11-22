@@ -124,10 +124,8 @@ public static class SettingEndpoints
         {
             bool enabled;
             int max;
-            try { enabled = await svc.GetAsync<bool>(SettingKeys.Tickets.BulkActionsEnabled, ct); }
-            catch { enabled = true; }
-            try { max = await svc.GetAsync<int>(SettingKeys.Tickets.BulkActionsMaxSelection, ct); }
-            catch { max = 100; }
+            enabled = await svc.GetOrAsync<bool>(SettingKeys.Tickets.BulkActionsEnabled, true, ct);
+            max = await svc.GetOrAsync<int>(SettingKeys.Tickets.BulkActionsMaxSelection, 100, ct);
             if (max <= 0) max = 100;
             max = Math.Min(max, Servicedesk.Infrastructure.Tickets.TicketBulkActionService.HardMaxSelection);
             return Results.Ok(new BulkActionsSettings(enabled, max));
@@ -163,12 +161,9 @@ public static class SettingEndpoints
             bool enabled;
             bool linkPrompt;
             string queueId;
-            try { enabled = await svc.GetAsync<bool>(SettingKeys.Projects.Enabled, ct); }
-            catch { enabled = true; }
-            try { linkPrompt = await svc.GetAsync<bool>(SettingKeys.Projects.LinkPromptEnabled, ct); }
-            catch { linkPrompt = true; }
-            try { queueId = await svc.GetAsync<string>(SettingKeys.Projects.QueueId, ct) ?? string.Empty; }
-            catch { queueId = string.Empty; }
+            enabled = await svc.GetOrAsync<bool>(SettingKeys.Projects.Enabled, true, ct);
+            linkPrompt = await svc.GetOrAsync<bool>(SettingKeys.Projects.LinkPromptEnabled, true, ct);
+            queueId = (await svc.GetOrAsync<string>(SettingKeys.Projects.QueueId, string.Empty, ct)) ?? string.Empty;
             // Normalise garbage to "not pinned" so the client never acts on a
             // half-valid id.
             if (!Guid.TryParse(queueId, out _)) queueId = string.Empty;
@@ -189,15 +184,11 @@ public static class SettingEndpoints
                 value is not null && SettingValueValidator.HexColor.IsMatch(value) ? value : fallback;
             string? callback, research;
             bool prompt;
-            try { callback = await svc.GetAsync<string>(SettingKeys.Tickets.CallbackColor, ct); }
-            catch { callback = null; }
-            try { research = await svc.GetAsync<string>(SettingKeys.Tickets.ResearchColor, ct); }
-            catch { research = null; }
-            try { prompt = await svc.GetAsync<bool>(SettingKeys.Tickets.CallbackOpenPromptEnabled, ct); }
-            catch { prompt = false; }
+            callback = await svc.GetOrAsync<string?>(SettingKeys.Tickets.CallbackColor, null, ct);
+            research = await svc.GetOrAsync<string?>(SettingKeys.Tickets.ResearchColor, null, ct);
+            prompt = await svc.GetOrAsync<bool>(SettingKeys.Tickets.CallbackOpenPromptEnabled, false, ct);
             bool clearOnCall;
-            try { clearOnCall = await svc.GetAsync<bool>(SettingKeys.Tickets.CallbackClearOnCall, ct); }
-            catch { clearOnCall = true; }
+            clearOnCall = await svc.GetOrAsync<bool>(SettingKeys.Tickets.CallbackClearOnCall, true, ct);
             return Results.Ok(new TicketFlagSettingsDto(
                 Color(callback, "#22c55e"), Color(research, "#3b82f6"), prompt, clearOnCall));
         })
@@ -211,8 +202,7 @@ public static class SettingEndpoints
         app.MapGet("/api/settings/ticket-warnings", async (ISettingsService svc, CancellationToken ct) =>
         {
             bool contactNotLinked;
-            try { contactNotLinked = await svc.GetAsync<bool>(SettingKeys.Tickets.ShowContactNotLinkedWarning, ct); }
-            catch { contactNotLinked = true; }
+            contactNotLinked = await svc.GetOrAsync<bool>(SettingKeys.Tickets.ShowContactNotLinkedWarning, true, ct);
             return Results.Ok(new TicketWarningsSettingsDto(contactNotLinked));
         })
         .WithTags("Settings")
@@ -225,10 +215,8 @@ public static class SettingEndpoints
         app.MapGet("/api/settings/view-search", async (ISettingsService svc, CancellationToken ct) =>
         {
             int minChars, debounceMs;
-            try { minChars = await svc.GetAsync<int>(SettingKeys.Tickets.ViewSearchMinChars, ct); }
-            catch { minChars = 2; }
-            try { debounceMs = await svc.GetAsync<int>(SettingKeys.Tickets.ViewSearchDebounceMs, ct); }
-            catch { debounceMs = 300; }
+            minChars = await svc.GetOrAsync<int>(SettingKeys.Tickets.ViewSearchMinChars, 2, ct);
+            debounceMs = await svc.GetOrAsync<int>(SettingKeys.Tickets.ViewSearchDebounceMs, 300, ct);
             return Results.Ok(new ViewSearchSettingsDto(Math.Clamp(minChars, 1, 10), Math.Clamp(debounceMs, 0, 2000)));
         })
         .WithTags("Settings")
