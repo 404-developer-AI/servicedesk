@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Integrations.Http;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
@@ -41,14 +42,18 @@ public interface IM365GraphReader
 /// App-only Microsoft Graph reader for a customer tenant. The C# translation of
 /// tools/graph-test/Test-CustomerGraph.ps1: client-credentials token →
 /// subscribedSkus map → page /users → mailboxSettings.userPurpose via $batch
-/// (20/req) to stay fast on large tenants. Tokens are cached per tenant with a
-/// server-based expiry; the MSP client id/secret are read from settings +
-/// protected_secrets and never logged.
+/// (20/req) to stay fast on large tenants. Tokens are cached per tenant in a
+/// shared BearerTokenCache keyed on tenant + MSP client id + secret, so a
+/// rotated secret never reuses a token of the old one; the client id/secret
+/// are read from settings + protected_secrets and never logged. Every call
+/// goes through the shared HTTP 429 handling (RateLimitRetry); throttled
+/// sub-requests inside a $batch are retried separately.
 public sealed class M365GraphReader : IM365GraphReader
 {
     private const string GraphBase = "https://graph.microsoft.com/v1.0";
     private const int BatchSize = 20;
     private const int PageGuard = 1000; // ~1M users at $top=999; a safety stop.
+    private const string ServiceName = "Microsoft 365";
 
     private static readonly string[] UserSelect =
     {
@@ -61,18 +66,33 @@ public sealed class M365GraphReader : IM365GraphReader
     private readonly IProtectedSecretStore _secrets;
     private readonly ILogger<M365GraphReader> _logger;
 
-    private readonly ConcurrentDictionary<string, CachedToken> _tokens = new();
+    private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+
+    // One cache per customer tenant: the shared cache holds a single token.
+    private readonly ConcurrentDictionary<string, BearerTokenCache> _tokens = new(StringComparer.OrdinalIgnoreCase);
 
     public M365GraphReader(
         IHttpClientFactory httpFactory,
         ISettingsService settings,
         IProtectedSecretStore secrets,
         ILogger<M365GraphReader> logger)
+        : this(httpFactory, settings, secrets, logger, Task.Delay)
+    {
+    }
+
+    /// Test seam: <paramref name="delay"/> replaces the real back-off waits.
+    internal M365GraphReader(
+        IHttpClientFactory httpFactory,
+        ISettingsService settings,
+        IProtectedSecretStore secrets,
+        ILogger<M365GraphReader> logger,
+        Func<TimeSpan, CancellationToken, Task> delay)
     {
         _httpFactory = httpFactory;
         _settings = settings;
         _secrets = secrets;
         _logger = logger;
+        _delay = delay;
     }
 
     public async Task<M365ReadResult> ReadMailboxesAsync(string tenantId, CancellationToken ct)
@@ -112,7 +132,7 @@ public sealed class M365GraphReader : IM365GraphReader
             // stale (a permission was added but consent wasn't re-granted, or
             // consent was revoked). Drop the cached token so the next attempt —
             // after the customer re-consents — fetches a fresh one immediately.
-            _tokens.TryRemove(tenantId, out _);
+            if (_tokens.TryGetValue(tenantId, out var cache)) cache.Invalidate();
             return M365ReadResult.Auth(ex.Message);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
@@ -123,27 +143,36 @@ public sealed class M365GraphReader : IM365GraphReader
 
     // ---- token ----------------------------------------------------------
 
-    private async Task<string> GetTokenAsync(
+    private Task<string> GetTokenAsync(
+        HttpClient client, string tenantId, string clientId, string clientSecret, CancellationToken ct) =>
+        _tokens.GetOrAdd(tenantId, _ => new BearerTokenCache()).GetAsync(
+            BearerTokenCache.KeyFor(tenantId, clientId, clientSecret),
+            token => FetchTokenAsync(client, tenantId, clientId, clientSecret, token),
+            ct);
+
+    private async Task<(string Token, int ExpiresInSeconds)> FetchTokenAsync(
         HttpClient client, string tenantId, string clientId, string clientSecret, CancellationToken ct)
     {
-        if (_tokens.TryGetValue(tenantId, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
-            return cached.Token;
-
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var url = $"https://login.microsoftonline.com/{Uri.EscapeDataString(tenantId)}/oauth2/v2.0/token";
+        using var resp = await RateLimitRetry.SendAsync(client, () => new HttpRequestMessage(HttpMethod.Post, url)
         {
-            ["client_id"] = clientId,
-            ["scope"] = "https://graph.microsoft.com/.default",
-            ["client_secret"] = clientSecret,
-            ["grant_type"] = "client_credentials",
-        });
-        using var resp = await client.PostAsync(
-            $"https://login.microsoftonline.com/{Uri.EscapeDataString(tenantId)}/oauth2/v2.0/token", content, ct);
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["client_id"] = clientId,
+                ["scope"] = "https://graph.microsoft.com/.default",
+                ["client_secret"] = clientSecret,
+                ["grant_type"] = "client_credentials",
+            }),
+        }, _logger, ServiceName, ct, delay: _delay);
         var body = await resp.Content.ReadAsStringAsync(ct);
 
         if (!resp.IsSuccessStatusCode)
         {
             // A denied token is a consent/credential problem, not transient —
-            // surface the AADSTS description so the link's last_error explains it.
+            // surface the AADSTS description so the link's last_error explains
+            // it. A 429 that outlasted the retries is transient.
+            if (resp.StatusCode == HttpStatusCode.TooManyRequests)
+                throw new HttpRequestException("Token request still rate-limited (429) after retries.");
             var desc = TryReadError(body) ?? body;
             throw new M365AuthException($"Token request failed: {desc}");
         }
@@ -153,11 +182,8 @@ public sealed class M365GraphReader : IM365GraphReader
         var accessToken = root.TryGetProperty("access_token", out var t) ? t.GetString() : null;
         if (string.IsNullOrEmpty(accessToken))
             throw new M365AuthException("Token response carried no access_token.");
-        var expiresIn = root.TryGetProperty("expires_in", out var e) && e.TryGetInt32(out var s) ? s : 3600;
-
-        var entry = new CachedToken(accessToken, DateTime.UtcNow.AddSeconds(Math.Max(60, expiresIn - 60)));
-        _tokens[tenantId] = entry;
-        return accessToken;
+        var expiresIn = root.TryGetProperty("expires_in", out var e) && e.TryGetInt32(out var sec) ? sec : 3600;
+        return (accessToken, expiresIn);
     }
 
     // ---- subscribedSkus -------------------------------------------------
@@ -268,58 +294,106 @@ public sealed class M365GraphReader : IM365GraphReader
         return rows;
     }
 
+    /// userPurpose per user of the slice. Graph answers a $batch with 200 and
+    /// a status per sub-request; a throttled sub-request (429) is retried on
+    /// its own — honouring its Retry-After — instead of being read as "no
+    /// mailbox", which would silently drop mailboxes from the sync. Still
+    /// throttled after the retries → transient failure (the sync keeps the
+    /// previous data and tries again next tick).
     private async Task<List<(string? Purpose, int Status)>> BatchMailboxPurposeAsync(
         HttpClient client, string token, List<DirectoryUser> slice, CancellationToken ct)
     {
-        var requests = slice.Select((u, idx) => new
-        {
-            id = idx.ToString(),
-            method = "GET",
-            url = $"/users/{u.Id}/mailboxSettings?$select=userPurpose",
-        }).ToArray();
-
-        using var resp = await SendAsync(
-            client, token, HttpMethod.Post, $"{GraphBase}/$batch", ct,
-            JsonContent.Create(new { requests }));
-        if (resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-            throw new M365AuthException("Graph $batch denied (401/403).");
-        resp.EnsureSuccessStatusCode();
-
         // Pre-fill so an absent response id maps to "no mailbox".
-        var result = new List<(string?, int)>(new (string?, int)[slice.Count]);
-        var body = await resp.Content.ReadAsStringAsync(ct);
-        using var doc = JsonDocument.Parse(body);
-        if (doc.RootElement.TryGetProperty("responses", out var arr) && arr.ValueKind == JsonValueKind.Array)
+        var result = new List<(string? Purpose, int Status)>(new (string?, int)[slice.Count]);
+        var pending = Enumerable.Range(0, slice.Count).ToList();
+
+        for (var attempt = 0; ; attempt++)
         {
-            foreach (var r in arr.EnumerateArray())
+            var requests = pending.Select(idx => new
             {
-                if (!r.TryGetProperty("id", out var idEl)) continue;
-                if (!int.TryParse(idEl.GetString(), out var idx) || idx < 0 || idx >= slice.Count) continue;
-                var status = r.TryGetProperty("status", out var st) && st.TryGetInt32(out var s) ? s : 0;
-                string? purpose = null;
-                if (status is >= 200 and < 300 && r.TryGetProperty("body", out var b)
-                    && b.ValueKind == JsonValueKind.Object
-                    && b.TryGetProperty("userPurpose", out var up))
+                id = idx.ToString(),
+                method = "GET",
+                url = $"/users/{slice[idx].Id}/mailboxSettings?$select=userPurpose",
+            }).ToArray();
+
+            using var resp = await SendAsync(
+                client, token, HttpMethod.Post, $"{GraphBase}/$batch", ct,
+                () => JsonContent.Create(new { requests }));
+            if (resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                throw new M365AuthException("Graph $batch denied (401/403).");
+            resp.EnsureSuccessStatusCode();
+
+            var throttled = new List<int>();
+            var wait = TimeSpan.Zero;
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("responses", out var arr) && arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var r in arr.EnumerateArray())
                 {
-                    purpose = up.GetString();
+                    if (!r.TryGetProperty("id", out var idEl)) continue;
+                    if (!int.TryParse(idEl.GetString(), out var idx) || idx < 0 || idx >= slice.Count) continue;
+                    var status = r.TryGetProperty("status", out var st) && st.TryGetInt32(out var code) ? code : 0;
+                    if (status == (int)HttpStatusCode.TooManyRequests)
+                    {
+                        throttled.Add(idx);
+                        var retryAfter = RetryAfter(r);
+                        if (retryAfter > wait) wait = retryAfter;
+                        continue;
+                    }
+                    string? purpose = null;
+                    if (status is >= 200 and < 300 && r.TryGetProperty("body", out var b)
+                        && b.ValueKind == JsonValueKind.Object
+                        && b.TryGetProperty("userPurpose", out var up))
+                    {
+                        purpose = up.GetString();
+                    }
+                    result[idx] = (purpose, status);
                 }
-                result[idx] = (purpose, status);
             }
+
+            if (throttled.Count == 0) return result;
+            if (attempt >= RateLimitRetry.DefaultMaxRetries)
+                throw new HttpRequestException(
+                    $"Graph kept throttling {throttled.Count} mailbox read(s) after {RateLimitRetry.DefaultMaxRetries} retries.");
+
+            if (wait == TimeSpan.Zero) wait = TimeSpan.FromSeconds(Math.Pow(2, attempt));
+            _logger.LogWarning("{Service} $batch: {Count} sub-request(s) throttled; retrying in {Delay}s (attempt {Attempt}/{Max}).",
+                ServiceName, throttled.Count, wait.TotalSeconds, attempt + 1, RateLimitRetry.DefaultMaxRetries);
+            await _delay(wait, ct);
+            pending = throttled;
         }
-        return result;
+    }
+
+    /// Retry-After (seconds) of one $batch sub-response, zero when absent.
+    private static TimeSpan RetryAfter(JsonElement subResponse)
+    {
+        if (!subResponse.TryGetProperty("headers", out var headers) || headers.ValueKind != JsonValueKind.Object)
+            return TimeSpan.Zero;
+        foreach (var h in headers.EnumerateObject())
+        {
+            if (!string.Equals(h.Name, "Retry-After", StringComparison.OrdinalIgnoreCase)) continue;
+            var raw = h.Value.ValueKind == JsonValueKind.Number ? h.Value.GetRawText() : h.Value.GetString();
+            if (int.TryParse(raw, out var seconds) && seconds > 0)
+                return TimeSpan.FromSeconds(Math.Min(seconds, 120));
+        }
+        return TimeSpan.Zero;
     }
 
     // ---- helpers --------------------------------------------------------
 
-    private static async Task<HttpResponseMessage> SendAsync(
+    /// One Graph call with the shared HTTP 429 handling. The request (and its
+    /// body, via <paramref name="content"/>) is rebuilt for every attempt.
+    private Task<HttpResponseMessage> SendAsync(
         HttpClient client, string token, HttpMethod method, string url, CancellationToken ct,
-        HttpContent? content = null)
-    {
-        using var req = new HttpRequestMessage(method, url);
-        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-        if (content is not null) req.Content = content;
-        return await client.SendAsync(req, ct);
-    }
+        Func<HttpContent>? content = null) =>
+        RateLimitRetry.SendAsync(client, () =>
+        {
+            var req = new HttpRequestMessage(method, url);
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            if (content is not null) req.Content = content();
+            return req;
+        }, _logger, ServiceName, ct, delay: _delay);
 
     private static string JoinLicenses(IReadOnlyList<string> skuIds, Dictionary<string, string> skuMap)
     {
@@ -337,8 +411,6 @@ public sealed class M365GraphReader : IM365GraphReader
         }
         catch (JsonException) { return null; }
     }
-
-    private sealed record CachedToken(string Token, DateTime ExpiresUtc);
 
     private sealed class M365AuthException : Exception
     {
