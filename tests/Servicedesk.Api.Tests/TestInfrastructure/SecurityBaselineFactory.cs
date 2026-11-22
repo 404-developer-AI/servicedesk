@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Xml.Linq;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.AspNetCore.Hosting;
@@ -38,6 +39,11 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
     public readonly InMemorySettingsService Settings = new();
     public readonly InMemorySecretStore Secrets = new();
 
+    // Service providers of every host built from this factory (derived
+    // WithWebHostBuilder hosts included), so ResetState can reach the fakes
+    // that are registered by type and therefore live per host.
+    private readonly ConcurrentBag<IServiceProvider> _builtHosts = new();
+
     private readonly Dictionary<string, string?> _overrides = new()
     {
         ["ConnectionStrings:Postgres"] = "Host=localhost;Database=servicedesk_test_stub;Username=stub;Password=stub",
@@ -48,6 +54,24 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
         ["Security:RateLimit:Global:PermitPerWindow"] = "1000",
         ["Security:RateLimit:Global:WindowSeconds"] = "60",
     };
+
+    /// Puts every shared fake back in its initial state, so one host can serve
+    /// a whole test class (SharedHostFixture). Fakes registered by type live
+    /// per host; <see cref="SharedHostFixture"/> resets those on its hosts.
+    public void ResetState()
+    {
+        Audit.Clear();
+        AuditQuery.Clear();
+        Users.Reset();
+        Sessions.Reset();
+        Totp.Reset();
+        Settings.Reset();
+        Secrets.Clear();
+        foreach (var services in _builtHosts)
+        {
+            (services.GetService<Servicedesk.Infrastructure.Portal.IPortalAccountRepository>() as FakePortalAccountRepository)?.Reset();
+        }
+    }
 
     public SecurityBaselineFactory WithConfig(string key, string? value)
     {
@@ -65,6 +89,11 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
+            // Must stay: without it every disposed host stays in memory
+            // (see the filter; guarded by TestHostLeakTests).
+            services.AddTransient<IStartupFilter, NoExecutionContextFlowStartupFilter>();
+            services.AddSingleton<IStartupFilter>(new TrackBuiltHostStartupFilter(_builtHosts));
+
             // Strip DB-backed hosted services.
             services.RemoveAll<IHostedService>();
             // Keep the secret validator (it only reads config).
@@ -138,6 +167,45 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
     }
 }
 
+/// Builds the request pipeline with execution-context flow suppressed, so
+/// timers the middleware create don't capture the test host.
+///
+/// Mvc.Testing runs Program on its own thread and keeps its HostingListener
+/// (which references the host) in an AsyncLocal there. Every Timer captures
+/// the current execution context, and the rate limiter's replenishment timers,
+/// created when the pipeline is built, live for the rest of the process
+/// (RateLimitingMiddleware is not disposable). Together with the middleware's
+/// own next-delegate (cut by UseServicedeskRateLimiter) that pinned every
+/// disposed host in memory (~15 MB each, hundreds per run): the CI runner ran
+/// low on memory and the backend job slowed from ~15 minutes to an hour.
+/// TestHostLeakTests guards both.
+///
+/// The filter runs on that thread right before the pipeline is built, inside
+/// the host's async StartAsync; the suppression ends when that method yields,
+/// so it covers the middleware constructors. Test-only: production has no such
+/// AsyncLocal at startup.
+internal sealed class NoExecutionContextFlowStartupFilter : IStartupFilter
+{
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+    {
+        if (!ExecutionContext.IsFlowSuppressed())
+        {
+            ExecutionContext.SuppressFlow();
+        }
+        next(app);
+    };
+}
+
+/// Records each host's service provider when its pipeline is built.
+internal sealed class TrackBuiltHostStartupFilter(ConcurrentBag<IServiceProvider> builtHosts) : IStartupFilter
+{
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+    {
+        builtHosts.Add(app.ApplicationServices);
+        next(app);
+    };
+}
+
 internal sealed class InMemoryXmlRepository : IXmlRepository
 {
     private readonly List<XElement> _elements = new();
@@ -170,6 +238,16 @@ public sealed class InMemorySettingsService : ISettingsService
     }
 
     public void Set(string key, string value) => _values[key] = value;
+
+    /// Back to the shipped defaults (SharedHostFixture resets between tests).
+    public void Reset()
+    {
+        _values.Clear();
+        foreach (var d in SettingDefaults.All)
+        {
+            _values[d.Key] = d.Value;
+        }
+    }
 
     public Task EnsureDefaultsAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -209,6 +287,8 @@ public sealed class InMemorySecretStore : IProtectedSecretStore
     private readonly ConcurrentDictionary<string, string> _values = new();
 
     public void Set(string key, string value) => _values[key] = value;
+
+    public void Clear() => _values.Clear();
 
     public Task<string?> GetAsync(string key, CancellationToken ct = default) =>
         Task.FromResult(_values.TryGetValue(key, out var v) ? v : null);
@@ -271,6 +351,23 @@ public sealed class FakeUserService : IUserService
     private readonly ConcurrentDictionary<string, Guid> _byEmail = new(StringComparer.OrdinalIgnoreCase);
 
     public Task<int> CountAsync(CancellationToken ct = default) => Task.FromResult(_byId.Count);
+
+    /// Forget every user and per-user flag (SharedHostFixture resets between tests).
+    public void Reset()
+    {
+        _byId.Clear();
+        _byEmail.Clear();
+        TimesheetManagers.Clear();
+        IsoFlagsByUser.Clear();
+        AssetsEnabled.Clear();
+        AdsolutTimesheetEnabled.Clear();
+        AdsolutOrdersEnabled.Clear();
+        TimesheetBackofficeEnabled.Clear();
+        BackofficeFormsEnabled.Clear();
+        CalendarPlanningEnabled.Clear();
+        OrderManagementEnabled.Clear();
+        InsightsEnabled.Clear();
+    }
 
     /// Test seam: add a Local user row with any role (v0.1.0 — portal tests
     /// need a Customer row the agent login must refuse).
@@ -487,6 +584,12 @@ public sealed class FakeSessionService : ISessionService
     /// (default Admin). Portal tests register a Customer user here.
     public ConcurrentDictionary<Guid, string> Roles { get; } = new();
 
+    public void Reset()
+    {
+        _sessions.Clear();
+        Roles.Clear();
+    }
+
     public Task<Guid> CreateAsync(Guid userId, string? ip, string? userAgent, TimeSpan lifetime, string amr, Guid? impersonatorUserId = null, CancellationToken ct = default)
     {
         var id = Guid.NewGuid();
@@ -632,6 +735,12 @@ public sealed class FakeTotpService : ITotpService
     /// Test seam (v0.1.3): what VerifyAsync answers. Default Rejected so the
     /// legacy tests keep their behaviour; step-up tests flip it to accepted.
     public TwoFactorResult VerifyResult { get; set; } = TwoFactorResult.Rejected;
+
+    public void Reset()
+    {
+        Enabled = false;
+        VerifyResult = TwoFactorResult.Rejected;
+    }
 
     public Task<bool> IsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(Enabled);
     public Task<TotpEnrollment> BeginEnrollAsync(Guid userId, string accountLabel, CancellationToken ct = default) =>

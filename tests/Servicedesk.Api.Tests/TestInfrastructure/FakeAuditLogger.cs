@@ -28,6 +28,12 @@ public sealed class FakeAuditQuery : IAuditQuery
 
     public void Add(AuditLogEntry entry) => _entries.Add(entry);
 
+    public void Clear()
+    {
+        _entries.Clear();
+        _nextId = 1;
+    }
+
     public void Seed(string eventType, string actor, string actorRole, string? target = null)
     {
         _entries.Add(new AuditLogEntry(

@@ -18,8 +18,16 @@ namespace Servicedesk.Api.Tests;
 /// endpoints enforce queue access like every other ticket-scoped surface.
 /// An agent without access to the ticket's queue gets 404 (never 403, so
 /// ticket existence does not leak) on every handler, reads AND writes.
-public sealed class TicketTimesheetQueueAccessTests
+public sealed class TicketTimesheetQueueAccessTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public TicketTimesheetQueueAccessTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private static readonly Guid TicketId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid QueueId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
@@ -37,8 +45,8 @@ public sealed class TicketTimesheetQueueAccessTests
     [MemberData(nameof(Handlers))]
     public async Task Agent_without_queue_access_gets_404(string method, string url, object? body)
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithTicketFakes(factory, hasQueueAccess: false);
+        var factory = _hosts.Base;
+        var host = WithTicketFakes(hasQueueAccess: false);
         var client = await AgentClientAsync(factory, host);
 
         var response = await SendAsync(client, method, url, body);
@@ -50,8 +58,8 @@ public sealed class TicketTimesheetQueueAccessTests
     [MemberData(nameof(Handlers))]
     public async Task Agent_with_queue_access_passes(string method, string url, object? body)
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithTicketFakes(factory, hasQueueAccess: true);
+        var factory = _hosts.Base;
+        var host = WithTicketFakes(hasQueueAccess: true);
         var client = await AgentClientAsync(factory, host);
 
         var response = await SendAsync(client, method, url, body);
@@ -65,8 +73,8 @@ public sealed class TicketTimesheetQueueAccessTests
     [MemberData(nameof(Handlers))]
     public async Task Missing_ticket_gets_404(string method, string url, object? body)
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithTicketFakes(factory, hasQueueAccess: true, ticketExists: false);
+        var factory = _hosts.Base;
+        var host = WithTicketFakes(hasQueueAccess: true, ticketExists: false);
         var client = await AgentClientAsync(factory, host);
 
         var response = await SendAsync(client, method, url, body);
@@ -84,9 +92,9 @@ public sealed class TicketTimesheetQueueAccessTests
     public async Task Dismiss_with_cancel_disabled_only_allows_admin_silent(
         string role, bool silent, HttpStatusCode expected)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Timesheet.TimeAlertAllowCancel, "false");
-        using var host = WithTicketFakes(factory, hasQueueAccess: true);
+        var host = WithTicketFakes(hasQueueAccess: true);
         var client = await AgentClientAsync(factory, host, role);
 
         var url = $"/api/timesheet/ticket/{TicketId}/time-alert/dismiss" + (silent ? "?silent=true" : "");
@@ -97,19 +105,12 @@ public sealed class TicketTimesheetQueueAccessTests
 
     // ---- plumbing ----------------------------------------------------------
 
-    private static WebApplicationFactoryDerived WithTicketFakes(
-        SecurityBaselineFactory factory, bool hasQueueAccess, bool ticketExists = true)
-        => new(factory, hasQueueAccess, ticketExists);
-
-    /// Wraps the baseline factory with the ticket/queue/timesheet fakes this
-    /// endpoint group injects (all Npgsql-backed in production).
-    public sealed class WebApplicationFactoryDerived : IDisposable
-    {
-        private readonly Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> _inner;
-
-        public WebApplicationFactoryDerived(SecurityBaselineFactory factory, bool hasQueueAccess, bool ticketExists)
-        {
-            _inner = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+    /// The baseline host plus the ticket/queue/timesheet fakes this endpoint
+    /// group injects (all Npgsql-backed in production); one host per variant.
+    private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithTicketFakes(
+        bool hasQueueAccess, bool ticketExists = true)
+        => _hosts.Host($"queue-access={hasQueueAccess};ticket-exists={ticketExists}",
+            builder => builder.ConfigureServices(services =>
             {
                 services.RemoveAll<ITicketRepository>();
                 services.AddSingleton<ITicketRepository>(new StubTicketRepository(ticketExists));
@@ -120,15 +121,9 @@ public sealed class TicketTimesheetQueueAccessTests
                 services.RemoveAll<ITicketTimeAlertService>();
                 services.AddSingleton<ITicketTimeAlertService, StubTicketTimeAlertService>();
             }));
-        }
-
-        public HttpClient CreateClient() => _inner.CreateClient();
-
-        public void Dispose() => _inner.Dispose();
-    }
 
     private static async Task<HttpClient> AgentClientAsync(
-        SecurityBaselineFactory factory, WebApplicationFactoryDerived host, string role = "Agent")
+        SecurityBaselineFactory factory, Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> host, string role = "Agent")
     {
         var userId = Guid.NewGuid();
         factory.Sessions.Roles[userId] = role;

@@ -13,8 +13,16 @@ namespace Servicedesk.Api.Tests;
 /// v0.1.54 — group tags: managing groups is admin-only; the shared tags and
 /// the picker are staff-only (customers never reach them). The auth gate
 /// answers before any handler runs, so no database is needed.
-public sealed class TagGroupAuthorizationTests
+public sealed class TagGroupAuthorizationTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public TagGroupAuthorizationTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     [Theory]
     [InlineData("GET", "/api/settings/tag-groups/")]
     [InlineData("POST", "/api/settings/tag-groups/")]
@@ -22,7 +30,7 @@ public sealed class TagGroupAuthorizationTests
     [InlineData("DELETE", "/api/settings/tag-groups/00000000-0000-0000-0000-000000000001")]
     public async Task Agents_cannot_manage_groups(string method, string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientAsync(factory, "Agent");
         var req = new HttpRequestMessage(new HttpMethod(method), url);
         if (method is "POST" or "PUT") req.Content = JsonContent.Create(new { name = "Back office", memberIds = Array.Empty<Guid>() });
@@ -37,7 +45,7 @@ public sealed class TagGroupAuthorizationTests
     [InlineData("POST", "/api/group-tags/00000000-0000-0000-0000-000000000001/ack")]
     public async Task Customers_never_reach_group_tags(string method, string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientAsync(factory, "Customer");
 
         var status = (await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), url))).StatusCode;
@@ -45,7 +53,7 @@ public sealed class TagGroupAuthorizationTests
         Assert.True(status is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized, $"got {status}");
     }
 
-    private static async Task<HttpClient> ClientAsync(SecurityBaselineFactory factory, string role)
+    private async Task<HttpClient> ClientAsync(SecurityBaselineFactory factory, string role)
     {
         var userId = Guid.NewGuid();
         factory.Sessions.Roles[userId] = role;
@@ -53,11 +61,7 @@ public sealed class TagGroupAuthorizationTests
             userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: role == "Customer" ? "pwd+mfa" : "pwd");
         var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
         var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var host = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
-        {
-            services.RemoveAll<NpgsqlDataSource>();
-            services.AddSingleton(NpgsqlDataSource.Create("Host=127.0.0.1;Port=1;Database=none;Username=none;Timeout=1"));
-        }));
+        var host = _hosts.UnreachableDb;
         var client = host.CreateClient();
         client.DefaultRequestHeaders.Add("Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
         client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);

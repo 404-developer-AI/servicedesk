@@ -10,14 +10,22 @@ namespace Servicedesk.Api.Tests;
 
 /// v0.1.27 — GET /api/iso/config: the agent-readable projection the ISO
 /// classification buttons use instead of the admin-only settings list.
-public sealed class IsoConfigEndpointTests
+public sealed class IsoConfigEndpointTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public IsoConfigEndpointTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private static readonly Guid BoundQueue = Guid.Parse("cccccccc-0000-0000-0000-000000000001");
 
     [Fact]
     public async Task Mgm_agent_gets_the_bound_queue_id_only()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Iso27001.QueueId, BoundQueue.ToString());
         var client = await ClientAsync(factory, "Agent", new IsoFlags(Mgm: true, Dpo: false));
 
@@ -35,7 +43,7 @@ public sealed class IsoConfigEndpointTests
     [Fact]
     public async Task Unconfigured_workflow_returns_null_queue()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Iso27001.QueueId, "");
         var client = await ClientAsync(factory, "Agent", new IsoFlags(Mgm: true, Dpo: false));
 
@@ -50,7 +58,7 @@ public sealed class IsoConfigEndpointTests
     [InlineData(false, true)]
     public async Task Agent_without_mgm_flag_gets_403(bool mgm, bool dpo)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Iso27001.QueueId, BoundQueue.ToString());
         var client = await ClientAsync(factory, "Agent", new IsoFlags(mgm, dpo));
 
@@ -63,7 +71,7 @@ public sealed class IsoConfigEndpointTests
     [Fact]
     public async Task Customer_is_refused_even_with_flag()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientAsync(factory, "Customer", new IsoFlags(Mgm: true, Dpo: true));
 
         var response = await client.GetAsync("/api/iso/config");
@@ -77,7 +85,7 @@ public sealed class IsoConfigEndpointTests
     [InlineData("false", false)]
     public async Task Plain_agent_reads_the_ticket_warning_toggle_only(string stored, bool expected)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Tickets.ShowContactNotLinkedWarning, stored);
         var client = await ClientAsync(factory, "Agent", IsoFlags.None);
 

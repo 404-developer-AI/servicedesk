@@ -13,8 +13,16 @@ namespace Servicedesk.Api.Tests;
 
 /// v0.1.14 — Insights Agents overview: agent-selection validation, the
 /// feature-flag gate, queue-access scoping, the grid fold and the PDF.
-public sealed class InsightsAgentsTests
+public sealed class InsightsAgentsTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public InsightsAgentsTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private static readonly Guid QueueA = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
     private static readonly Guid AgentOne = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000001");
     private static readonly Guid AgentTwo = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002");
@@ -30,8 +38,8 @@ public sealed class InsightsAgentsTests
     [InlineData("/api/insights/agents/opened?period=month&agentId=bbbbbbbb-0000-0000-0000-000000000001")]
     public async Task Agent_without_flag_gets_403(string url)
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: false);
 
         var response = await client.GetAsync(url);
@@ -43,8 +51,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task Customer_is_refused_even_with_flag()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var client = await ClientAsync(factory, host, "Customer", insights: true);
 
         var response = await client.GetAsync($"/api/insights/agents?period=month&agentIds={AgentOne}");
@@ -57,8 +65,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task No_agents_is_400()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync("/api/insights/agents?period=month");
@@ -69,8 +77,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task More_agents_than_the_compare_max_is_400()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync(
@@ -83,8 +91,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task Duplicate_ids_count_once()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync(
@@ -97,8 +105,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task A_non_staff_or_unknown_id_fails_the_whole_request()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         // The stub only knows AgentOne/Two/Three — anything else is a customer
@@ -115,8 +123,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task Report_is_scoped_to_the_callers_queues()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync($"/api/insights/agents?period=month&agentIds={AgentOne}&agentIds={AgentTwo}");
@@ -129,8 +137,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task Ticket_list_is_scoped_sorted_and_clamped()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync(
@@ -149,8 +157,8 @@ public sealed class InsightsAgentsTests
     [InlineData("sort=period;drop")]
     public async Task Unknown_sort_is_400(string qs)
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync($"/api/insights/agents/tickets?period=week&agentId={AgentOne}&{qs}");
@@ -161,8 +169,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task Ticket_list_for_a_non_agent_is_400()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync($"/api/insights/agents/tickets?period=week&agentId={Guid.NewGuid()}");
@@ -174,8 +182,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task Pdf_is_audited_and_lists_are_capped()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync(
@@ -190,8 +198,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task Opened_list_is_scoped_clamped_and_uses_the_min_duration_setting()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync(
@@ -208,8 +216,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task Opened_list_for_a_non_agent_is_400()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync($"/api/insights/agents/opened?period=week&agentId={Guid.NewGuid()}");
@@ -221,8 +229,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task Pdf_includes_an_opened_list_per_agent()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync(
@@ -235,8 +243,8 @@ public sealed class InsightsAgentsTests
     [Fact]
     public async Task Pdf_with_unknown_metric_is_400()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync($"/api/insights/agents/pdf?period=month&agentIds={AgentOne}&metric=revenue");
@@ -411,20 +419,20 @@ public sealed class InsightsAgentsTests
             buckets.Select(b => new AgentActivityBucket(b.Start, b.From, b.To, values)).ToList());
     }
 
-    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithStub(
-        SecurityBaselineFactory factory, out StubAgentInsights stub)
+    private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithStub(out StubAgentInsights stub)
     {
-        var s = new StubAgentInsights();
-        stub = s;
-        return factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        var host = _hosts.Host("stubs", builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IAgentInsightsService>();
-            services.AddSingleton<IAgentInsightsService>(s);
+            services.AddSingleton<IAgentInsightsService, StubAgentInsights>();
             services.RemoveAll<IInsightsService>();
             services.AddSingleton<IInsightsService>(new StubClock());
             services.RemoveAll<IQueueAccessService>();
             services.AddSingleton<IQueueAccessService>(new StubQueueAccess());
         }));
+        stub = (StubAgentInsights)host.Services.GetRequiredService<IAgentInsightsService>();
+        stub.Reset();
+        return host;
     }
 
     private static async Task<HttpClient> ClientAsync(
@@ -448,6 +456,19 @@ public sealed class InsightsAgentsTests
 
     private sealed class StubAgentInsights : IAgentInsightsService
     {
+        /// The host (and so this stub) is shared by the class; each test starts clean.
+        public void Reset()
+        {
+            LastScope = null;
+            LastAgents = null;
+            LastListAgent = null;
+            LastSort = null;
+            LastOffset = 0;
+            LastLimit = 0;
+            LastMinSeconds = null;
+            OpenedCalls = 0;
+        }
+
         private static readonly Guid[] Known = { AgentOne, AgentTwo, AgentThree, AgentFour };
 
         public QueueAccessScope? LastScope { get; private set; }

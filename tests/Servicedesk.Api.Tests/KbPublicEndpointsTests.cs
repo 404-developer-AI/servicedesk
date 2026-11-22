@@ -17,8 +17,16 @@ namespace Servicedesk.Api.Tests;
 /// may ever be served, and attachments must refuse both cross-article
 /// guesses and any article that is not Published. The agent-side
 /// public-link-config endpoint stays session-gated.
-public sealed class KbPublicEndpointsTests
+public sealed class KbPublicEndpointsTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public KbPublicEndpointsTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private static readonly Guid PublishedId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid InternalId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly Guid DraftId = Guid.Parse("33333333-3333-3333-3333-333333333333");
@@ -26,8 +34,8 @@ public sealed class KbPublicEndpointsTests
     private static readonly Guid PublishedAttachmentId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid InternalAttachmentId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
-    private static HttpClient CreateClient(SecurityBaselineFactory factory) =>
-        factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+    private HttpClient CreateClient() =>
+        _hosts.Host("kb-fakes", builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IKbArticleRepository>();
             services.AddSingleton<IKbArticleRepository>(new FakeKbArticleRepository());
@@ -42,9 +50,8 @@ public sealed class KbPublicEndpointsTests
     [Fact]
     public async Task PublicArticle_Returns_404_When_Toggle_Off()
     {
-        using var factory = new SecurityBaselineFactory();
         // Default of KnowledgeBase.PublicLinks.Enabled is "false" — no Set().
-        var client = CreateClient(factory);
+        var client = CreateClient();
 
         var response = await client.GetAsync($"/api/public/kb/articles/{PublishedId}");
 
@@ -54,9 +61,9 @@ public sealed class KbPublicEndpointsTests
     [Fact]
     public async Task PublicArticle_Returns_200_For_Published_When_Enabled()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set("KnowledgeBase.PublicLinks.Enabled", "true");
-        var client = CreateClient(factory);
+        var client = CreateClient();
 
         var response = await client.GetAsync($"/api/public/kb/articles/{PublishedId}");
 
@@ -76,9 +83,9 @@ public sealed class KbPublicEndpointsTests
     [InlineData("99999999-9999-9999-9999-999999999999")] // unknown id
     public async Task PublicArticle_Returns_404_For_NonPublished_Even_When_Enabled(string articleId)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set("KnowledgeBase.PublicLinks.Enabled", "true");
-        var client = CreateClient(factory);
+        var client = CreateClient();
 
         var response = await client.GetAsync($"/api/public/kb/articles/{articleId}");
 
@@ -88,9 +95,9 @@ public sealed class KbPublicEndpointsTests
     [Fact]
     public async Task PublicAttachment_Serves_Published_Articles_Attachment()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set("KnowledgeBase.PublicLinks.Enabled", "true");
-        var client = CreateClient(factory);
+        var client = CreateClient();
 
         var response = await client.GetAsync(
             $"/api/public/kb/articles/{PublishedId}/attachments/{PublishedAttachmentId}?inline=true");
@@ -101,9 +108,9 @@ public sealed class KbPublicEndpointsTests
     [Fact]
     public async Task PublicAttachment_Refuses_CrossArticle_Guess()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set("KnowledgeBase.PublicLinks.Enabled", "true");
-        var client = CreateClient(factory);
+        var client = CreateClient();
 
         // The internal article's attachment requested via the published
         // article's id — OwnerId mismatch must 404, otherwise any internal
@@ -117,9 +124,9 @@ public sealed class KbPublicEndpointsTests
     [Fact]
     public async Task PublicAttachment_Refuses_NonPublished_Article()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set("KnowledgeBase.PublicLinks.Enabled", "true");
-        var client = CreateClient(factory);
+        var client = CreateClient();
 
         // Correct owner pairing, but the owning article is Internal.
         var response = await client.GetAsync(
@@ -131,8 +138,7 @@ public sealed class KbPublicEndpointsTests
     [Fact]
     public async Task PublicAttachment_Returns_404_When_Toggle_Off()
     {
-        using var factory = new SecurityBaselineFactory();
-        var client = CreateClient(factory);
+        var client = CreateClient();
 
         var response = await client.GetAsync(
             $"/api/public/kb/articles/{PublishedId}/attachments/{PublishedAttachmentId}");
@@ -143,9 +149,9 @@ public sealed class KbPublicEndpointsTests
     [Fact]
     public async Task PublicLinkConfig_Requires_Session()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set("KnowledgeBase.PublicLinks.Enabled", "true");
-        var client = CreateClient(factory);
+        var client = CreateClient();
 
         var response = await client.GetAsync("/api/kb/public-link-config");
 

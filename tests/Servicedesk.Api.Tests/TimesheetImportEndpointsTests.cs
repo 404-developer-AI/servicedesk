@@ -12,8 +12,16 @@ namespace Servicedesk.Api.Tests;
 /// wrong/missing token, and the admin config surface stays session-gated.
 /// Full import behaviour needs a real Postgres and lives elsewhere; here the
 /// import service is a no-op fake so handler resolution succeeds.
-public sealed class TimesheetImportEndpointsTests
+public sealed class TimesheetImportEndpointsTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public TimesheetImportEndpointsTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private const string TokenHeader = "X-Timesheet-Import-Token";
     private const string Token = "test-import-token-1234567890-abc";
 
@@ -22,7 +30,7 @@ public sealed class TimesheetImportEndpointsTests
     [InlineData("/api/timesheet/import/users")]
     public async Task Migration_surface_is_404_when_disabled(string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         // ImportEnabled defaults to false (seeded from SettingDefaults).
         using var client = factory.CreateClient();
 
@@ -34,7 +42,7 @@ public sealed class TimesheetImportEndpointsTests
     [Fact]
     public async Task Migration_surface_is_404_when_enabled_but_no_token_configured()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Timesheet.ImportEnabled, "true");
         using var client = factory.CreateClient();
 
@@ -46,7 +54,7 @@ public sealed class TimesheetImportEndpointsTests
     [Fact]
     public async Task Migration_surface_is_401_without_token_header()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Timesheet.ImportEnabled, "true");
         factory.Secrets.Set(ProtectedSecretKeys.TimesheetImportToken, Token);
         using var client = factory.CreateClient();
@@ -59,7 +67,7 @@ public sealed class TimesheetImportEndpointsTests
     [Fact]
     public async Task Migration_surface_is_401_with_wrong_token()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Timesheet.ImportEnabled, "true");
         factory.Secrets.Set(ProtectedSecretKeys.TimesheetImportToken, Token);
         using var client = factory.CreateClient();
@@ -74,7 +82,7 @@ public sealed class TimesheetImportEndpointsTests
     [Fact]
     public async Task Migration_surface_allows_correct_token()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Timesheet.ImportEnabled, "true");
         factory.Secrets.Set(ProtectedSecretKeys.TimesheetImportToken, Token);
         using var client = factory.CreateClient();
@@ -90,7 +98,7 @@ public sealed class TimesheetImportEndpointsTests
     [InlineData("/api/admin/timesheet/import/status")]
     public async Task Admin_config_requires_authentication(string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         using var client = factory.CreateClient();
 
         var res = await client.GetAsync(url);

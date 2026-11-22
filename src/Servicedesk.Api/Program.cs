@@ -626,7 +626,7 @@ app.UseRouting();
 // never reach it; the monitor's own endpoints and /hubs are skipped inside.
 app.UseMiddleware<Servicedesk.Api.Performance.PerfHttpMiddleware>();
 
-app.UseRateLimiter();
+app.UseServicedeskRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<DoubleSubmitCsrfMiddleware>();

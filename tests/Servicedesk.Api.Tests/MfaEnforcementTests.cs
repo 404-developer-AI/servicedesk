@@ -12,12 +12,20 @@ namespace Servicedesk.Api.Tests;
 /// This guards against the MFA-bypass where the password-only cookie was usable
 /// directly via curl/proxy. The FakeSessionService synthesises an Admin user,
 /// so reaching the Admin-only audit endpoint isolates the amr gate.
-public sealed class MfaEnforcementTests
+public sealed class MfaEnforcementTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public MfaEnforcementTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     [Fact]
     public async Task Pending_mfa_session_is_forbidden_on_protected_endpoint()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientWithSession(factory, SessionAuthenticationHandler.AmrPending);
 
         var response = await client.GetAsync("/api/audit/");
@@ -29,7 +37,7 @@ public sealed class MfaEnforcementTests
     [Fact]
     public async Task Verified_mfa_session_passes_the_gate()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientWithSession(factory, "pwd+mfa");
 
         var response = await client.GetAsync("/api/audit/");
@@ -43,7 +51,7 @@ public sealed class MfaEnforcementTests
     {
         // A user without 2FA gets a fully-authorized "pwd" session — the gate
         // must not block them (it's a deny-pending blacklist, not a whitelist).
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientWithSession(factory, "pwd");
 
         var response = await client.GetAsync("/api/audit/");

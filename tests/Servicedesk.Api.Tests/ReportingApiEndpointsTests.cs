@@ -14,8 +14,16 @@ namespace Servicedesk.Api.Tests;
 /// allowed caller with a wrong/missing key; and the admin config surface
 /// stays session-gated. Real SQL needs Postgres and lives elsewhere; the
 /// report service here is an empty fake so handler resolution succeeds.
-public sealed class ReportingApiEndpointsTests
+public sealed class ReportingApiEndpointsTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public ReportingApiEndpointsTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private const string KeyHeader = "X-Reporting-Api-Key";
     private const string ApiKey = "test-reporting-key-1234567890-abc";
     private const string Url = "/api/reporting/tickets?from=2026-08-01&to=2026-09-01";
@@ -25,7 +33,7 @@ public sealed class ReportingApiEndpointsTests
     [InlineData("/api/reporting/companies")]
     public async Task Public_surface_is_404_when_disabled(string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         // Reporting.Enabled defaults to false (seeded from SettingDefaults).
         using var client = factory.CreateClient();
 
@@ -37,7 +45,7 @@ public sealed class ReportingApiEndpointsTests
     [Fact]
     public async Task Public_surface_is_404_when_enabled_but_no_key_configured()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
         using var client = factory.CreateClient();
 
@@ -51,7 +59,7 @@ public sealed class ReportingApiEndpointsTests
     [InlineData("/api/reporting/companies")]
     public async Task Public_surface_is_401_without_key_header(string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
         factory.Secrets.Set(ProtectedSecretKeys.ReportingApiKey, ApiKey);
         using var client = factory.CreateClient();
@@ -64,7 +72,7 @@ public sealed class ReportingApiEndpointsTests
     [Fact]
     public async Task Public_surface_is_401_with_wrong_key()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
         factory.Secrets.Set(ProtectedSecretKeys.ReportingApiKey, ApiKey);
         using var client = factory.CreateClient();
@@ -79,7 +87,7 @@ public sealed class ReportingApiEndpointsTests
     [Fact]
     public async Task Public_surface_is_404_when_ip_outside_allow_list_even_with_correct_key()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
         factory.Settings.Set(SettingKeys.Reporting.IpAllowList, "203.0.113.0/24");
         factory.Secrets.Set(ProtectedSecretKeys.ReportingApiKey, ApiKey);
@@ -98,7 +106,7 @@ public sealed class ReportingApiEndpointsTests
     [Fact]
     public async Task Public_surface_allows_correct_key()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
         factory.Secrets.Set(ProtectedSecretKeys.ReportingApiKey, ApiKey);
         using var client = factory.CreateClient();
@@ -118,7 +126,7 @@ public sealed class ReportingApiEndpointsTests
     [Fact]
     public async Task Companies_list_allows_correct_key()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
         factory.Secrets.Set(ProtectedSecretKeys.ReportingApiKey, ApiKey);
         using var client = factory.CreateClient();
@@ -136,7 +144,7 @@ public sealed class ReportingApiEndpointsTests
     [Fact]
     public async Task Tickets_accepts_company_filter()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
         factory.Secrets.Set(ProtectedSecretKeys.ReportingApiKey, ApiKey);
         using var client = factory.CreateClient();
@@ -157,7 +165,7 @@ public sealed class ReportingApiEndpointsTests
     [InlineData(Url + "&companyId=not-a-uuid")]
     public async Task Public_surface_rejects_invalid_period(string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
         factory.Secrets.Set(ProtectedSecretKeys.ReportingApiKey, ApiKey);
         using var client = factory.CreateClient();
@@ -172,7 +180,7 @@ public sealed class ReportingApiEndpointsTests
     [Fact]
     public async Task Admin_config_requires_authentication()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         using var client = factory.CreateClient();
 
         var res = await client.GetAsync("/api/admin/reporting/status");

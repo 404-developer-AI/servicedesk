@@ -12,12 +12,20 @@ namespace Servicedesk.Api.Tests;
 /// one), the no-store default on API responses and the cache clear on
 /// sign-out. The session id is the cookie token, so these tests also pin that
 /// it never appears in a response.
-public sealed class MySessionsTests
+public sealed class MySessionsTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public MySessionsTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     [Fact]
     public async Task List_returns_only_own_open_sessions_marks_current_and_never_exposes_the_token()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var userId = Guid.NewGuid();
         var (client, currentSessionId) = await AgentClient(factory, userId);
         var otherDevice = await factory.Sessions.CreateAsync(userId, null, null, TimeSpan.FromHours(1), "pwd+mfa");
@@ -43,7 +51,7 @@ public sealed class MySessionsTests
     [Fact]
     public async Task Revoking_another_device_kills_that_session_and_keeps_the_current_one()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var userId = Guid.NewGuid();
         var (client, currentSessionId) = await AgentClient(factory, userId);
         var lostPhone = await factory.Sessions.CreateAsync(userId, null, null, TimeSpan.FromHours(1), "pwd+mfa");
@@ -62,7 +70,7 @@ public sealed class MySessionsTests
     [Fact]
     public async Task Another_users_session_cannot_be_revoked()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, _) = await AgentClient(factory, Guid.NewGuid());
         var foreign = await factory.Sessions.CreateAsync(Guid.NewGuid(), null, null, TimeSpan.FromHours(1), "pwd+mfa");
 
@@ -75,7 +83,7 @@ public sealed class MySessionsTests
     [Fact]
     public async Task The_current_session_is_not_revocable_through_the_sessions_endpoint()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, currentSessionId) = await AgentClient(factory, Guid.NewGuid());
 
         var response = await client.DeleteAsync($"/api/auth/sessions/{factory.Sessions.PublicIdOf(currentSessionId)}");
@@ -87,7 +95,7 @@ public sealed class MySessionsTests
     [Fact]
     public async Task Revoke_others_signs_out_every_other_device_only()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var userId = Guid.NewGuid();
         var (client, currentSessionId) = await AgentClient(factory, userId);
         var tablet = await factory.Sessions.CreateAsync(userId, null, null, TimeSpan.FromHours(1), "pwd+mfa");
@@ -106,7 +114,7 @@ public sealed class MySessionsTests
     [Fact]
     public async Task Sessions_endpoints_require_a_signed_in_agent()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var anonymous = factory.CreateClient();
 
         var list = await anonymous.GetAsync("/api/auth/sessions");
@@ -117,7 +125,7 @@ public sealed class MySessionsTests
     [Fact]
     public async Task Api_responses_default_to_no_store()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, _) = await AgentClient(factory, Guid.NewGuid());
 
         var response = await client.GetAsync("/api/settings/navigation");
@@ -129,7 +137,7 @@ public sealed class MySessionsTests
     [Fact]
     public async Task Sign_out_asks_the_browser_to_drop_its_cache()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, _) = await AgentClient(factory, Guid.NewGuid());
 
         var response = await client.PostAsJsonAsync("/api/auth/logout", new { });
@@ -142,7 +150,7 @@ public sealed class MySessionsTests
     [Fact]
     public async Task Mobile_settings_projection_is_agent_readable_and_anonymous_is_refused()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, _) = await AgentClient(factory, Guid.NewGuid());
 
         var ok = await client.GetFromJsonAsync<JsonElement>("/api/settings/mobile");

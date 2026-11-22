@@ -17,17 +17,25 @@ namespace Servicedesk.Api.Tests;
 
 /// Telavox contact lookup (v0.1.35): invisible unless switched on with a
 /// token, 401 + audit on a wrong token, name + company only on a hit.
-public sealed class TelavoxContactLookupTests
+public sealed class TelavoxContactLookupTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public TelavoxContactLookupTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private const string Token = "test-token-0123456789abcdefghijklmnopqrstuv";
     private const string Url = "/api/public/telavox/contact-lookup?number=%2B32498123456";
 
     [Fact]
     public async Task Switched_off_answers_404_even_with_the_right_token()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Secrets.Set(ProtectedSecretKeys.TelavoxContactLookupToken, Token);
-        var client = CreateClient(factory, out _);
+        var client = CreateClient(out _);
 
         var response = await SendAsync(client, Url, Token);
 
@@ -37,9 +45,9 @@ public sealed class TelavoxContactLookupTests
     [Fact]
     public async Task Switched_on_without_a_token_answers_404()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Telavox.ContactLookupEnabled, "true");
-        var client = CreateClient(factory, out _);
+        var client = CreateClient(out _);
 
         var response = await SendAsync(client, Url, Token);
 
@@ -51,8 +59,8 @@ public sealed class TelavoxContactLookupTests
     [InlineData("wrong-token")]
     public async Task Missing_or_wrong_token_gets_401_and_is_audited(string? presented)
     {
-        using var factory = Enabled();
-        var client = CreateClient(factory, out var repo);
+        var factory = Enabled();
+        var client = CreateClient(out var repo);
         repo.Rows.Add(Row("Jan", "Peeters", "Acme"));
 
         var response = await SendAsync(client, Url, presented);
@@ -66,8 +74,8 @@ public sealed class TelavoxContactLookupTests
     [Fact]
     public async Task Hit_returns_only_name_and_company()
     {
-        using var factory = Enabled();
-        var client = CreateClient(factory, out var repo);
+        var factory = Enabled();
+        var client = CreateClient(out var repo);
         repo.Rows.Add(Row("Jan", "Peeters", "Acme"));
 
         var response = await SendAsync(client, Url, Token);
@@ -85,8 +93,8 @@ public sealed class TelavoxContactLookupTests
     [Fact]
     public async Task Unencoded_plus_in_the_query_still_matches()
     {
-        using var factory = Enabled();
-        var client = CreateClient(factory, out var repo);
+        var factory = Enabled();
+        var client = CreateClient(out var repo);
         repo.Rows.Add(Row("Jan", "Peeters", "Acme"));
 
         // Telavox may substitute {system.caller} without encoding the '+'.
@@ -99,8 +107,8 @@ public sealed class TelavoxContactLookupTests
     [Fact]
     public async Task No_match_answers_404()
     {
-        using var factory = Enabled();
-        var client = CreateClient(factory, out _);
+        var factory = Enabled();
+        var client = CreateClient(out _);
 
         var response = await SendAsync(client, Url, Token);
 
@@ -110,7 +118,7 @@ public sealed class TelavoxContactLookupTests
     [Fact]
     public async Task Token_admin_routes_need_an_admin()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = factory.CreateClient();
 
         var response = await client.PostAsync("/api/admin/integrations/telavox/contact-lookup/token", null);
@@ -158,24 +166,27 @@ public sealed class TelavoxContactLookupTests
 
     // ---- helpers ----------------------------------------------------------
 
-    private static SecurityBaselineFactory Enabled()
+    private SecurityBaselineFactory Enabled()
     {
-        var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Telavox.ContactLookupEnabled, "true");
         factory.Settings.Set(SettingKeys.Telavox.DefaultCountryCode, "BE");
         factory.Secrets.Set(ProtectedSecretKeys.TelavoxContactLookupToken, Token);
         return factory;
     }
 
-    private static HttpClient CreateClient(SecurityBaselineFactory factory, out FakeCompanyLookup repo)
+    private HttpClient CreateClient(out FakeCompanyLookup repo)
     {
-        var fake = CompanyLookupProxy.Create();
-        repo = fake;
-        var host = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        var host = _hosts.Host("company-lookup", builder => builder.ConfigureServices(services =>
         {
+            services.AddSingleton(_ => CompanyLookupProxy.Create());
             services.RemoveAll<ICompanyRepository>();
-            services.AddSingleton((ICompanyRepository)fake.Proxy);
+            services.AddSingleton(sp => (ICompanyRepository)sp.GetRequiredService<FakeCompanyLookup>().Proxy);
         }));
+        // One fake per shared host; each test starts with an empty one.
+        repo = host.Services.GetRequiredService<FakeCompanyLookup>();
+        repo.Rows.Clear();
+        repo.LastNumber = null;
         return host.CreateClient();
     }
 

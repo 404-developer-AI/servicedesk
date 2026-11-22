@@ -17,15 +17,23 @@ namespace Servicedesk.Api.Tests;
 ///   * Agent endpoints stay closed to customers (role gate).
 ///   * The whole portal surface answers 404 while Portal.Enabled is off.
 ///   * Anonymous portal auth POSTs are CSRF-exempt; session-bound ones are not.
-public sealed class PortalAuthorizationTests
+public sealed class PortalAuthorizationTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public PortalAuthorizationTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     // v0.1.1 fix — a live staff session whose CSRF cookie was wiped (the
     // pre-split shared-cookie bug did exactly that on every portal logout)
     // must get a fresh one from /me, otherwise sign-out itself 403s forever.
     [Fact]
     public async Task Staff_me_remints_a_missing_csrf_cookie()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientWithSession(factory, "Admin", "pwd+mfa"); // no CSRF cookie sent
 
         var response = await client.GetAsync("/api/auth/me");
@@ -40,7 +48,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Staff_me_leaves_an_existing_csrf_cookie_alone()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientWithSession(factory, "Admin", "pwd+mfa", withCsrf: true);
 
         var response = await client.GetAsync("/api/auth/me");
@@ -53,7 +61,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Pending_customer_session_is_forbidden_on_portal_tickets()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var client = await ClientWithSession(factory, "Customer", SessionAuthenticationHandler.AmrPending);
 
@@ -67,7 +75,7 @@ public sealed class PortalAuthorizationTests
     {
         // Unlike the agent policies (deny-pending blacklist), the portal
         // whitelists pwd+mfa — TOTP is mandatory for customers.
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var client = await ClientWithSession(factory, "Customer", "pwd");
 
@@ -79,7 +87,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Mfa_complete_customer_session_passes_the_portal_gate()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var client = await ClientWithSession(factory, "Customer", "pwd+mfa");
 
@@ -96,7 +104,7 @@ public sealed class PortalAuthorizationTests
     [InlineData("Agent")]
     public async Task Agents_and_admins_are_forbidden_on_portal_tickets(string role)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var client = await ClientWithSession(factory, role, "pwd+mfa");
 
@@ -111,7 +119,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Earlier_messages_of_a_ticket_outside_the_scope_are_a_404()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var client = await ClientWithSession(factory, "Customer", "pwd+mfa", withDataSource: true);
 
@@ -123,7 +131,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Customer_session_is_forbidden_on_agent_endpoints()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientWithSession(factory, "Customer", "pwd+mfa");
 
         var tickets = await client.GetAsync("/api/tickets/");
@@ -140,7 +148,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Portal_public_surface_is_404_while_disabled()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "false");
         var client = factory.CreateClient();
 
@@ -159,7 +167,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Anonymous_portal_login_is_csrf_exempt_but_session_bound_endpoints_are_not()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var anon = factory.CreateClient();
 
@@ -177,7 +185,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Agent_login_refuses_customer_accounts()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = factory.CreateClient();
         // FakeUserService creates Admin rows only, so seed a Customer row
         // through the same helper it exposes and then attempt the agent login.
@@ -196,7 +204,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Impersonated_session_passes_the_portal_read_gate()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var client = await ClientWithSession(factory, "Customer", SessionAuthenticationHandler.AmrImpersonated);
 
@@ -209,7 +217,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Impersonated_session_is_refused_on_every_portal_write()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var client = await ClientWithSession(factory, "Customer", SessionAuthenticationHandler.AmrImpersonated, withCsrf: true);
 
@@ -229,7 +237,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Impersonate_endpoint_is_admin_only()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var agent = await ClientWithSession(factory, "Agent", "pwd+mfa", withCsrf: true);
         var customer = await ClientWithSession(factory, "Customer", "pwd+mfa", withCsrf: true);
@@ -244,7 +252,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Impersonate_refuses_unknown_accounts()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var admin = await ClientWithSession(factory, "Admin", "pwd+mfa", withCsrf: true);
 
@@ -256,7 +264,7 @@ public sealed class PortalAuthorizationTests
     [Fact]
     public async Task Impersonate_mints_a_read_only_session_on_the_portal_cookie()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
 
         // Seed an Active customer account behind the fake repositories.
@@ -293,7 +301,7 @@ public sealed class PortalAuthorizationTests
         // v0.1.1 — the portal rides its own session cookie. A fully valid
         // customer session presented under the STAFF cookie name must not
         // authenticate on /api/portal/*.
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var userId = Guid.NewGuid();
         factory.Sessions.Roles[userId] = "Customer";
@@ -308,7 +316,7 @@ public sealed class PortalAuthorizationTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    private static async Task<HttpClient> ClientWithSession(SecurityBaselineFactory factory, string role, string amr, bool withCsrf = false, bool withDataSource = false)
+    private async Task<HttpClient> ClientWithSession(SecurityBaselineFactory factory, string role, string amr, bool withCsrf = false, bool withDataSource = false)
     {
         var userId = Guid.NewGuid();
         factory.Sessions.Roles[userId] = role;
@@ -322,11 +330,7 @@ public sealed class PortalAuthorizationTests
         // that gets past authorization needs a data source — an unreachable
         // one, as these tests must answer before any query.
         var client = withDataSource
-            ? factory.WithWebHostBuilder(b => b.ConfigureServices(services =>
-              {
-                  services.RemoveAll<Npgsql.NpgsqlDataSource>();
-                  services.AddSingleton(Npgsql.NpgsqlDataSource.Create("Host=127.0.0.1;Port=1;Database=none;Username=none;Timeout=1"));
-              })).CreateClient()
+            ? _hosts.UnreachableDb.CreateClient()
             : factory.CreateClient();
         var cookie = $"{cookieName}={sessionId}; {portalCookieName}={sessionId}";
         if (withCsrf)

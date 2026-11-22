@@ -15,8 +15,16 @@ namespace Servicedesk.Api.Tests;
 /// v0.1.54 — replies and likes on internal notes are staff-only: a customer
 /// never reaches the routes, and the reply search source gives customers and
 /// queue-less agents zero hits without touching the database.
-public sealed class NoteThreadAuthorizationTests
+public sealed class NoteThreadAuthorizationTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public NoteThreadAuthorizationTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private const string T = "/api/tickets/00000000-0000-0000-0000-000000000001";
 
     [Theory]
@@ -30,17 +38,13 @@ public sealed class NoteThreadAuthorizationTests
     [InlineData("DELETE", T + "/replies/1/like")]
     public async Task Customers_never_reach_note_threads(string method, string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var userId = Guid.NewGuid();
         factory.Sessions.Roles[userId] = "Customer";
         var sessionId = await factory.Sessions.CreateAsync(userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd+mfa");
         var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
         var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = factory.WithWebHostBuilder(b => b.ConfigureServices(s =>
-        {
-            s.RemoveAll<NpgsqlDataSource>();
-            s.AddSingleton(NpgsqlDataSource.Create("Host=127.0.0.1;Port=1;Database=none;Username=none;Timeout=1"));
-        })).CreateClient();
+        var client = _hosts.UnreachableDb.CreateClient();
         client.DefaultRequestHeaders.Add("Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
         client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
         var req = new HttpRequestMessage(new HttpMethod(method), url);

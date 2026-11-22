@@ -16,8 +16,16 @@ namespace Servicedesk.Api.Tests;
 /// (found 2026-10-09: these routes served data to any agent regardless of
 /// the flag). Every route behind a flag answers 403 for an agent with the
 /// flag off — the handler never runs, so no DB is needed.
-public sealed class FeatureFlagEnforcementTests
+public sealed class FeatureFlagEnforcementTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public FeatureFlagEnforcementTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     [Theory]
     // assets_enabled
     [InlineData("GET", "/api/assets/")]
@@ -65,7 +73,7 @@ public sealed class FeatureFlagEnforcementTests
     [InlineData("DELETE", "/api/tickets/00000000-0000-0000-0000-000000000001/tdsynnex-orders/00000000-0000-0000-0000-000000000002")]
     public async Task Agent_without_flag_gets_403(string method, string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, _) = await ClientAsync(factory, "Agent");
 
         var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), url));
@@ -78,7 +86,7 @@ public sealed class FeatureFlagEnforcementTests
     [InlineData("Admin")]
     public async Task The_flag_alone_decides_whatever_the_role(string role)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, userId) = await ClientAsync(factory, role);
 
         var off = await client.GetAsync("/api/assets/sync-state");
@@ -103,7 +111,7 @@ public sealed class FeatureFlagEnforcementTests
     [InlineData("cwi")]
     public async Task Backoffice_checks_need_the_backoffice_flag(string context)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, userId) = await ClientAsync(factory, "Agent");
         factory.Users.AdsolutTimesheetEnabled[userId] = true; // the other flag doesn't count
 
@@ -116,7 +124,7 @@ public sealed class FeatureFlagEnforcementTests
     [Fact]
     public async Task Adsolut_checks_need_the_adsolut_timesheet_flag()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, userId) = await ClientAsync(factory, "Agent");
         factory.Users.TimesheetBackofficeEnabled[userId] = true; // the other flag doesn't count
 
@@ -153,7 +161,7 @@ public sealed class FeatureFlagEnforcementTests
     [Fact]
     public async Task Backoffice_forms_need_their_own_flag_also_for_admins()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, userId) = await ClientAsync(factory, "Admin");
         factory.Users.TimesheetBackofficeEnabled[userId] = true; // the timesheet back-office flag doesn't count
 
@@ -165,7 +173,7 @@ public sealed class FeatureFlagEnforcementTests
     [Fact]
     public async Task Order_management_needs_its_own_flag_also_for_admins()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var (client, userId) = await ClientAsync(factory, "Admin");
         factory.Users.AdsolutOrdersEnabled[userId] = true; // the Adsolut orders flag doesn't count
 
@@ -225,7 +233,7 @@ public sealed class FeatureFlagEnforcementTests
         Assert.False(src.IsAvailableFor(new SearchPrincipal(Guid.NewGuid(), "Customer", null)));
     }
 
-    private static async Task<(HttpClient Client, Guid UserId)> ClientAsync(
+    private async Task<(HttpClient Client, Guid UserId)> ClientAsync(
         SecurityBaselineFactory factory, string role)
     {
         var userId = Guid.NewGuid();
@@ -237,12 +245,7 @@ public sealed class FeatureFlagEnforcementTests
         // Handlers are bound (and their services resolved) before the endpoint
         // filter runs, so the host needs a data source — an unreachable one,
         // since a gated request must never reach it.
-        var host = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
-        {
-            services.RemoveAll<NpgsqlDataSource>();
-            services.AddSingleton(NpgsqlDataSource.Create("Host=127.0.0.1;Port=1;Database=none;Username=none;Timeout=1"));
-        }));
-        var client = host.CreateClient();
+        var client = _hosts.UnreachableDb.CreateClient();
         client.DefaultRequestHeaders.Add(
             "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
         client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);

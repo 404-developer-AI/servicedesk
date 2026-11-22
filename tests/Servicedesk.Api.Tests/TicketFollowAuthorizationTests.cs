@@ -12,8 +12,16 @@ namespace Servicedesk.Api.Tests;
 
 /// v0.1.54 — following tickets is staff-only: a customer never reaches the
 /// Following list or the follow / unfollow / seen routes.
-public sealed class TicketFollowAuthorizationTests
+public sealed class TicketFollowAuthorizationTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public TicketFollowAuthorizationTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private const string T = "/api/tickets/00000000-0000-0000-0000-000000000001";
 
     [Theory]
@@ -24,17 +32,13 @@ public sealed class TicketFollowAuthorizationTests
     [InlineData("PUT", T + "/follow/note")]
     public async Task Customers_never_reach_following(string method, string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var userId = Guid.NewGuid();
         factory.Sessions.Roles[userId] = "Customer";
         var sessionId = await factory.Sessions.CreateAsync(userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd+mfa");
         var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
         var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = factory.WithWebHostBuilder(b => b.ConfigureServices(s =>
-        {
-            s.RemoveAll<NpgsqlDataSource>();
-            s.AddSingleton(NpgsqlDataSource.Create("Host=127.0.0.1;Port=1;Database=none;Username=none;Timeout=1"));
-        })).CreateClient();
+        var client = _hosts.UnreachableDb.CreateClient();
         client.DefaultRequestHeaders.Add("Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
         client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
         var req = new HttpRequestMessage(new HttpMethod(method), url);

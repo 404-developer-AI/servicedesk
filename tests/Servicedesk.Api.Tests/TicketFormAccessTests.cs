@@ -17,8 +17,16 @@ namespace Servicedesk.Api.Tests;
 /// template API, and the search source yields zero hits for anyone without
 /// queue access. Queue access on a specific ticket/form is enforced by the
 /// shared mutation precheck inside TicketFormService (404 like the ticket API).
-public sealed class TicketFormAccessTests
+public sealed class TicketFormAccessTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public TicketFormAccessTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private const string AnyId = "00000000-0000-0000-0000-000000000001";
 
     [Theory]
@@ -31,7 +39,7 @@ public sealed class TicketFormAccessTests
     [InlineData("GET", $"/api/ticket-forms/{AnyId}/versions")]
     public async Task Customer_cannot_reach_the_forms_api(string method, string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientAsync(factory, "Customer");
 
         var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), url));
@@ -42,7 +50,7 @@ public sealed class TicketFormAccessTests
     [Fact]
     public async Task Customer_cannot_save_a_form()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientAsync(factory, "Customer");
 
         var response = await client.PostAsJsonAsync($"/api/tickets/{AnyId}/forms",
@@ -57,7 +65,7 @@ public sealed class TicketFormAccessTests
     [InlineData("DELETE", $"/api/settings/form-templates/{AnyId}")]
     public async Task Agent_cannot_manage_templates(string method, string url)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientAsync(factory, "Agent");
 
         var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), url));
@@ -98,7 +106,7 @@ public sealed class TicketFormAccessTests
         Assert.True(src.IsAvailableFor(new SearchPrincipal(Guid.NewGuid(), "Admin", null)));
     }
 
-    private static async Task<HttpClient> ClientAsync(SecurityBaselineFactory factory, string role)
+    private async Task<HttpClient> ClientAsync(SecurityBaselineFactory factory, string role)
     {
         var userId = Guid.NewGuid();
         factory.Sessions.Roles[userId] = role;
@@ -106,12 +114,7 @@ public sealed class TicketFormAccessTests
             userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
         var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
         var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var host = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
-        {
-            services.RemoveAll<NpgsqlDataSource>();
-            services.AddSingleton(NpgsqlDataSource.Create("Host=127.0.0.1;Port=1;Database=none;Username=none;Timeout=1"));
-        }));
-        var client = host.CreateClient();
+        var client = _hosts.UnreachableDb.CreateClient();
         client.DefaultRequestHeaders.Add(
             "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
         client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);

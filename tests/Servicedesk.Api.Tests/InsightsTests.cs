@@ -14,8 +14,16 @@ namespace Servicedesk.Api.Tests;
 
 /// v0.1.13 — Insights reporting dashboard: calendar math, the per-user
 /// feature-flag gate, queue-access scoping and the PDF export.
-public sealed class InsightsTests
+public sealed class InsightsTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public InsightsTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private static readonly Guid QueueA = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
     private static readonly Guid QueueB = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000002");
 
@@ -177,8 +185,8 @@ public sealed class InsightsTests
     [InlineData("/api/insights/closed-tickets/tickets?period=month")]
     public async Task Agent_without_flag_gets_403(string url)
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var (client, _) = await ClientAsync(factory, host, "Agent", insights: false);
 
         var response = await client.GetAsync(url);
@@ -191,8 +199,8 @@ public sealed class InsightsTests
     [InlineData("/api/insights/new-tickets?period=month")]
     public async Task Customer_is_refused_even_with_flag(string url)
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var (client, _) = await ClientAsync(factory, host, "Customer", insights: true);
 
         var response = await client.GetAsync(url);
@@ -204,8 +212,8 @@ public sealed class InsightsTests
     [Fact]
     public async Task Agent_with_flag_gets_report_scoped_to_their_queues()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var (client, _) = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync("/api/insights/new-tickets?period=month");
@@ -219,8 +227,8 @@ public sealed class InsightsTests
     [Fact]
     public async Task Pdf_with_only_foreign_queue_ids_is_rejected()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var (client, _) = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync($"/api/insights/new-tickets/pdf?period=month&queueIds={Guid.NewGuid()}");
@@ -231,8 +239,8 @@ public sealed class InsightsTests
     [Fact]
     public async Task Pdf_export_returns_pdf_and_is_audited()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var (client, _) = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync($"/api/insights/new-tickets/pdf?period=month&queueIds={QueueA}");
@@ -245,8 +253,8 @@ public sealed class InsightsTests
     [Fact]
     public async Task Ticket_list_is_access_scoped_and_page_size_clamped()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var (client, _) = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync(
@@ -308,8 +316,8 @@ public sealed class InsightsTests
     [Fact]
     public async Task Closed_report_passes_outcomes_and_scope()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(out var stub);
         var (client, _) = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync("/api/insights/closed-tickets?period=month&outcomes=resolved,merged");
@@ -322,8 +330,8 @@ public sealed class InsightsTests
     [Fact]
     public async Task Closed_pdf_is_audited_with_its_kind()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var (client, _) = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync("/api/insights/closed-tickets/pdf?period=month");
@@ -335,8 +343,8 @@ public sealed class InsightsTests
     [Fact]
     public async Task Unknown_report_kind_is_404()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var (client, _) = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync("/api/insights/deleted-tickets?period=month");
@@ -347,8 +355,8 @@ public sealed class InsightsTests
     [Fact]
     public async Task Empty_outcome_selection_returns_400()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var (client, _) = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync("/api/insights/closed-tickets?period=month&outcomes=bogus");
@@ -370,8 +378,8 @@ public sealed class InsightsTests
     [Fact]
     public async Task Bad_query_returns_400()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(out _);
         var (client, _) = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync("/api/insights/new-tickets?period=custom&from=2026-10-01&to=2026-09-01");
@@ -392,18 +400,18 @@ public sealed class InsightsTests
             buckets);
     }
 
-    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithStub(
-        SecurityBaselineFactory factory, out StubInsightsService stub)
+    private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithStub(out StubInsightsService stub)
     {
-        var s = new StubInsightsService();
-        stub = s;
-        return factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        var host = _hosts.Host("stubs", builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IInsightsService>();
-            services.AddSingleton<IInsightsService>(s);
+            services.AddSingleton<IInsightsService, StubInsightsService>();
             services.RemoveAll<IQueueAccessService>();
             services.AddSingleton<IQueueAccessService>(new StubQueueAccess());
         }));
+        stub = (StubInsightsService)host.Services.GetRequiredService<IInsightsService>();
+        stub.Reset();
+        return host;
     }
 
     private static async Task<(HttpClient Client, Guid UserId)> ClientAsync(
@@ -427,6 +435,16 @@ public sealed class InsightsTests
 
     private sealed class StubInsightsService : IInsightsService
     {
+        /// The host (and so this stub) is shared by the class; each test starts clean.
+        public void Reset()
+        {
+            LastScope = null;
+            LastQueueIds = null;
+            LastOffset = 0;
+            LastLimit = 0;
+            LastFilter = null;
+        }
+
         public QueueAccessScope? LastScope { get; private set; }
         public Guid[]? LastQueueIds { get; private set; }
         public int LastOffset { get; private set; }

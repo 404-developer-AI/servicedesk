@@ -8,6 +8,13 @@ namespace Servicedesk.Api.Tests.TestInfrastructure;
 /// need the pipeline to reach the handler; the data layer stays empty.
 public sealed class FakePortalAccountRepository : IPortalAccountRepository
 {
+    public void Reset()
+    {
+        Account = null;
+        Viewer = null;
+        ConversationOrders.Clear();
+    }
+
     public Task<Guid?> CreatePendingRegistrationAsync(string email, string passwordHash, string displayName, string? ip, string? userAgent, CancellationToken ct) => Task.FromResult<Guid?>(null);
     public Task<Guid?> CreateInvitedAccountAsync(string email, string passwordHash, string displayName, Guid contactId, Guid? invitedByUserId, CancellationToken ct) => Task.FromResult<Guid?>(null);
     /// Test seam (v0.1.1) — the impersonate endpoint needs an Active row.

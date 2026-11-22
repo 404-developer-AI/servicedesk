@@ -11,8 +11,16 @@ namespace Servicedesk.Api.Tests;
 /// v0.1.15 — the customer's conversation order on a portal ticket: kept on
 /// the account, admin default as fallback, never writable from a shadow
 /// session, closed to agents, 404 while the portal is off.
-public sealed class PortalConversationOrderTests
+public sealed class PortalConversationOrderTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public PortalConversationOrderTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private const string Url = "/api/portal/preferences/conversation-order";
 
     private sealed record Pref(string Order, string Source);
@@ -20,7 +28,7 @@ public sealed class PortalConversationOrderTests
     [Fact]
     public async Task Without_a_choice_the_admin_default_applies()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         factory.Settings.Set(SettingKeys.Portal.ConversationOrder, "newest");
         var (client, _) = await CustomerClient(factory, "pwd+mfa");
@@ -33,7 +41,7 @@ public sealed class PortalConversationOrderTests
     [Fact]
     public async Task A_saved_choice_is_returned_and_kept_on_the_account()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var (client, userId) = await CustomerClient(factory, "pwd+mfa", withCsrf: true);
 
@@ -51,7 +59,7 @@ public sealed class PortalConversationOrderTests
     [InlineData(null)]
     public async Task An_unknown_order_is_rejected(string? order)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var (client, userId) = await CustomerClient(factory, "pwd+mfa", withCsrf: true);
 
@@ -64,7 +72,7 @@ public sealed class PortalConversationOrderTests
     [Fact]
     public async Task A_shadow_session_reads_the_choice_but_never_stores_one()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var (client, userId) = await CustomerClient(factory, SessionAuthenticationHandler.AmrImpersonated, withCsrf: true);
         Repo(factory).ConversationOrders[userId] = "newest";
@@ -87,7 +95,7 @@ public sealed class PortalConversationOrderTests
     [Fact]
     public async Task A_stale_stored_value_falls_back_to_the_default()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var (client, userId) = await CustomerClient(factory, "pwd+mfa");
         Repo(factory).ConversationOrders[userId] = "garbage";
@@ -100,7 +108,7 @@ public sealed class PortalConversationOrderTests
     [Fact]
     public async Task The_preference_is_404_while_the_portal_is_off()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "false");
         var (client, _) = await CustomerClient(factory, "pwd+mfa");
 
@@ -114,7 +122,7 @@ public sealed class PortalConversationOrderTests
     [InlineData("Admin")]
     public async Task Staff_cannot_use_the_customer_preference(string role)
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
         var (client, _) = await Client(factory, role, "pwd+mfa", withCsrf: true, seedViewer: false);
 
