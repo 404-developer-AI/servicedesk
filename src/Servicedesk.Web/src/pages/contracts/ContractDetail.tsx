@@ -2,15 +2,7 @@ import { formatDateMedium, formatDateTimeMedium } from "@/lib/dateFormat";
 import type { AdsolutContractDetail } from "@/lib/api";
 import { formatMoney, formatNumber } from "@/lib/format";
 
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return formatDateMedium(iso);
-}
 
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return formatDateTimeMedium(iso);
-}
 
 /// Contract detail: header metadata + article lines. Shown in the expanded row
 /// of the Contracts overview.
@@ -34,19 +26,19 @@ export function ContractDetail({ data }: { data: AdsolutContractDetail }) {
         </div>
         <div>
           <dt className="text-muted-foreground/60">Doc date</dt>
-          <dd className="text-foreground">{formatDate(header.docDate)}</dd>
+          <dd className="text-foreground">{formatDateMedium(header.docDate)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground/60">Start date</dt>
-          <dd className="text-foreground">{formatDate(header.startDate)}</dd>
+          <dd className="text-foreground">{formatDateMedium(header.startDate)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground/60">End date</dt>
-          <dd className="text-foreground">{formatDate(header.endDate)}</dd>
+          <dd className="text-foreground">{formatDateMedium(header.endDate)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground/60">Stop date</dt>
-          <dd className="text-foreground">{formatDate(header.stopDate)}</dd>
+          <dd className="text-foreground">{formatDateMedium(header.stopDate)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground/60">Periodicity</dt>
@@ -73,7 +65,7 @@ export function ContractDetail({ data }: { data: AdsolutContractDetail }) {
         </div>
         <div>
           <dt className="text-muted-foreground/60">Last synced</dt>
-          <dd className="text-foreground">{formatDateTime(header.syncedUtc)}</dd>
+          <dd className="text-foreground">{formatDateTimeMedium(header.syncedUtc)}</dd>
         </div>
       </dl>
 

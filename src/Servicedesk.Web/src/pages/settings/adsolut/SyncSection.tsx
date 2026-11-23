@@ -9,8 +9,9 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { SettingField } from "@/components/settings/SettingField";
-import { ADSOLUT_SETTINGS_QUERY_KEY, ADSOLUT_COVERAGE_QUERY_KEY, findEntry, formatDate } from "@/pages/settings/adsolut/shared";
+import { ADSOLUT_SETTINGS_QUERY_KEY, ADSOLUT_COVERAGE_QUERY_KEY, findEntry } from "@/pages/settings/adsolut/shared";
 import { CoverageTile } from "@/pages/settings/adsolut/CoverageTile";
+import { formatDateTimeMedium } from "@/lib/dateFormat";
 
 export function SyncSection({
   syncState,
@@ -66,9 +67,9 @@ export function SyncSection({
 
       <dl className="mb-4 grid grid-cols-1 gap-y-2 text-xs sm:grid-cols-2">
         <dt className="text-muted-foreground/70">Last delta sync</dt>
-        <dd className="text-foreground">{formatDate(syncState?.lastDeltaSyncUtc)}</dd>
+        <dd className="text-foreground">{formatDateTimeMedium(syncState?.lastDeltaSyncUtc)}</dd>
         <dt className="text-muted-foreground/70">Last full sync</dt>
-        <dd className="text-foreground">{formatDate(syncState?.lastFullSyncUtc)}</dd>
+        <dd className="text-foreground">{formatDateTimeMedium(syncState?.lastFullSyncUtc)}</dd>
         <dt className="text-muted-foreground/70">Companies seen (last tick)</dt>
         <dd className="text-foreground tabular-nums">
           {syncState?.companiesSeen ?? 0}
@@ -88,7 +89,7 @@ export function SyncSection({
               {syncState.lastError}
               {syncState.lastErrorUtc && (
                 <span className="ml-2 text-muted-foreground/60">
-                  ({formatDate(syncState.lastErrorUtc)})
+                  ({formatDateTimeMedium(syncState.lastErrorUtc)})
                 </span>
               )}
             </dd>

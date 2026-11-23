@@ -11,7 +11,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { serverNowMs } from "@/hooks/useServerTime";
-import { ADSOLUT_STATUS_QUERY_KEY, formatDate } from "@/pages/settings/adsolut/shared";
+import { ADSOLUT_STATUS_QUERY_KEY } from "@/pages/settings/adsolut/shared";
+import { formatDateTimeMedium } from "@/lib/dateFormat";
 
 const STATE_LABEL: Record<AdsolutState, { tone: string; text: string; dot: string }> = {
   not_configured: {
@@ -92,7 +93,7 @@ export function ConnectionSection({
     mutationFn: () => adsolutApi.refresh(),
     onSuccess: (r) => {
       if (r.ok) {
-        setRefreshOutcome(`OK — token expires ${formatDate(r.expiresUtc)}`);
+        setRefreshOutcome(`OK — token expires ${formatDateTimeMedium(r.expiresUtc)}`);
         qc.invalidateQueries({ queryKey: ADSOLUT_STATUS_QUERY_KEY });
       } else if (r.requiresReconnect) {
         setRefreshOutcome(`Reconnect required: ${r.upstreamErrorCode ?? "invalid_grant"}`);
@@ -157,12 +158,12 @@ export function ConnectionSection({
             {s.authorizedEmail ?? s.authorizedSubject ?? "(unknown subject)"}
           </dd>
           <dt className="text-muted-foreground/70">Authorized at</dt>
-          <dd className="text-foreground">{formatDate(s.authorizedUtc)}</dd>
+          <dd className="text-foreground">{formatDateTimeMedium(s.authorizedUtc)}</dd>
           <dt className="text-muted-foreground/70">Last refreshed</dt>
-          <dd className="text-foreground">{formatDate(s.lastRefreshedUtc)}</dd>
+          <dd className="text-foreground">{formatDateTimeMedium(s.lastRefreshedUtc)}</dd>
           <dt className="text-muted-foreground/70">Access token expires</dt>
           <dd className="text-foreground">
-            {formatDate(s.accessTokenExpiresUtc)}
+            {formatDateTimeMedium(s.accessTokenExpiresUtc)}
             {(() => {
               const d = daysUntil(s.accessTokenExpiresUtc);
               if (d === null) return null;
@@ -182,7 +183,7 @@ export function ConnectionSection({
             <>
               <dt className="text-muted-foreground/70">Next sync</dt>
               <dd className="text-foreground">
-                {formatDate(syncState.nextSyncUtc)}
+                {formatDateTimeMedium(syncState.nextSyncUtc)}
                 <span className="ml-2 text-muted-foreground/60">
                   (every {syncState.intervalMinutes} min)
                 </span>
@@ -196,7 +197,7 @@ export function ConnectionSection({
                 {s.lastRefreshError}
                 {s.lastRefreshErrorUtc && (
                   <span className="ml-2 text-muted-foreground/60">
-                    ({formatDate(s.lastRefreshErrorUtc)})
+                    ({formatDateTimeMedium(s.lastRefreshErrorUtc)})
                   </span>
                 )}
               </dd>

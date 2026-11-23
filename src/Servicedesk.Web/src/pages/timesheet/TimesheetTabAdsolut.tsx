@@ -1,4 +1,5 @@
-import { formatDateMedium, formatDateTimeMedium, formatMonthYear } from "@/lib/dateFormat";
+import { formatDateMedium, formatDateTimeMedium, shiftMonth } from "@/lib/dateFormat";
+import { MonthLabel } from "@/components/MonthLabel";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -9,30 +10,13 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Columns3,
   CornerDownRight,
   ExternalLink,
-  GripVertical,
   MessageSquare,
   Receipt,
   RefreshCw,
   Search,
 } from "lucide-react";
-import {
-  DndContext,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  arrayMove,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import {
   ApiError,
   adsolutTimesheetApi,
@@ -61,6 +45,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { TableColumnPicker, mergeColumnConfig } from "@/components/TableColumnPicker";
+import { TablePager } from "@/components/TablePager";
 import { formatDuration, formatMoney } from "@/lib/format";
 
 const PAGE_SIZE = 50;
@@ -74,15 +60,7 @@ type BoFilter = "all" | "checked" | "unchecked";
 
 // ---- formatting helpers ----------------------------------------------
 
-function formatDate(iso: string | null | undefined) {
-  if (!iso) return "—";
-  return formatDateMedium(iso);
-}
 
-function formatDateTime(iso: string | null | undefined) {
-  if (!iso) return "—";
-  return formatDateTimeMedium(iso);
-}
 
 /// Split a product line's name + description into a bold label and the free-text
 /// detail a technician added on the verkoopbon. Adsolut repeats the article
@@ -159,7 +137,7 @@ const ALL_COLUMNS: ColDef[] = [
     label: "Date",
     align: "left",
     sortKey: "date",
-    render: (r) => <span className="whitespace-nowrap">{formatDate(r.salesReceiptDate)}</span>,
+    render: (r) => <span className="whitespace-nowrap">{formatDateMedium(r.salesReceiptDate)}</span>,
   },
   {
     id: "customer",
@@ -264,38 +242,6 @@ type ColConfig = { id: ColId; visible: boolean };
 
 const DEFAULT_CONFIG: ColConfig[] = ALL_COLUMNS.map((c) => ({ id: c.id, visible: true }));
 
-/// Merge a saved config with ALL_COLUMNS: keep known ids in their saved order,
-/// drop unknown ids, and append any columns added since the config was saved
-/// (visible by default) so a new column never silently disappears.
-function mergeConfig(raw: string | undefined): ColConfig[] {
-  if (!raw) return DEFAULT_CONFIG;
-  let saved: ColConfig[];
-  try {
-    const parsed = JSON.parse(raw) as ColConfig[];
-    if (!Array.isArray(parsed)) return DEFAULT_CONFIG;
-    saved = parsed.filter((c) => ALL_COLUMNS.some((d) => d.id === c.id));
-  } catch {
-    return DEFAULT_CONFIG;
-  }
-  const seen = new Set(saved.map((c) => c.id));
-  const merged = saved.map((c) => ({ id: c.id, visible: c.visible !== false }));
-  for (const d of ALL_COLUMNS) {
-    if (!seen.has(d.id)) merged.push({ id: d.id, visible: true });
-  }
-  return merged.length > 0 ? merged : DEFAULT_CONFIG;
-}
-
-// ---- month switcher label ---------------------------------------------
-
-function MonthLabel({ year, month, all }: { year: number; month: number; all: boolean }) {
-  const label = all ? "All months" : formatMonthYear(year, month);
-  return (
-    <span className="min-w-36 px-2 text-center text-sm font-medium text-foreground">
-      {label}
-    </span>
-  );
-}
-
 // ---- main tab ---------------------------------------------------------
 
 /// Timesheet → Adsolut tab. Mounted only when the Adsolut integration is
@@ -319,18 +265,7 @@ export function TimesheetTabAdsolut() {
   const goMonth = (delta: number) => {
     setPage(1);
     setAllMonths(false);
-    setYM(({ year: yy, month: mm }) => {
-      let y = yy;
-      let m = mm + delta;
-      if (m < 1) {
-        m = 12;
-        y -= 1;
-      } else if (m > 12) {
-        m = 1;
-        y += 1;
-      }
-      return { year: y, month: m };
-    });
+    setYM((cur) => shiftMonth(cur, delta));
   };
   const thisMonth = () => {
     const d = new Date();
@@ -362,7 +297,7 @@ export function TimesheetTabAdsolut() {
   const [config, setConfig] = useState<ColConfig[] | null>(null);
   useEffect(() => {
     if (config !== null || wsQuery.data === undefined) return;
-    setConfig(mergeConfig(wsQuery.data[COLUMNS_PREF_KEY]));
+    setConfig(mergeColumnConfig(wsQuery.data[COLUMNS_PREF_KEY], DEFAULT_CONFIG));
   }, [wsQuery.data, config]);
   const effectiveConfig = config ?? DEFAULT_CONFIG;
 
@@ -472,7 +407,7 @@ export function TimesheetTabAdsolut() {
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <MonthLabel year={year} month={month} all={allMonths} />
+          <MonthLabel ym={{ year, month }} label={allMonths ? "All months" : undefined} narrow />
           <Button
             size="sm"
             variant="ghost"
@@ -540,7 +475,7 @@ export function TimesheetTabAdsolut() {
               setPage(1);
             }}
           />
-          <ColumnPicker config={effectiveConfig} onChange={persistConfig} />
+          <TableColumnPicker config={effectiveConfig} labels={COL_LABELS} onChange={persistConfig} />
         </div>
       </div>
 
@@ -661,29 +596,13 @@ export function TimesheetTabAdsolut() {
       </div>
 
       {total > PAGE_SIZE && (
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            Page {page} of {totalPages} · {total.toLocaleString()} total
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1 || list.isFetching}
-            >
-              Previous
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || list.isFetching}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+        <TablePager
+          page={page}
+          totalPages={totalPages}
+          detail={`${total.toLocaleString()} total`}
+          busy={list.isFetching}
+          onPageChange={setPage}
+        />
       )}
     </div>
    </TooltipProvider>
@@ -1108,7 +1027,7 @@ function BoCheckedCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
         <TooltipContent>
           <div className="text-left">
             <div>Checked by {receipt.checkedByEmail ?? "unknown"}</div>
-            <div className="text-primary-foreground/70">{formatDateTime(receipt.checkedUtc)}</div>
+            <div className="text-primary-foreground/70">{formatDateTimeMedium(receipt.checkedUtc)}</div>
           </div>
         </TooltipContent>
       </Tooltip>
@@ -1189,103 +1108,6 @@ function BoFilterSelect({
   );
 }
 
-// ---- column picker (toggle + drag-reorder) ----------------------------
-
-function ColumnPicker({
-  config,
-  onChange,
-}: {
-  config: ColConfig[];
-  onChange: (next: ColConfig[]) => void;
-}) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-
-  const onDragEnd = (e: DragEndEvent) => {
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
-    const from = config.findIndex((c) => c.id === active.id);
-    const to = config.findIndex((c) => c.id === over.id);
-    if (from < 0 || to < 0) return;
-    onChange(arrayMove(config, from, to));
-  };
-
-  const toggle = (id: ColId) => {
-    const visibleCount = config.filter((c) => c.visible).length;
-    const target = config.find((c) => c.id === id);
-    // Keep at least one column visible.
-    if (target?.visible && visibleCount <= 1) return;
-    onChange(config.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c)));
-  };
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="gap-1.5">
-          <Columns3 className="h-4 w-4" />
-          Columns
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 p-2">
-        <div className="px-1 pb-2 text-[11px] uppercase tracking-wider text-muted-foreground/70">
-          Columns — drag to reorder
-        </div>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={config.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-            <ul className="space-y-0.5">
-              {config.map((c) => (
-                <ColumnPickerItem key={c.id} id={c.id} visible={c.visible} onToggle={() => toggle(c.id)} />
-              ))}
-            </ul>
-          </SortableContext>
-        </DndContext>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function ColumnPickerItem({
-  id,
-  visible,
-  onToggle,
-}: {
-  id: ColId;
-  visible: boolean;
-  onToggle: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = { transform: CSS.Transform.toString(transform), transition };
-
-  return (
-    <li
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        "flex items-center gap-2 rounded-md px-1.5 py-1 text-sm",
-        isDragging ? "bg-glass-strong" : "hover:bg-glass-hover",
-      )}
-    >
-      <button
-        type="button"
-        className="cursor-grab touch-none text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
-        aria-label="Drag to reorder"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </button>
-      <label className="flex flex-1 cursor-pointer items-center gap-2">
-        <input
-          type="checkbox"
-          checked={visible}
-          onChange={onToggle}
-          className="h-3.5 w-3.5 rounded border border-glass-strong bg-glass accent-purple-400"
-        />
-        <span className={cn(visible ? "text-foreground" : "text-muted-foreground")}>{COL_LABELS[id]}</span>
-      </label>
-    </li>
-  );
-}
-
 // ---- expand detail ----------------------------------------------------
 
 function ReceiptDetail({ data }: { data: AdsolutSalesReceiptDetail }) {
@@ -1300,15 +1122,15 @@ function ReceiptDetail({ data }: { data: AdsolutSalesReceiptDetail }) {
         </div>
         <div>
           <dt className="text-muted-foreground/60">Receipt date</dt>
-          <dd className="text-foreground">{formatDate(header.salesReceiptDate)}</dd>
+          <dd className="text-foreground">{formatDateMedium(header.salesReceiptDate)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground/60">Created (Adsolut)</dt>
-          <dd className="text-foreground">{formatDateTime(header.adsolutCreatedUtc)}</dd>
+          <dd className="text-foreground">{formatDateTimeMedium(header.adsolutCreatedUtc)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground/60">Last synced</dt>
-          <dd className="text-foreground">{formatDateTime(header.syncedUtc)}</dd>
+          <dd className="text-foreground">{formatDateTimeMedium(header.syncedUtc)}</dd>
         </div>
       </dl>
 
@@ -1376,7 +1198,7 @@ function ReceiptDetail({ data }: { data: AdsolutSalesReceiptDetail }) {
               {performances.map((p) => (
                 <tr key={p.id} className="border-t border-glass">
                   <td className="py-1 pr-3 font-mono text-muted-foreground">{p.employeeCode ?? "—"}</td>
-                  <td className="whitespace-nowrap py-1 pr-3">{formatDate(p.performanceDate)}</td>
+                  <td className="whitespace-nowrap py-1 pr-3">{formatDateMedium(p.performanceDate)}</td>
                   <td className="whitespace-nowrap py-1 pr-3 text-muted-foreground">
                     {p.fromTime ?? "—"}–{p.untilTime ?? "—"}
                   </td>

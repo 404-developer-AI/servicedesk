@@ -1,19 +1,8 @@
-import { formatDateMedium, formatDateTimeMedium } from "@/lib/dateFormat";
 import { formatMoney, formatNumber } from "@/lib/format";
 
 export { formatMoney, formatNumber };
 
 // Shared formatting helpers for the Adsolut Orders overview + detail.
-
-export function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return formatDateMedium(iso);
-}
-
-export function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return formatDateTimeMedium(iso);
-}
 
 /// Discount as a percentage label ("10%") — Adsolut stores discount1 as a
 /// percentage value. Blank ("—") when null/zero.

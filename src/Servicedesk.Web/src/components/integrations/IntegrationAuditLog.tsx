@@ -1,4 +1,4 @@
-import { formatDateTime as formatServerDateTime } from "@/lib/dateFormat";
+import { formatDateTime } from "@/lib/dateFormat";
 import { useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
@@ -25,9 +25,6 @@ const OUTCOME_TONE: Record<IntegrationAuditOutcome, { dot: string; text: string;
   error: { dot: "bg-rose-400", text: "text-rose-300", label: "Error" },
 };
 
-function formatDateTime(iso: string) {
-  return formatServerDateTime(iso, undefined, true);
-}
 
 function tryPretty(json: string): string {
   if (!json) return "";
@@ -191,7 +188,7 @@ function Row({ row }: { row: IntegrationAuditEntry }) {
           ) : null}
         </td>
         <td className="px-2 py-1.5 align-top whitespace-nowrap text-muted-foreground">
-          {formatDateTime(row.utc)}
+          {formatDateTime(row.utc, undefined, true)}
         </td>
         <td className="px-2 py-1.5 align-top font-mono text-[11px]">{row.eventType}</td>
         <td className={cn("px-2 py-1.5 align-top", tone.text)}>

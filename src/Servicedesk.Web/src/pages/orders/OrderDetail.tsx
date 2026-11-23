@@ -1,6 +1,7 @@
 import type { AdsolutOrderDetail, AdsolutSupplierOrderLine } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { formatDate, formatDateTime, formatMarginPercent, formatMoney, formatNumber } from "./orderFormat";
+import { formatMarginPercent, formatMoney, formatNumber } from "./orderFormat";
+import { formatDateMedium, formatDateTimeMedium } from "@/lib/dateFormat";
 
 /// Coloured "Bestelling status" chip. The colour comes from the admin's
 /// status→hex map; a missing/empty status falls back to the special NO_STATUS
@@ -58,7 +59,7 @@ export function OrderDetail({ data, dense = false }: { data: AdsolutOrderDetail;
         </div>
         <div>
           <dt className="text-muted-foreground/60">Order date</dt>
-          <dd className="text-foreground">{formatDate(header.orderDate)}</dd>
+          <dd className="text-foreground">{formatDateMedium(header.orderDate)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground/60">Status</dt>
@@ -66,7 +67,7 @@ export function OrderDetail({ data, dense = false }: { data: AdsolutOrderDetail;
         </div>
         <div>
           <dt className="text-muted-foreground/60">Requested delivery</dt>
-          <dd className="text-foreground">{formatDate(header.requestedDeliveryDate)}</dd>
+          <dd className="text-foreground">{formatDateMedium(header.requestedDeliveryDate)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground/60">Representative</dt>
@@ -81,7 +82,7 @@ export function OrderDetail({ data, dense = false }: { data: AdsolutOrderDetail;
         </div>
         <div>
           <dt className="text-muted-foreground/60">Last synced</dt>
-          <dd className="text-foreground">{formatDateTime(header.syncedUtc)}</dd>
+          <dd className="text-foreground">{formatDateTimeMedium(header.syncedUtc)}</dd>
         </div>
       </dl>
 
@@ -236,7 +237,7 @@ function SupplierOrdersBlock({
                   <td className="py-1.5 pr-3 text-foreground">
                     {s.warehouseLocationName?.trim() ? s.warehouseLocationName : "—"}
                   </td>
-                  <td className="whitespace-nowrap py-1.5 pr-3">{formatDate(s.supplierOrderDate)}</td>
+                  <td className="whitespace-nowrap py-1.5 pr-3">{formatDateMedium(s.supplierOrderDate)}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{formatNumber(s.quantity)}</td>
                   <td className="py-1.5 text-right tabular-nums text-foreground">{formatNumber(s.delivered)}</td>
                 </tr>

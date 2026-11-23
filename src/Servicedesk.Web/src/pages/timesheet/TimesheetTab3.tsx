@@ -12,7 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { formatMonthYear, serverTodayIso } from "@/lib/dateFormat";
+import { serverTodayIso, shiftMonth } from "@/lib/dateFormat";
+import { MonthLabel } from "@/components/MonthLabel";
 import { useServerNowMs, useServerTimeZone } from "@/hooks/useServerTime";
 import {
   timesheetManagerApi,
@@ -82,16 +83,7 @@ export function TimesheetTab3() {
 
   const goMonth = (delta: number) => {
     if (!ym) return;
-    let y = year;
-    let m = month + delta;
-    if (m < 1) {
-      m = 12;
-      y -= 1;
-    } else if (m > 12) {
-      m = 1;
-      y += 1;
-    }
-    setYM({ year: y, month: m });
+    setYM(shiftMonth({ year, month }, delta));
   };
 
   const exportUrl = userId && ym
@@ -517,16 +509,6 @@ function UserPicker({
         ))}
       </SelectContent>
     </Select>
-  );
-}
-
-function MonthLabel({ ym }: { ym: { year: number; month: number } | null }) {
-  // English, locale-independent ("October 2026", not the browser's "oktober").
-  const label = ym ? formatMonthYear(ym.year, ym.month) : "…";
-  return (
-    <span className="min-w-40 px-2 text-center text-sm font-medium text-foreground">
-      {label}
-    </span>
   );
 }
 

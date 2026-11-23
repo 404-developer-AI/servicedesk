@@ -9,6 +9,7 @@ import {
   formatTime,
   serverWallClockParts,
   serverWallClockToUtcMs,
+  shiftMonth,
 } from "@/lib/dateFormat";
 
 const BRU = "Europe/Brussels";
@@ -95,5 +96,13 @@ describe("serverWallClockToUtcMs", () => {
   it("round-trips through serverWallClockParts", () => {
     const ms = serverWallClockToUtcMs(2027, 3, 29, 8, 30, BRU);
     expect(serverWallClockParts(ms, BRU)).toMatchObject({ y: 2027, m: 3, d: 29, hh: 8, mi: 30 });
+  });
+});
+
+describe("shiftMonth", () => {
+  it("steps within a year and rolls over the year boundary", () => {
+    expect(shiftMonth({ year: 2026, month: 5 }, 1)).toEqual({ year: 2026, month: 6 });
+    expect(shiftMonth({ year: 2026, month: 12 }, 1)).toEqual({ year: 2027, month: 1 });
+    expect(shiftMonth({ year: 2026, month: 1 }, -1)).toEqual({ year: 2025, month: 12 });
   });
 });

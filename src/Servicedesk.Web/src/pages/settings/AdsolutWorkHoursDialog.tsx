@@ -35,10 +35,6 @@ const RECEIPTS_KEY = ["timesheet", "adsolut", "receipts"] as const;
 
 type WorkHoursFilter = "all" | "yes" | "no";
 
-function formatDateTime(iso: string | null | undefined) {
-  if (!iso) return "—";
-  return formatDateTimeMedium(iso);
-}
 
 /// Scrollable pop-up to manage which Adsolut catalogue products count as
 /// billable work hours (VK Werkuren). Search + filter (code/name, active,
@@ -120,7 +116,7 @@ export function AdsolutWorkHoursDialog({ open, onClose }: { open: boolean; onClo
             <span>
               <span className="text-foreground">{state.data?.workHoursCount ?? 0}</span> flagged as work hours
             </span>
-            <span>Last sync: {formatDateTime(state.data?.lastDeltaSyncUtc)}</span>
+            <span>Last sync: {formatDateTimeMedium(state.data?.lastDeltaSyncUtc)}</span>
             {state.data?.lastError && (
               <span className="text-rose-300">Last error: {state.data.lastError}</span>
             )}

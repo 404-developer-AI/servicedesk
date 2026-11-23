@@ -166,3 +166,17 @@ export function serverTodayIso(zone?: string | null, nowUtcMs?: number | null): 
   const p = toParts(ms, zone);
   return p ? `${p.y}-${pad(p.m)}-${pad(p.d)}` : null;
 }
+
+/** Step a 1-based calendar month by `delta` months, rolling the year. */
+export function shiftMonth(ym: { year: number; month: number }, delta: number): { year: number; month: number } {
+  let y = ym.year;
+  let m = ym.month + delta;
+  if (m < 1) {
+    m = 12;
+    y -= 1;
+  } else if (m > 12) {
+    m = 1;
+    y += 1;
+  }
+  return { year: y, month: m };
+}

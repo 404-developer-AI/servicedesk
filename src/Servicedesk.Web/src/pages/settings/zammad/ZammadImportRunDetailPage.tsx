@@ -1,4 +1,4 @@
-import { formatDateTime as formatServerDateTime } from "@/lib/dateFormat";
+import { formatDateTime } from "@/lib/dateFormat";
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -72,10 +72,6 @@ const STATUS_ICON: Record<ZammadImportRunStatus, ReactNode> = {
   Cancelled: <PauseCircle className="h-3.5 w-3.5 text-muted-foreground" />,
 };
 
-function formatDateTime(iso: string | null) {
-  if (!iso) return "—";
-  return formatServerDateTime(iso, undefined, true);
-}
 
 export function ZammadImportRunDetailPage() {
   const params = useParams({
@@ -267,10 +263,10 @@ export function ZammadImportRunDetailPage() {
           </div>
         </div>
         <div className="mt-1 text-xs text-muted-foreground/70">
-          Started {formatDateTime(summary.startedUtc)} by{" "}
+          Started {formatDateTime(summary.startedUtc, undefined, true)} by{" "}
           {summary.startedByDisplayName ?? "—"}.
           {summary.finishedUtc
-            ? ` Finished ${formatDateTime(summary.finishedUtc)}.`
+            ? ` Finished ${formatDateTime(summary.finishedUtc, undefined, true)}.`
             : ""}
         </div>
       </div>

@@ -1,4 +1,3 @@
-import { formatDateTimeMedium } from "@/lib/dateFormat";
 import { toast } from "sonner";
 import { type SettingEntry } from "@/lib/api";
 
@@ -11,11 +10,6 @@ export const ADSOLUT_COVERAGE_QUERY_KEY = ["integrations", "adsolut", "coverage"
 
 export function findEntry(entries: SettingEntry[] | undefined, key: string) {
   return entries?.find((e) => e.key === key);
-}
-
-export function formatDate(iso: string | null | undefined) {
-  if (!iso) return "—";
-  return formatDateTimeMedium(iso);
 }
 
 export async function copyDebugBody(body: string) {

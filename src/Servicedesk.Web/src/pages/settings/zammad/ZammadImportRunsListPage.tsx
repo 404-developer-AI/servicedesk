@@ -20,10 +20,6 @@ const STATUS_TONE: Record<ZammadImportRunStatus, { dot: string; text: string }> 
   Cancelled: { dot: "bg-glass-strong", text: "text-muted-foreground" },
 };
 
-function formatDateTime(iso: string | null) {
-  if (!iso) return "—";
-  return formatDateTimeMedium(iso);
-}
 
 export function ZammadImportRunsListPage() {
   const query = useQuery({
@@ -120,7 +116,7 @@ function RunsTable({ rows }: { rows: ZammadImportRunSummary[] }) {
                     params={{ runId: row.id }}
                     className="text-foreground hover:underline"
                   >
-                    {formatDateTime(row.startedUtc)}
+                    {formatDateTimeMedium(row.startedUtc)}
                   </Link>
                 </td>
                 <td className="px-3 py-2 align-middle text-muted-foreground">

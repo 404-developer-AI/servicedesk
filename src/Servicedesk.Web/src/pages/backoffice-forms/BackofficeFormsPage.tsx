@@ -12,6 +12,7 @@ import { useDebounced } from "@/hooks/useDebounced";
 import { useServerTimeZone } from "@/hooks/useServerTime";
 import { formatDateTime } from "@/lib/dateFormat";
 import { formatNumber, formatTimeAgo } from "@/lib/format";
+import { TablePager } from "@/components/TablePager";
 import {
   backofficeFormKeys,
   backofficeFormsApi,
@@ -213,17 +214,13 @@ export function BackofficeFormsPage() {
       </div>
 
       {total > PAGE_SIZE && (
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Page {page} of {totalPages} · {formatNumber(total)} forms</span>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || list.isFetching}>
-              Previous
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages || list.isFetching}>
-              Next
-            </Button>
-          </div>
-        </div>
+        <TablePager
+          page={page}
+          totalPages={totalPages}
+          detail={`${formatNumber(total)} forms`}
+          busy={list.isFetching}
+          onPageChange={setPage}
+        />
       )}
 
       <BackofficeFormDialog formId={dialogId} onOpenChange={(o) => { if (!o) closeDialog(); }} />

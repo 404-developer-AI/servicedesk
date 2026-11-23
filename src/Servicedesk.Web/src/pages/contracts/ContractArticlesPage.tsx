@@ -5,34 +5,18 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronLeft,
-  Columns3,
-  GripVertical,
   Package,
   RefreshCw,
   Search,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import {
-  DndContext,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  arrayMove,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { articlesApi, preferencesApi, type AdsolutArticle } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { TableColumnPicker, mergeColumnConfig } from "@/components/TableColumnPicker";
+import { TablePager } from "@/components/TablePager";
 
 const PAGE_SIZE = 50;
 const ARTICLES_KEY = ["contract-articles", "list"] as const;
@@ -100,27 +84,6 @@ type ColConfig = { id: ColId; visible: boolean };
 
 const DEFAULT_CONFIG: ColConfig[] = ALL_COLUMNS.map((c) => ({ id: c.id, visible: c.defaultVisible }));
 
-/// Merge a saved config with ALL_COLUMNS: keep known ids in their saved order,
-/// drop unknown ids, and append any columns added since the config was saved
-/// (using each column's defaultVisible) so a new column never silently breaks.
-function mergeConfig(raw: string | undefined): ColConfig[] {
-  if (!raw) return DEFAULT_CONFIG;
-  let saved: ColConfig[];
-  try {
-    const parsed = JSON.parse(raw) as ColConfig[];
-    if (!Array.isArray(parsed)) return DEFAULT_CONFIG;
-    saved = parsed.filter((c) => ALL_COLUMNS.some((d) => d.id === c.id));
-  } catch {
-    return DEFAULT_CONFIG;
-  }
-  const seen = new Set(saved.map((c) => c.id));
-  const merged = saved.map((c) => ({ id: c.id, visible: c.visible !== false }));
-  for (const d of ALL_COLUMNS) {
-    if (!seen.has(d.id)) merged.push({ id: d.id, visible: d.defaultVisible });
-  }
-  return merged.length > 0 ? merged : DEFAULT_CONFIG;
-}
-
 // ---- main page --------------------------------------------------------
 
 /// Contract Articles list (Contracts → Contract Articles). Mounted only when the
@@ -145,7 +108,7 @@ export function ContractArticlesPage() {
   const [config, setConfig] = useState<ColConfig[] | null>(null);
   useEffect(() => {
     if (config !== null || wsQuery.data === undefined) return;
-    setConfig(mergeConfig(wsQuery.data[COLUMNS_PREF_KEY]));
+    setConfig(mergeColumnConfig(wsQuery.data[COLUMNS_PREF_KEY], DEFAULT_CONFIG));
   }, [wsQuery.data, config]);
   const effectiveConfig = config ?? DEFAULT_CONFIG;
 
@@ -238,7 +201,7 @@ export function ContractArticlesPage() {
             />
             Active only
           </Button>
-          <ColumnPicker config={effectiveConfig} onChange={persistConfig} />
+          <TableColumnPicker config={effectiveConfig} labels={COL_LABELS} onChange={persistConfig} />
           <Button
             size="sm"
             variant="ghost"
@@ -311,29 +274,13 @@ export function ContractArticlesPage() {
       </div>
 
       {total > PAGE_SIZE && (
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            Page {page} of {totalPages} · {total.toLocaleString()} total
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1 || list.isFetching}
-            >
-              Previous
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || list.isFetching}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+        <TablePager
+          page={page}
+          totalPages={totalPages}
+          detail={`${total.toLocaleString()} total`}
+          busy={list.isFetching}
+          onPageChange={setPage}
+        />
       )}
     </div>
   );
@@ -375,99 +322,3 @@ function ArticleRow({ article, columns }: { article: AdsolutArticle; columns: Co
   );
 }
 
-// ---- column picker (toggle + drag-reorder) ----------------------------
-
-function ColumnPicker({
-  config,
-  onChange,
-}: {
-  config: ColConfig[];
-  onChange: (next: ColConfig[]) => void;
-}) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-
-  const onDragEnd = (e: DragEndEvent) => {
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
-    const from = config.findIndex((c) => c.id === active.id);
-    const to = config.findIndex((c) => c.id === over.id);
-    if (from < 0 || to < 0) return;
-    onChange(arrayMove(config, from, to));
-  };
-
-  const toggle = (id: ColId) => {
-    const visibleCount = config.filter((c) => c.visible).length;
-    const target = config.find((c) => c.id === id);
-    // Keep at least one column visible.
-    if (target?.visible && visibleCount <= 1) return;
-    onChange(config.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c)));
-  };
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" className="gap-1.5">
-          <Columns3 className="h-4 w-4" />
-          Columns
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 p-2">
-        <div className="px-1 pb-2 text-[11px] uppercase tracking-wider text-muted-foreground/70">
-          Columns — drag to reorder
-        </div>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={config.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-            <ul className="space-y-0.5">
-              {config.map((c) => (
-                <ColumnPickerItem key={c.id} id={c.id} visible={c.visible} onToggle={() => toggle(c.id)} />
-              ))}
-            </ul>
-          </SortableContext>
-        </DndContext>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function ColumnPickerItem({
-  id,
-  visible,
-  onToggle,
-}: {
-  id: ColId;
-  visible: boolean;
-  onToggle: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = { transform: CSS.Transform.toString(transform), transition };
-
-  return (
-    <li
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        "flex items-center gap-2 rounded-md px-1.5 py-1 text-sm",
-        isDragging ? "bg-glass-strong" : "hover:bg-glass-hover",
-      )}
-    >
-      <button
-        type="button"
-        className="cursor-grab touch-none text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
-        aria-label="Drag to reorder"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </button>
-      <label className="flex flex-1 cursor-pointer items-center gap-2">
-        <input
-          type="checkbox"
-          checked={visible}
-          onChange={onToggle}
-          className="h-3.5 w-3.5 rounded border border-glass-strong bg-glass accent-purple-400"
-        />
-        <span className={cn(visible ? "text-foreground" : "text-muted-foreground")}>{COL_LABELS[id]}</span>
-      </label>
-    </li>
-  );
-}

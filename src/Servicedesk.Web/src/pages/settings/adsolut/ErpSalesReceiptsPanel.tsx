@@ -5,7 +5,8 @@ import { RefreshCw } from "lucide-react";
 import { ApiError, adsolutApi, type SettingEntry } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { SettingField } from "@/components/settings/SettingField";
-import { findEntry, formatDate } from "@/pages/settings/adsolut/shared";
+import { findEntry } from "@/pages/settings/adsolut/shared";
+import { formatDateTimeMedium } from "@/lib/dateFormat";
 
 const ERP_RECEIPTS_QUERY_KEY = ["integrations", "adsolut", "erp-sales-receipts"] as const;
 
@@ -165,12 +166,12 @@ export function ErpSalesReceiptsPanel({
         <dt className="text-muted-foreground/70">Receipts mirrored</dt>
         <dd className="text-foreground tabular-nums">{d?.totalMirrored ?? 0}</dd>
         <dt className="text-muted-foreground/70">Last sync</dt>
-        <dd className="text-foreground">{formatDate(d?.lastDeltaSyncUtc)}</dd>
+        <dd className="text-foreground">{formatDateTimeMedium(d?.lastDeltaSyncUtc)}</dd>
         {d?.nextSyncUtc && enabledEntry?.value === "true" ? (
           <>
             <dt className="text-muted-foreground/70">Next sync</dt>
             <dd className="text-foreground">
-              {formatDate(d.nextSyncUtc)}
+              {formatDateTimeMedium(d.nextSyncUtc)}
               <span className="ml-2 text-muted-foreground/60">(every {d.intervalMinutes} min)</span>
             </dd>
           </>
@@ -185,7 +186,7 @@ export function ErpSalesReceiptsPanel({
             <dd className="text-rose-300">
               {d.lastError}
               {d.lastErrorUtc && (
-                <span className="ml-2 text-muted-foreground/60">({formatDate(d.lastErrorUtc)})</span>
+                <span className="ml-2 text-muted-foreground/60">({formatDateTimeMedium(d.lastErrorUtc)})</span>
               )}
             </dd>
           </>
