@@ -1,3 +1,4 @@
+import { useSecretMutations } from "@/hooks/useSecretMutations";
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -117,25 +118,12 @@ export function M365IntegrationPage() {
     onError: onErr,
   });
 
-  const saveSecret = useMutation({
-    mutationFn: () => m365AdminApi.setSecret(secretDraft),
-    onSuccess: () => {
-      toast.success("Client secret saved");
-      setSecretDraft("");
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
-    onError: onErr,
-  });
-
-  const deleteSecret = useMutation({
-    mutationFn: () => m365AdminApi.deleteSecret(),
-    onSuccess: () => {
-      toast.success("Client secret cleared");
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
-    onError: onErr,
+  const { save: saveSecret, clear: deleteSecret } = useSecretMutations({
+    label: "Client secret",
+    save: () => m365AdminApi.setSecret(secretDraft),
+    clear: () => m365AdminApi.deleteSecret(),
+    invalidate: [SECRET_QK, STATUS_QK],
+    onSaved: () => setSecretDraft(""),
   });
 
   const toggleEnabled = useMutation({

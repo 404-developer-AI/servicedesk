@@ -1,5 +1,5 @@
+import { useSecretMutations } from "@/hooks/useSecretMutations";
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy } from "lucide-react";
 import { adsolutApi, type AdsolutStatus } from "@/lib/adsolut-api";
@@ -10,7 +10,6 @@ import { SettingField } from "@/components/settings/SettingField";
 import { AdsolutScopesPicker } from "@/components/settings/AdsolutScopesPicker";
 import { ADSOLUT_SETTINGS_QUERY_KEY, ADSOLUT_STATUS_QUERY_KEY, ADSOLUT_SECRET_QUERY_KEY } from "@/pages/settings/adsolut/shared";
 import { findEntry } from "@/components/settings/settingEntries";
-import { errorMessage } from "@/lib/http";
 
 export function ConfigurationSection({
   status: s,
@@ -21,29 +20,15 @@ export function ConfigurationSection({
   settingsEntries: SettingEntry[] | undefined;
   secretConfigured: boolean | undefined;
 }) {
-  const qc = useQueryClient();
 
   const [secretValue, setSecretValue] = useState("");
 
-  const saveSecret = useMutation({
-    mutationFn: () => adsolutApi.setSecret(secretValue),
-    onSuccess: () => {
-      toast.success("Client secret saved");
-      setSecretValue("");
-      qc.invalidateQueries({ queryKey: ADSOLUT_SECRET_QUERY_KEY });
-      qc.invalidateQueries({ queryKey: ADSOLUT_STATUS_QUERY_KEY });
-    },
-    onError: (err) =>
-      toast.error(errorMessage(err, "Save failed")),
-  });
-
-  const deleteSecret = useMutation({
-    mutationFn: () => adsolutApi.deleteSecret(),
-    onSuccess: () => {
-      toast.success("Client secret cleared");
-      qc.invalidateQueries({ queryKey: ADSOLUT_SECRET_QUERY_KEY });
-      qc.invalidateQueries({ queryKey: ADSOLUT_STATUS_QUERY_KEY });
-    },
+  const { save: saveSecret, clear: deleteSecret } = useSecretMutations({
+    label: "Client secret",
+    save: () => adsolutApi.setSecret(secretValue),
+    clear: () => adsolutApi.deleteSecret(),
+    invalidate: [ADSOLUT_SECRET_QUERY_KEY, ADSOLUT_STATUS_QUERY_KEY],
+    onSaved: () => setSecretValue(""),
   });
 
   const copyRedirect = async (url: string) => {

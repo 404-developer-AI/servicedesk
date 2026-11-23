@@ -1,3 +1,4 @@
+import { useSecretMutations } from "@/hooks/useSecretMutations";
 import { formatDateMedium, formatDateTime } from "@/lib/dateFormat";
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -97,34 +98,13 @@ export function ZammadIntegrationPage() {
     result: ZammadTestResult;
   } | null>(null);
 
-  const saveSecret = useMutation({
-    mutationFn: () => zammadAdminApi.setSecret(tokenDraft),
-    onSuccess: () => {
-      toast.success("API token saved");
-      setTokenDraft("");
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
-    onError: (err) => {
-      const upstream = apiErrorMessage(err);
-      toast.error(
-        upstream
-          ? `Save failed: ${upstream}`
-          : err instanceof ApiError
-            ? `Save failed (${err.status})`
-            : "Save failed",
-      );
-    },
-  });
-
-  const deleteSecret = useMutation({
-    mutationFn: () => zammadAdminApi.deleteSecret(),
-    onSuccess: () => {
-      toast.success("API token cleared");
-      setLastTest(null);
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
+  const { save: saveSecret, clear: deleteSecret } = useSecretMutations({
+    label: "API token",
+    save: () => zammadAdminApi.setSecret(tokenDraft),
+    clear: () => zammadAdminApi.deleteSecret(),
+    invalidate: [SECRET_QK, STATUS_QK],
+    onSaved: () => setTokenDraft(""),
+    onCleared: () => setLastTest(null),
   });
 
   const saveBaseUrl = useMutation({

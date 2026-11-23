@@ -1,3 +1,4 @@
+import { useSecretMutations } from "@/hooks/useSecretMutations";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +15,7 @@ import {
   Trash2,
   Unlink,
 } from "lucide-react";
-import { ApiError, apiErrorMessage, errorMessage } from "@/lib/http";
+import { ApiError, apiErrorMessage } from "@/lib/http";
 import { settingsApi, type SettingEntry } from "@/lib/settings-api";
 import {
   telavoxAdminApi,
@@ -127,30 +128,13 @@ export function TelavoxIntegrationPage() {
     setCustomerPick(status.data?.partnerCustomerId ?? "");
   }, [status.data?.partnerCustomerId]);
 
-  const saveSecret = useMutation({
-    mutationFn: () => telavoxAdminApi.setSecret(tokenDraft),
-    onSuccess: () => {
-      toast.success("Partner token saved");
-      setTokenDraft("");
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
-    onError: (err) =>
-      toast.error(
-        errorMessage(err, "Save failed"),
-      ),
-  });
-
-  const deleteSecret = useMutation({
-    mutationFn: () => telavoxAdminApi.deleteSecret(),
-    onSuccess: () => {
-      toast.success("Partner token cleared");
-      setCustomerOptions(null);
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-      qc.invalidateQueries({ queryKey: EXTENSIONS_QK });
-      qc.invalidateQueries({ queryKey: AGENTS_QK });
-    },
+  const { save: saveSecret, clear: deleteSecret } = useSecretMutations({
+    label: "Partner token",
+    save: () => telavoxAdminApi.setSecret(tokenDraft),
+    clear: () => telavoxAdminApi.deleteSecret(),
+    invalidate: [SECRET_QK, STATUS_QK, EXTENSIONS_QK, AGENTS_QK],
+    onSaved: () => setTokenDraft(""),
+    onCleared: () => setCustomerOptions(null),
   });
 
   const test = useMutation({

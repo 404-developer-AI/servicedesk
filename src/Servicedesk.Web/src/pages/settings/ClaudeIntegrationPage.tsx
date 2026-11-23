@@ -1,3 +1,4 @@
+import { useSecretMutations } from "@/hooks/useSecretMutations";
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -194,7 +195,6 @@ function centsToDisplay(cents: number): string {
 }
 
 export function ClaudeIntegrationPage() {
-  const qc = useQueryClient();
 
   const statusQ = useQuery({ queryKey: STATUS_QK, queryFn: claudeAdminApi.status });
   const secretQ = useQuery({ queryKey: SECRET_QK, queryFn: claudeAdminApi.secretStatus });
@@ -207,24 +207,12 @@ export function ClaudeIntegrationPage() {
   const hasKey = secretQ.data?.configured ?? false;
   const [keyDraft, setKeyDraft] = useState("");
 
-  const saveSecret = useMutation({
-    mutationFn: () => claudeAdminApi.setSecret(keyDraft),
-    onSuccess: () => {
-      toast.success("API key saved");
-      setKeyDraft("");
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
-    onError: () => toast.error("Failed to save API key"),
-  });
-
-  const deleteSecret = useMutation({
-    mutationFn: () => claudeAdminApi.deleteSecret(),
-    onSuccess: () => {
-      toast.success("API key cleared");
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
+  const { save: saveSecret, clear: deleteSecret } = useSecretMutations({
+    label: "API key",
+    save: () => claudeAdminApi.setSecret(keyDraft),
+    clear: () => claudeAdminApi.deleteSecret(),
+    invalidate: [SECRET_QK, STATUS_QK],
+    onSaved: () => setKeyDraft(""),
   });
 
   const state = statusQ.data?.state ?? "Disabled";

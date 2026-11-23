@@ -1,3 +1,4 @@
+import { useSecretMutations } from "@/hooks/useSecretMutations";
 import { formatDayMonthTime } from "@/lib/dateFormat";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -109,25 +110,12 @@ export function VeeamIntegrationPage() {
     onError: onErr,
   });
 
-  const saveSecret = useMutation({
-    mutationFn: () => veeamAdminApi.setSecret(passwordDraft),
-    onSuccess: () => {
-      toast.success("Password saved");
-      setPasswordDraft("");
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
-    onError: onErr,
-  });
-
-  const deleteSecret = useMutation({
-    mutationFn: () => veeamAdminApi.deleteSecret(),
-    onSuccess: () => {
-      toast.success("Password cleared");
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
-    onError: onErr,
+  const { save: saveSecret, clear: deleteSecret } = useSecretMutations({
+    label: "Password",
+    save: () => veeamAdminApi.setSecret(passwordDraft),
+    clear: () => veeamAdminApi.deleteSecret(),
+    invalidate: [SECRET_QK, STATUS_QK],
+    onSaved: () => setPasswordDraft(""),
   });
 
   const toggleEnabled = useMutation({

@@ -1,3 +1,4 @@
+import { useSecretMutations } from "@/hooks/useSecretMutations";
 import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -410,29 +411,14 @@ function TemplatePair({ subject, body, title, hint }: { subject: SettingEntry | 
 }
 
 function TurnstileSecretRow() {
-  const qc = useQueryClient();
   const secret = useQuery({ queryKey: [...PORTAL_ADMIN_QK, "turnstile-secret"], queryFn: () => portalAdminApi.turnstileSecretStatus() });
   const [draft, setDraft] = React.useState("");
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: [...PORTAL_ADMIN_QK, "turnstile-secret"] });
-    qc.invalidateQueries({ queryKey: STATUS_QK });
-  };
-  const save = useMutation({
-    mutationFn: () => portalAdminApi.setTurnstileSecret(draft),
-    onSuccess: () => {
-      toast.success("Turnstile secret saved");
-      setDraft("");
-      invalidate();
-    },
-    onError: (err) => toast.error(apiErrorMessage(err) ?? "Save failed"),
-  });
-  const clear = useMutation({
-    mutationFn: () => portalAdminApi.deleteTurnstileSecret(),
-    onSuccess: () => {
-      toast.success("Turnstile secret cleared");
-      invalidate();
-    },
-    onError: (err) => toast.error(apiErrorMessage(err) ?? "Clear failed"),
+  const { save, clear } = useSecretMutations({
+    label: "Turnstile secret",
+    save: () => portalAdminApi.setTurnstileSecret(draft),
+    clear: () => portalAdminApi.deleteTurnstileSecret(),
+    invalidate: [[...PORTAL_ADMIN_QK, "turnstile-secret"], STATUS_QK],
+    onSaved: () => setDraft(""),
   });
   const configured = secret.data?.configured ?? false;
   return (

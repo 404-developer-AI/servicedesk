@@ -1,3 +1,4 @@
+import { useSecretMutations } from "@/hooks/useSecretMutations";
 import { formatDateTime } from "@/lib/dateFormat";
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -14,7 +15,7 @@ import {
   Server,
   Trash2,
 } from "lucide-react";
-import { apiErrorMessage, errorMessage } from "@/lib/http";
+import { apiErrorMessage } from "@/lib/http";
 import { trmmAdminApi, type TrmmConnectionState } from "@/lib/trmm-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -95,31 +96,12 @@ export function TrmmIntegrationPage() {
   const state = status.data?.state ?? "disabled";
   const stateMeta = STATE_LABEL[state];
 
-  const saveKey = useMutation({
-    mutationFn: () => trmmAdminApi.setSecret(keyDraft),
-    onSuccess: () => {
-      toast.success("API key saved");
-      setKeyDraft("");
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
-    onError: (err) => {
-      const upstream = apiErrorMessage(err);
-      toast.error(upstream ?? (errorMessage(err, "Save failed")));
-    },
-  });
-
-  const deleteKey = useMutation({
-    mutationFn: () => trmmAdminApi.deleteSecret(),
-    onSuccess: () => {
-      toast.success("API key cleared");
-      qc.invalidateQueries({ queryKey: SECRET_QK });
-      qc.invalidateQueries({ queryKey: STATUS_QK });
-    },
-    onError: (err) => {
-      const upstream = apiErrorMessage(err);
-      toast.error(upstream ?? (errorMessage(err, "Clear failed")));
-    },
+  const { save: saveKey, clear: deleteKey } = useSecretMutations({
+    label: "API key",
+    save: () => trmmAdminApi.setSecret(keyDraft),
+    clear: () => trmmAdminApi.deleteSecret(),
+    invalidate: [SECRET_QK, STATUS_QK],
+    onSaved: () => setKeyDraft(""),
   });
 
   const saveBaseUrl = useMutation({
