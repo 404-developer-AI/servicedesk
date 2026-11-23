@@ -623,19 +623,7 @@ public static class DependencyInjection
         services.AddSingleton<Servicedesk.Infrastructure.Triggers.StatusGate.IStatusGateService,
                               Servicedesk.Infrastructure.Triggers.StatusGate.StatusGateService>();
 
-        // v0.0.102 — the shared agent-side ticket mutation rules (precheck /
-        // apply / publish) used by the single-ticket endpoints and the bulk
-        // action service alike, so both paths enforce one rule set.
-        services.AddScoped<Servicedesk.Infrastructure.Tickets.ITicketMutationService,
-                           Servicedesk.Infrastructure.Tickets.TicketMutationService>();
-        // Agent-supplied ticket HTML is sanitised at the API boundary (defence in
-        // depth on top of DOMPurify at render).
-        services.AddSingleton<Servicedesk.Infrastructure.Tickets.IQueueStatusScope,
-                              Servicedesk.Infrastructure.Tickets.QueueStatusScope>();
-        services.AddSingleton<Servicedesk.Infrastructure.Tickets.ITicketHtmlSanitizer,
-                              Servicedesk.Infrastructure.Tickets.TicketHtmlSanitizer>();
-        services.AddScoped<Servicedesk.Infrastructure.Tickets.ITicketBulkActionService,
-                           Servicedesk.Infrastructure.Tickets.TicketBulkActionService>();
+        Tickets.TicketWriteServices.AddTicketWriteServices(services);
         // v0.0.103 — ticket checklists: templates, attached checklists, the
         // close guard the mutation service consults, and the settings reader.
         // Repositories / guard / settings reader are singletons (they only
@@ -672,7 +660,6 @@ public static class DependencyInjection
         // unregistered until the tags schema + UI land — the dispatcher
         // returns NoHandler with a clear message in trigger_runs so admins
         // see the gap immediately.
-        services.AddSingleton<SystemFieldMutator>();
         services.AddSingleton<ITriggerActionHandler, SetQueueHandler>();
         services.AddSingleton<ITriggerActionHandler, SetPriorityHandler>();
         services.AddSingleton<ITriggerActionHandler, SetCategoryHandler>();

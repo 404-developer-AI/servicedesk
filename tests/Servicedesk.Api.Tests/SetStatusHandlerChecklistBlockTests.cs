@@ -1,5 +1,8 @@
 using System.Text.Json;
+using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Domain.Tickets;
+using Servicedesk.Infrastructure.Persistence.Tickets;
+using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Checklists;
 using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Triggers;
@@ -11,7 +14,7 @@ namespace Servicedesk.Api.Tests;
 /// v0.0.103 — a trigger's set-status action honours the checklist close
 /// block: with an incomplete blocking checklist the action is a no-op
 /// (reason checklist_incomplete), the reporter is told (timeline event +
-/// notification for the causing agent) and the mutator is never reached.
+/// notification for the causing agent) and the writer is never reached.
 /// Same-status and unblocked calls never consult the reporter. A status
 /// outside the queue's allowed list is refused before anything else — the
 /// same rule an agent write gets from TicketMutationService.
@@ -21,15 +24,14 @@ public sealed class SetStatusHandlerChecklistBlockTests
     private static readonly Guid CurrentStatus = Guid.NewGuid();
     private static readonly Guid ClosedStatus = Guid.NewGuid();
     private static readonly Guid AgentId = Guid.NewGuid();
+    private static readonly Guid QueueId = Guid.NewGuid();
 
     [Fact]
     public async Task Blocked_status_change_is_a_noop_and_reports_to_the_causing_agent()
     {
         var guard = new FakeGuard(blockers: 1);
         var reporter = new RecordingReporter();
-        // Mutator with a null data source: if the handler ever reached it,
-        // the test would blow up with a NullReferenceException.
-        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("Closed without Invoice [CWI]"), new FakeScope(allowed: true));
+        var handler = Handler(guard, reporter, new FakeTriggers("Closed without Invoice [CWI]"), new FakeScope(allowed: true));
 
         var result = await handler.ApplyAsync(Action(ClosedStatus), Context(triggeringAuthor: AgentId), default);
 
@@ -50,10 +52,10 @@ public sealed class SetStatusHandlerChecklistBlockTests
     {
         var guard = new FakeGuard(blockers: 1);
         var reporter = new RecordingReporter();
-        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("x"), new FakeScope(allowed: true));
+        var handler = Handler(guard, reporter, new FakeTriggers("x"), new FakeScope(allowed: true));
 
-        // Same-status: the handler skips the guard and the mutator answers
-        // no-op from the ids alone (no DB round-trip).
+        // Same-status: no rule is consulted and the writer is never reached
+        // (it would throw without a data source).
         var result = await handler.ApplyAsync(Action(CurrentStatus), Context(null), default);
         Assert.Equal(TriggerActionStatus.NoOp, result.Status);
         Assert.Equal(0, guard.Calls);
@@ -65,9 +67,9 @@ public sealed class SetStatusHandlerChecklistBlockTests
     {
         var guard = new FakeGuard(blockers: 0);
         var reporter = new RecordingReporter();
-        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("x"), new FakeScope(allowed: true));
+        var handler = Handler(guard, reporter, new FakeTriggers("x"), new FakeScope(allowed: true));
 
-        // Reaching the (null-backed) mutator proves the guard let it through.
+        // Reaching the (null-backed) writer proves the guard let it through.
         await Assert.ThrowsAnyAsync<Exception>(() => handler.ApplyAsync(Action(ClosedStatus), Context(null), default));
         Assert.Equal(1, guard.Calls);
         Assert.Empty(reporter.Calls);
@@ -79,7 +81,7 @@ public sealed class SetStatusHandlerChecklistBlockTests
         var guard = new FakeGuard(blockers: 0);
         var reporter = new RecordingReporter();
         var scope = new FakeScope(allowed: false);
-        var handler = new SetStatusHandler(new SystemFieldMutator(null!, null!), guard, reporter, new FakeTriggers("x"), scope);
+        var handler = Handler(guard, reporter, new FakeTriggers("x"), scope);
 
         var result = await handler.ApplyAsync(Action(ClosedStatus), Context(null), default);
 
@@ -92,15 +94,30 @@ public sealed class SetStatusHandlerChecklistBlockTests
 
     // ---- helpers ----
 
+    /// The handler over the real shared rules. The writer has no data source:
+    /// reaching it throws, which proves a rule let the change through.
+    private static SetStatusHandler Handler(
+        FakeGuard guard, RecordingReporter reporter, FakeTriggers triggers, FakeScope scope) =>
+        new(new TriggerFieldWrite(
+            new TicketFieldRules(scope, guard, new InMemorySettingsService(), TimeProvider.System),
+            new TicketFieldWriter(null!),
+            Fake<ISlaEngine>.Create((m, _) => throw new InvalidOperationException("Unexpected: " + m.Name)),
+            reporter, triggers,
+            Fake<ITicketRepository>.Create((m, a) => m.Name == nameof(ITicketRepository.GetCoreAsync)
+                ? Task.FromResult<Ticket?>(TicketFor((Guid)a![0]!))
+                : throw new InvalidOperationException("Unexpected: " + m.Name))));
+
+    private static Ticket TicketFor(Guid ticketId) => new(
+        ticketId, 42, "Onboarding ACME", Guid.NewGuid(), null, QueueId, CurrentStatus, Guid.NewGuid(), null,
+        "web", null, DateTime.UtcNow, DateTime.UtcNow, null, null, null, null, false);
+
     private static JsonElement Action(Guid statusId)
         => JsonDocument.Parse(JsonSerializer.Serialize(new { kind = "set_status", status_id = statusId })).RootElement;
 
     private static TriggerEvaluationContext Context(Guid? triggeringAuthor)
     {
         var ticketId = Guid.NewGuid();
-        var ticket = new Ticket(
-            ticketId, 42, "Onboarding ACME", Guid.NewGuid(), null, Guid.NewGuid(), CurrentStatus, Guid.NewGuid(), null,
-            "web", null, DateTime.UtcNow, DateTime.UtcNow, null, null, null, null, false);
+        var ticket = TicketFor(ticketId);
         TicketEvent? evt = triggeringAuthor is null
             ? null
             : new TicketEvent(7, ticketId, "Note", triggeringAuthor, null, "agent@x", "Closed without Invoice [CWI]", null, "{}", true, DateTime.UtcNow, null, null);

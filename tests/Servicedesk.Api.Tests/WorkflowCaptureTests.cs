@@ -101,10 +101,10 @@ public sealed class WorkflowCaptureTests
         var trigger = Guid.NewGuid();
         var agent = Guid.NewGuid();
 
-        var outside = JsonDocument.Parse(TriggerEventMetadata.FieldChange(null, Guid.NewGuid(), null, "Pending", trigger));
+        var outside = JsonDocument.Parse(TriggerEventMetadata.SystemNote(trigger));
         string inside;
         using (TriggerOrigin.Agent(agent))
-            inside = TriggerEventMetadata.FieldChange(null, Guid.NewGuid(), null, "Pending", trigger);
+            inside = TriggerEventMetadata.SystemNote(trigger);
         var after = JsonDocument.Parse(TriggerEventMetadata.SystemNote(trigger));
 
         Assert.False(outside.RootElement.TryGetProperty("on_behalf_of", out _));

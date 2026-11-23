@@ -164,8 +164,11 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
 
     private readonly NpgsqlDataSource _dataSource;
 
+    private readonly TicketFieldWriter _fieldWriter;
+
     public TicketRepository(NpgsqlDataSource dataSource)
     {
+        _fieldWriter = new TicketFieldWriter(dataSource);
         _dataSource = dataSource;
     }
 
@@ -764,273 +767,20 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         return ticket;
     }
 
+    /// Agent field write: the shared <see cref="TicketFieldWriter"/> with the
+    /// agent as author. Returns the fresh detail, or null when the ticket is
+    /// gone. An unknown target id is a caller bug (the endpoints validate
+    /// ids first) and throws, like the foreign-key error it used to be.
     public async Task<TicketDetail?> UpdateFieldsAsync(Guid ticketId, TicketFieldUpdate update, Guid actorUserId, CancellationToken ct)
     {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await using var tx = await conn.BeginTransactionAsync(ct);
-
-        const string readSql = """
-            SELECT queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
-                   category_id AS CategoryId, assignee_user_id AS AssigneeUserId,
-                   pending_till_utc AS PendingTillUtc,
-                   is_callback AS IsCallback, is_research AS IsResearch,
-                   description_internal AS DescriptionInternal
-            FROM tickets WHERE id = @ticketId AND is_deleted = FALSE
-            FOR UPDATE
-            """;
-        var current = await conn.QueryFirstOrDefaultAsync<TicketFieldSnapshot>(
-            new CommandDefinition(readSql, new { ticketId }, tx, cancellationToken: ct));
-        if (current is null) { await tx.RollbackAsync(ct); return null; }
-
-        // v0.0.40 — auto-flip status when a queue change would land the
-        // ticket on a status outside the new queue's allowed-list. The
-        // status-dropdown filters in the UI prevent the common case at
-        // save-time, but a hand-rolled API call still needs the runtime
-        // safety net. (Triggers write through SystemFieldMutator, not here:
-        // SetQueueHandler applies the same rule after its queue change.) We rebind
-        // `update` (record copy via `with`) so every downstream branch
-        // — change-event metadata, state-category side-effects, SQL
-        // parameter binding — picks up the auto-flip without further
-        // wiring.
-        if (update.QueueId.HasValue && update.QueueId != current.QueueId)
+        var result = await _fieldWriter.ApplyAsync(ticketId, update, new TicketWriteOrigin.Agent(actorUserId), ct);
+        return result.Status switch
         {
-            var scope = await conn.QueryFirstOrDefaultAsync<QueueStatusScopeRow>(
-                new CommandDefinition(
-                    "SELECT allowed_status_ids AS AllowedStatusIds, default_status_id AS DefaultStatusId FROM queues WHERE id = @id",
-                    new { id = update.QueueId.Value }, tx, cancellationToken: ct));
-            if (scope is not null
-                && scope.AllowedStatusIds is { Length: > 0 }
-                && scope.DefaultStatusId.HasValue)
-            {
-                var effective = update.StatusId ?? current.StatusId;
-                if (!scope.AllowedStatusIds.Contains(effective))
-                {
-                    update = update with { StatusId = scope.DefaultStatusId };
-                }
-            }
-        }
-
-        var sets = new List<string>();
-        var events = new List<(string EventType, string MetadataJson)>();
-
-        // Helper: look up a human-readable name for a taxonomy entity or user
-        // so change events store "New → In Progress" rather than raw UUIDs.
-        async Task<string?> LookupNameAsync(string table, Guid? id)
-        {
-            if (!id.HasValue) return null;
-            var col = table == "users" ? "email" : "name";
-            return await conn.ExecuteScalarAsync<string>(
-                new CommandDefinition($"SELECT {col} FROM {table} WHERE id = @id",
-                    new { id = id.Value }, tx, cancellationToken: ct));
-        }
-
-        if (update.QueueId.HasValue && update.QueueId != current.QueueId)
-        {
-            sets.Add("queue_id = @NewQueueId");
-            var fromName = await LookupNameAsync("queues", current.QueueId);
-            var toName = await LookupNameAsync("queues", update.QueueId);
-            events.Add(("QueueChange", System.Text.Json.JsonSerializer.Serialize(
-                new { from = current.QueueId, to = update.QueueId, fromName, toName })));
-        }
-        if (update.StatusId.HasValue && update.StatusId != current.StatusId)
-        {
-            sets.Add("status_id = @NewStatusId");
-            var fromName = await LookupNameAsync("statuses", current.StatusId);
-            var toName = await LookupNameAsync("statuses", update.StatusId);
-            var fromCategory = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                "SELECT state_category FROM statuses WHERE id = @id",
-                new { id = current.StatusId }, tx, cancellationToken: ct));
-            var toCategory = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                "SELECT state_category FROM statuses WHERE id = @id",
-                new { id = update.StatusId.Value }, tx, cancellationToken: ct));
-            events.Add(("StatusChange", System.Text.Json.JsonSerializer.Serialize(
-                new { from = current.StatusId, to = update.StatusId, fromName, toName, fromCategory, toCategory })));
-        }
-        if (update.PriorityId.HasValue && update.PriorityId != current.PriorityId)
-        {
-            sets.Add("priority_id = @NewPriorityId");
-            var fromName = await LookupNameAsync("priorities", current.PriorityId);
-            var toName = await LookupNameAsync("priorities", update.PriorityId);
-            events.Add(("PriorityChange", System.Text.Json.JsonSerializer.Serialize(
-                new { from = current.PriorityId, to = update.PriorityId, fromName, toName })));
-        }
-        if (update.ClearCategory && current.CategoryId.HasValue)
-        {
-            sets.Add("category_id = NULL");
-            var fromName = await LookupNameAsync("categories", current.CategoryId);
-            events.Add(("CategoryChange", System.Text.Json.JsonSerializer.Serialize(
-                new { from = current.CategoryId, to = (Guid?)null, fromName, toName = (string?)null })));
-        }
-        else if (!update.ClearCategory && update.CategoryId.HasValue && update.CategoryId != current.CategoryId)
-        {
-            sets.Add("category_id = @NewCategoryId");
-            var fromName = await LookupNameAsync("categories", current.CategoryId);
-            var toName = await LookupNameAsync("categories", update.CategoryId);
-            events.Add(("CategoryChange", System.Text.Json.JsonSerializer.Serialize(
-                new { from = current.CategoryId, to = update.CategoryId, fromName, toName })));
-        }
-        // v0.0.78 — ClearAssignee is the only way to unassign: a plain
-        // null AssigneeUserId means "not provided", so it can't be
-        // distinguished from omission. Skip when already unassigned so a
-        // redundant clear stays a no-op (no spurious timeline event).
-        if (update.ClearAssignee && current.AssigneeUserId.HasValue)
-        {
-            sets.Add("assignee_user_id = NULL");
-            var fromName = await LookupNameAsync("users", current.AssigneeUserId);
-            events.Add(("AssignmentChange", System.Text.Json.JsonSerializer.Serialize(
-                new { from = current.AssigneeUserId, to = (Guid?)null, fromName, toName = (string?)null })));
-        }
-        else if (!update.ClearAssignee && update.AssigneeUserId.HasValue && update.AssigneeUserId != current.AssigneeUserId)
-        {
-            sets.Add("assignee_user_id = @NewAssigneeUserId");
-            var fromName = await LookupNameAsync("users", current.AssigneeUserId);
-            var toName = await LookupNameAsync("users", update.AssigneeUserId);
-            events.Add(("AssignmentChange", System.Text.Json.JsonSerializer.Serialize(
-                new { from = current.AssigneeUserId, to = update.AssigneeUserId, fromName, toName })));
-        }
-
-        // v0.1.17 — Call-back / Research flags. Same-value writes are a
-        // no-op (no event), so a double click can't spam the timeline.
-        if (update.IsCallback.HasValue && update.IsCallback.Value != current.IsCallback)
-        {
-            sets.Add("is_callback = @NewIsCallback");
-            events.Add(("TicketFlagChange", System.Text.Json.JsonSerializer.Serialize(
-                new { flag = "callback", from = current.IsCallback, to = update.IsCallback.Value })));
-        }
-        if (update.IsResearch.HasValue && update.IsResearch.Value != current.IsResearch)
-        {
-            sets.Add("is_research = @NewIsResearch");
-            events.Add(("TicketFlagChange", System.Text.Json.JsonSerializer.Serialize(
-                new { flag = "research", from = current.IsResearch, to = update.IsResearch.Value })));
-        }
-        // v0.1.49 — description visibility (internal ↔ visible to customer).
-        if (update.DescriptionInternal.HasValue && update.DescriptionInternal.Value != current.DescriptionInternal)
-        {
-            sets.Add("description_internal = @NewDescriptionInternal");
-            events.Add(("TicketFlagChange", System.Text.Json.JsonSerializer.Serialize(
-                new { flag = "descriptionInternal", from = current.DescriptionInternal, to = update.DescriptionInternal.Value })));
-        }
-
-        bool bodyChanged = false;
-        if (update.Subject is not null)
-        {
-            sets.Add("subject = @NewSubject");
-        }
-        if (update.BodyText is not null || update.BodyHtml is not null)
-        {
-            bodyChanged = true;
-        }
-
-        // v0.0.37 — gate pending-till writes against the *effective*
-        // status (after a same-PATCH flip). The auto-clear below
-        // already wipes the column when flipping out of Pending, so
-        // any value the caller sends in that case is ignored. Has to
-        // run BEFORE the no-op short-circuit further down, otherwise a
-        // pending-till-only PATCH (the common agent-edit case) rolls
-        // back with sets.Count == 0.
-        bool writePendingTill =
-            update.PendingTillUtc.HasValue
-            && (current.StatusId == update.StatusId
-                || !update.StatusId.HasValue
-                || await IsPendingStatusAsync(conn, tx, update.StatusId!.Value, ct));
-        if (writePendingTill) sets.Add("pending_till_utc = @NewPendingTillUtc");
-        // v0.1.44 — leave a trace: who moved the reminder, from when to when.
-        // A same-value write (e.g. re-confirming the picker) stays silent.
-        if (writePendingTill && !PendingTillRules.SameInstant(current.PendingTillUtc, update.PendingTillUtc))
-        {
-            events.Add(("PendingTillChange", System.Text.Json.JsonSerializer.Serialize(new
-            {
-                from = PendingTillRules.ToUtc(current.PendingTillUtc),
-                to = PendingTillRules.ToUtc(update.PendingTillUtc),
-            })));
-        }
-
-        if (sets.Count == 0 && !bodyChanged) { await tx.RollbackAsync(ct); return await GetByIdAsync(ticketId, ct); }
-
-        sets.Add("updated_utc = now()");
-
-        if (update.StatusId.HasValue && update.StatusId != current.StatusId)
-        {
-            var stateCategory = await conn.ExecuteScalarAsync<string>(
-                new CommandDefinition("SELECT state_category FROM statuses WHERE id = @id",
-                    new { id = update.StatusId }, tx, cancellationToken: ct));
-            if (stateCategory == "Resolved") sets.Add("resolved_utc = COALESCE(resolved_utc, now())");
-            if (stateCategory == "Closed") sets.Add("closed_utc = COALESCE(closed_utc, now())");
-            // v0.0.37 — flipping OUT of Pending wipes the reminder.
-            // The trigger-driven `next_trigger_id` chain (v0.0.24) is
-            // tied to the same lifecycle so we clear it in the same
-            // breath. Flipping IN to Pending without an explicit value
-            // is the endpoint's responsibility — the repo only persists
-            // what it's given.
-            if (stateCategory != "Pending")
-            {
-                sets.Add("pending_till_utc = NULL");
-                sets.Add("pending_till_next_trigger_id = NULL");
-            }
-        }
-
-        if (sets.Count > 1) // more than just updated_utc
-        {
-            var updateSql = $"UPDATE tickets SET {string.Join(", ", sets)} WHERE id = @ticketId";
-            await conn.ExecuteAsync(new CommandDefinition(updateSql, new
-            {
-                ticketId,
-                NewQueueId = update.QueueId,
-                NewStatusId = update.StatusId,
-                NewPriorityId = update.PriorityId,
-                NewCategoryId = update.CategoryId,
-                NewAssigneeUserId = update.AssigneeUserId,
-                NewSubject = update.Subject,
-                NewPendingTillUtc = update.PendingTillUtc,
-                NewIsCallback = update.IsCallback,
-                NewIsResearch = update.IsResearch,
-                NewDescriptionInternal = update.DescriptionInternal,
-            }, tx, cancellationToken: ct));
-        }
-
-        if (bodyChanged)
-        {
-            await conn.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
-                VALUES (@ticketId, COALESCE(@bodyText, ''), @bodyHtml)
-                ON CONFLICT (ticket_id) DO UPDATE
-                    SET body_text = COALESCE(@bodyText, ticket_bodies.body_text),
-                        body_html = COALESCE(@bodyHtml, ticket_bodies.body_html)
-                """,
-                new { ticketId, bodyText = update.BodyText, bodyHtml = update.BodyHtml },
-                tx, cancellationToken: ct));
-            // Also bump updated_utc on ticket if only body changed
-            if (sets.Count <= 1)
-            {
-                await conn.ExecuteAsync(new CommandDefinition(
-                    "UPDATE tickets SET updated_utc = now() WHERE id = @ticketId",
-                    new { ticketId }, tx, cancellationToken: ct));
-            }
-        }
-
-        // v0.0.102 — bulk legs carry their batch id on every change event
-        // (merged into the per-event metadata JSON) so the timeline can
-        // badge them and forensics can group a whole batch.
-        var bulkBatchId = update.BulkBatchId?.ToString();
-        foreach (var (eventType, metadata) in events)
-        {
-            await conn.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)
-                VALUES (@ticketId, @eventType, @actorUserId,
-                        CASE WHEN @bulkBatchId IS NULL THEN @metadata::jsonb
-                             ELSE @metadata::jsonb || jsonb_build_object('bulk_batch_id', @bulkBatchId::text) END,
-                        @isInternal)
-                """,
-                // v0.1.17 — flag changes are internal-only (defence in depth
-                // on top of the portal's event-type allow-list).
-                new { ticketId, eventType, actorUserId, metadata, bulkBatchId, isInternal = eventType is "TicketFlagChange" or "PendingTillChange" },
-                tx, cancellationToken: ct));
-        }
-
-        await tx.CommitAsync(ct);
-        return await GetByIdAsync(ticketId, ct);
+            TicketFieldWriteStatus.TicketGone => null,
+            TicketFieldWriteStatus.TargetNotFound =>
+                throw new InvalidOperationException($"Ticket update refers to an unknown {result.MissingTarget}."),
+            _ => await GetByIdAsync(ticketId, ct),
+        };
     }
 
     public async Task<TicketDetail?> AssignCompanyAsync(Guid ticketId, Guid companyId, Guid actorUserId, CancellationToken ct)
@@ -1421,36 +1171,6 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<TicketEventPin>(
             new CommandDefinition(sql, new { eventId, ticketId, remark = remark ?? "" }, cancellationToken: ct));
-    }
-
-    private sealed record TicketFieldSnapshot(
-        Guid QueueId, Guid StatusId, Guid PriorityId, Guid? CategoryId, Guid? AssigneeUserId,
-        DateTime? PendingTillUtc, bool IsCallback, bool IsResearch, bool DescriptionInternal);
-
-    // v0.0.40 — projection used by the queue auto-flip path in
-    // UpdateFieldsAsync. Sealed class (not record) per the project's
-    // dapper_record_struct_null_bug convention; default_status_id is
-    // nullable in the schema and may legitimately be null.
-    private sealed class QueueStatusScopeRow
-    {
-        public Guid[] AllowedStatusIds { get; set; } = Array.Empty<Guid>();
-        public Guid? DefaultStatusId { get; set; }
-    }
-
-    /// Returns true when the supplied status_id sits in the
-    /// <c>Pending</c> state_category. Used by UpdateFieldsAsync to
-    /// decide whether to honour an explicit pending_till_utc write
-    /// alongside a status flip — agents on a non-Pending status can't
-    /// poke a stray pending-till value into the row through a stale
-    /// form.
-    private static async Task<bool> IsPendingStatusAsync(
-        Npgsql.NpgsqlConnection conn, System.Data.Common.DbTransaction tx,
-        Guid statusId, CancellationToken ct)
-    {
-        var cat = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
-            "SELECT state_category FROM statuses WHERE id = @id",
-            new { id = statusId }, tx, cancellationToken: ct));
-        return cat == "Pending";
     }
 
     public async Task<IReadOnlySet<(Guid TicketId, long EventId)>> EventsBelongToTicketsAsync(

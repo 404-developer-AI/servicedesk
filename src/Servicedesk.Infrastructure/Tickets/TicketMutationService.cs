@@ -133,40 +133,31 @@ public sealed class TicketMutationService : ITicketMutationService
 {
     private readonly ITicketRepository _tickets;
     private readonly IQueueAccessService _queueAccess;
-    private readonly IQueueStatusScope _statusScope;
+    private readonly ITicketFieldRules _rules;
     private readonly IStatusGateService _gates;
     private readonly IAuditLogger _audit;
     private readonly ITicketListNotifier _notifier;
     private readonly ISlaEngine _sla;
     private readonly ITriggerService _triggers;
-    private readonly IChecklistCloseGuard _checklistGuard;
-    private readonly Settings.ISettingsService _settings;
-    private readonly TimeProvider _clock;
 
     public TicketMutationService(
         ITicketRepository tickets,
         IQueueAccessService queueAccess,
-        IQueueStatusScope statusScope,
+        ITicketFieldRules rules,
         IStatusGateService gates,
         IAuditLogger audit,
         ITicketListNotifier notifier,
         ISlaEngine sla,
-        ITriggerService triggers,
-        IChecklistCloseGuard checklistGuard,
-        Settings.ISettingsService settings,
-        TimeProvider clock)
+        ITriggerService triggers)
     {
         _tickets = tickets;
         _queueAccess = queueAccess;
-        _statusScope = statusScope;
+        _rules = rules;
         _gates = gates;
         _audit = audit;
         _notifier = notifier;
         _sla = sla;
         _triggers = triggers;
-        _checklistGuard = checklistGuard;
-        _settings = settings;
-        _clock = clock;
     }
 
     public async Task<AccessPrecheck> PrecheckAccessAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct)
@@ -186,51 +177,18 @@ public sealed class TicketMutationService : ITicketMutationService
             return FieldUpdatePrecheck.Fail(access.Check);
         var current = access.Ticket;
 
-        // v0.1.44 — a new pending-till must lie in the future. Re-sending the
-        // value the ticket already holds is not a change and passes, so a
-        // stale form never blocks an unrelated edit.
-        if (update.PendingTillUtc.HasValue
-            && !PendingTillRules.SameInstant(update.PendingTillUtc, current.PendingTillUtc)
-            && PendingTillRules.IsInPast(update.PendingTillUtc, _clock.GetUtcNow().UtcDateTime))
-            return FieldUpdatePrecheck.Fail(TicketMutationCheck.PendingTillInPast);
-
         // Moving queues requires access to the destination too.
-        if (update.QueueId.HasValue && update.QueueId != current.QueueId)
-        {
-            if (!await _queueAccess.HasQueueAccessAsync(actor.UserId, actor.Role, update.QueueId.Value, ct))
-                return FieldUpdatePrecheck.Fail(TicketMutationCheck.TargetQueueNoAccess);
+        if (update.QueueId.HasValue && update.QueueId != current.QueueId
+            && !await _queueAccess.HasQueueAccessAsync(actor.UserId, actor.Role, update.QueueId.Value, ct))
+            return FieldUpdatePrecheck.Fail(TicketMutationCheck.TargetQueueNoAccess);
 
-            // v0.0.105 — project tickets are pinned to the configured project
-            // queue: any move to a different queue is refused (single-ticket
-            // and bulk share this rule by construction).
-            if (current.IsProject)
-            {
-                var pinned = await ProjectQueuePin.GetPinnedQueueIdAsync(_settings, ct);
-                if (pinned is Guid pin && update.QueueId.Value != pin)
-                    return FieldUpdatePrecheck.Fail(TicketMutationCheck.ProjectQueueLocked);
-            }
-        }
-
-        // v0.0.40 polish — an explicit status must sit in the target queue's
-        // allowed-list. Skipped when StatusId is unset (the repository's
-        // auto-flip handles queue-only changes). Validated against the
-        // current queue when the queue isn't changing.
-        if (update.StatusId.HasValue)
-        {
-            var targetQueueId = update.QueueId ?? current.QueueId;
-            if (!await _statusScope.IsStatusAllowedAsync(targetQueueId, update.StatusId.Value, ct))
-                return FieldUpdatePrecheck.Fail(TicketMutationCheck.StatusNotInQueueScope);
-        }
-
-        // v0.0.103 — checklist close block. A hard rule, not a gate: no
-        // confirmation can satisfy it, the agent has to finish (or n/a) the
-        // required items first. Only when the status actually changes.
-        if (update.StatusId.HasValue && update.StatusId.Value != current.StatusId)
-        {
-            var blockers = await _checklistGuard.FindBlockersAsync(ticketId, update.StatusId.Value, ct);
-            if (blockers.Count > 0)
-                return FieldUpdatePrecheck.Blocked(blockers);
-        }
+        // The rules every writer shares (pending-till, project pin, status
+        // scope, checklist close block) — triggers run the same ones.
+        var verdict = await _rules.CheckAsync(current, update, ct);
+        if (verdict.Check == TicketMutationCheck.ChecklistIncomplete)
+            return FieldUpdatePrecheck.Blocked(verdict.Blockers!);
+        if (!verdict.IsOk)
+            return FieldUpdatePrecheck.Fail(verdict.Check);
 
         // v0.0.42 — status-gate probe. Only when the status actually changes;
         // a same-value update is a no-op the matcher already filters.

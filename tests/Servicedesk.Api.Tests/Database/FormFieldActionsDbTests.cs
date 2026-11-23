@@ -46,7 +46,7 @@ public sealed class FormFieldActionsDbTests
     {
         var tickets = new TicketRepository(_db.DataSource);
         var handler = new SetOwnerHandler(
-            new SystemFieldMutator(_db.DataSource, NoSla()), new UserService(_db.DataSource),
+            TriggerWriteKit.Create(_db.DataSource, NoSla()), new UserService(_db.DataSource),
             new QueueAccessService(_db.DataSource, new MemoryCache(new MemoryCacheOptions())), tickets);
         var ticket = (await tickets.GetCoreAsync(ticketId, default))!;
         using var action = JsonDocument.Parse("""{ "kind": "set_owner", "form_field": "technician" }""");
@@ -103,7 +103,7 @@ public sealed class FormFieldActionsDbTests
     {
         var tickets = new TicketRepository(_db.DataSource);
         var handler = new SetPendingTillHandler(
-            new SystemFieldMutator(_db.DataSource, NoSla()), null!, tickets, new TaxonomyRepository(_db.DataSource));
+            new SystemFieldMutator(_db.DataSource), null!, tickets, new TaxonomyRepository(_db.DataSource));
         var ticket = (await tickets.GetCoreAsync(ticketId, default))!;
         using var action = JsonDocument.Parse("""{ "kind": "set_pending_till", "form_field": "planned_at" }""");
         return await handler.ApplyAsync(action.RootElement,

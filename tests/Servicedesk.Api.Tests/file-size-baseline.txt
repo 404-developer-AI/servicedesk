@@ -5,8 +5,8 @@
 # split, run the test with SD_FILE_SIZE_BASELINE=tighten to update this list.
 # Format: <lines> <path relative to the repository root>
 2806 src/Servicedesk.Api/Tickets/TicketEndpoints.cs
-2348 src/Servicedesk.Infrastructure/Persistence/Tickets/TicketRepository.cs
 2182 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadApiClient.cs
+2068 src/Servicedesk.Infrastructure/Persistence/Tickets/TicketRepository.cs
 2024 src/Servicedesk.Api/Integrations/AdsolutEndpoints.cs
 1988 src/Servicedesk.Web/src/pages/tickets/components/TicketTimeline.tsx
 1970 src/Servicedesk.Web/src/pages/tickets/components/TicketSidePanel.tsx
@@ -36,11 +36,11 @@
 1024 src/Servicedesk.Web/src/pages/settings/templates/FormTemplatesPanel.tsx
 1015 src/Servicedesk.Web/src/pages/insights/RewindReport.tsx
 1003 src/Servicedesk.Infrastructure/Mail/Outbound/OutboundMailService.cs
-997 src/Servicedesk.Infrastructure/DependencyInjection.cs
 994 src/Servicedesk.Api/Auth/AuthEndpoints.cs
 989 src/Servicedesk.Infrastructure/Auth/Admin/UserAdminService.cs
 989 src/Servicedesk.Infrastructure/Triggers/TriggerValidator.cs
 988 tests/Servicedesk.Api.Tests/OutboundMailServiceTests.cs
+984 src/Servicedesk.Infrastructure/DependencyInjection.cs
 968 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadDryRunWorker.cs
 954 src/Servicedesk.Web/src/pages/settings/TriggersSettingsPage.tsx
 914 src/Servicedesk.Api/Program.cs

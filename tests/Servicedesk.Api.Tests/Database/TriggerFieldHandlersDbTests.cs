@@ -46,6 +46,26 @@ public sealed class TriggerFieldHandlersDbTests
     }
 
     [PostgresFact]
+    public async Task A_trigger_change_inside_an_agent_request_names_that_agent()
+    {
+        // Insights Workflow attributes a trigger-driven move to the agent
+        // whose action ran the pass (on_behalf_of), the timeline shows the
+        // trigger (triggered_by) and no author.
+        var (seed, ticketId, _) = await TicketAsync();
+        var to = await seed.QueueAsync("Second line");
+        var agent = Guid.NewGuid();
+
+        using (TriggerOrigin.Agent(agent))
+            await RunAsync(SetQueue(), ticketId, $$"""{ "queue_id": "{{to}}" }""");
+
+        var evt = await SingleEventAsync(ticketId, "QueueChange");
+        Assert.Null(evt.AuthorUserId);
+        Assert.Contains(agent.ToString(), evt.Metadata);
+        Assert.Contains("on_behalf_of", evt.Metadata);
+        Assert.Contains(TriggerIdText, evt.Metadata);
+    }
+
+    [PostgresFact]
     public async Task Set_queue_to_the_current_queue_is_a_no_op_without_an_event()
     {
         var (_, ticketId, queue) = await TicketAsync();
@@ -102,7 +122,7 @@ public sealed class TriggerFieldHandlersDbTests
         var (seed, ticketId, _) = await TicketAsync();
         var urgent = await seed.PriorityAsync();
 
-        var result = await RunAsync(new SetPriorityHandler(Mutator()), ticketId, $$"""{ "priority_id": "{{urgent}}" }""");
+        var result = await RunAsync(new SetPriorityHandler(Write()), ticketId, $$"""{ "priority_id": "{{urgent}}" }""");
 
         Assert.Equal(TriggerActionStatus.Applied, result.Status);
         Assert.Equal(urgent, await ColumnAsync<Guid>(ticketId, "priority_id"));
@@ -115,7 +135,7 @@ public sealed class TriggerFieldHandlersDbTests
         var (_, ticketId, _) = await TicketAsync();
         var current = await ColumnAsync<Guid>(ticketId, "priority_id");
 
-        var result = await RunAsync(new SetPriorityHandler(Mutator()), ticketId, $$"""{ "priority_id": "{{current}}" }""");
+        var result = await RunAsync(new SetPriorityHandler(Write()), ticketId, $$"""{ "priority_id": "{{current}}" }""");
 
         Assert.Equal(TriggerActionStatus.NoOp, result.Status);
         Assert.Equal(0, await EventCountAsync(ticketId));
@@ -126,7 +146,7 @@ public sealed class TriggerFieldHandlersDbTests
     {
         var (_, ticketId, _) = await TicketAsync();
 
-        var result = await RunAsync(new SetPriorityHandler(Mutator()), ticketId, """{ "priority_id": "not-a-guid" }""");
+        var result = await RunAsync(new SetPriorityHandler(Write()), ticketId, """{ "priority_id": "not-a-guid" }""");
 
         Assert.Equal(TriggerActionStatus.Failed, result.Status);
     }
@@ -205,24 +225,18 @@ public sealed class TriggerFieldHandlersDbTests
     private static readonly Guid TriggerId = Guid.Parse("7a000000-0000-0000-0000-000000000001");
     private static readonly string TriggerIdText = TriggerId.ToString();
 
-    private SystemFieldMutator Mutator() => new(_db.DataSource, Sla());
+    private TriggerFieldWrite Write(InMemorySettingsService? settings = null) =>
+        TriggerWriteKit.Create(_db.DataSource, Sla(), settings);
 
-    private ISlaEngine Sla() => Fake<ISlaEngine>.Create((method, _) =>
-    {
-        _slaCalls.Add(method.Name);
-        return method.ReturnType == typeof(Task)
-            ? Task.CompletedTask
-            : throw new NotImplementedException($"Unexpected call: {method.Name}");
-    });
+    private ISlaEngine Sla() => TriggerWriteKit.Sla(_slaCalls);
 
     private SetQueueHandler SetQueue(InMemorySettingsService? settings = null) => new(
-        Mutator(), settings ?? new InMemorySettingsService(),
-        new TaxonomyRepository(_db.DataSource), new TicketRepository(_db.DataSource));
+        Write(settings), new TaxonomyRepository(_db.DataSource));
 
     // The fixed-value path never consults users or queue access (that is the
     // form-field path); any call there would be a behaviour change.
     private SetOwnerHandler SetOwner() => new(
-        Mutator(),
+        Write(),
         Fake<IUserService>.Create((m, _) => throw new InvalidOperationException("Unexpected: " + m.Name)),
         FakeQueueAccess.None(),
         new TicketRepository(_db.DataSource));

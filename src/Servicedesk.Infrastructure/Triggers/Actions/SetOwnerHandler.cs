@@ -8,15 +8,15 @@ namespace Servicedesk.Infrastructure.Triggers.Actions;
 
 internal sealed class SetOwnerHandler : ITriggerActionHandler
 {
-    private readonly SystemFieldMutator _mutator;
+    private readonly TriggerFieldWrite _write;
     private readonly IUserService _users;
     private readonly IQueueAccessService _queueAccess;
     private readonly ITicketRepository _tickets;
 
     public SetOwnerHandler(
-        SystemFieldMutator mutator, IUserService users, IQueueAccessService queueAccess, ITicketRepository tickets)
+        TriggerFieldWrite write, IUserService users, IQueueAccessService queueAccess, ITicketRepository tickets)
     {
-        _mutator = mutator;
+        _write = write;
         _users = users;
         _queueAccess = queueAccess;
         _tickets = tickets;
@@ -27,7 +27,6 @@ internal sealed class SetOwnerHandler : ITriggerActionHandler
     public async Task<TriggerActionResult> ApplyAsync(JsonElement actionJson, TriggerEvaluationContext ctx, CancellationToken ct)
     {
         Guid? newUserId;
-        Guid? currentOwner = ctx.Ticket.AssigneeUserId;
         if (FormFieldActionSource.HasFormField(actionJson))
         {
             var source = FormFieldActionSource.Resolve(actionJson, ctx, FormFieldType.Agent);
@@ -41,34 +40,16 @@ internal sealed class SetOwnerHandler : ITriggerActionHandler
             var check = await FormOwnerCheck.ReasonCannotOwnAsync(_users, _queueAccess, source.Field!.RefId!.Value, ticket.QueueId, ct);
             if (check is not null) return TriggerActionResult.Failed(Kind, check);
             newUserId = source.Field.RefId;
-            currentOwner = ticket.AssigneeUserId;
         }
         // assignee_user_id is nullable — explicit `user_id: null` from
         // the editor means "clear the assignee", not a malformed action.
         else if (!ActionJson.TryReadGuidOrNull(actionJson, "user_id", out newUserId))
             return TriggerActionResult.Failed(Kind, "Action is missing required string-or-null 'user_id'.");
 
-        var outcome = await _mutator.ChangeFieldAsync(
-            ctx.TicketId,
-            SystemFieldDescriptor.Owner,
-            currentValue: currentOwner,
-            newValue: newUserId,
-            triggerId: ctx.TriggerId,
-            ct: ct);
-
-        return outcome.Status switch
-        {
-            FieldChangeStatus.Applied => TriggerActionResult.Applied(Kind, new
-            {
-                column = outcome.Column,
-                from = outcome.From,
-                to = outcome.To,
-                fromName = outcome.FromName,
-                toName = outcome.ToName,
-            }),
-            FieldChangeStatus.NoOp => TriggerActionResult.NoOp(Kind, new { column = outcome.Column }),
-            _ => TriggerActionResult.Failed(Kind, outcome.Reason ?? "Unknown failure."),
-        };
+        var update = newUserId is Guid id
+            ? new TicketFieldUpdate(AssigneeUserId: id)
+            : new TicketFieldUpdate(ClearAssignee: true);
+        return await _write.ApplyAsync(Kind, "assignee_user_id", update, ctx, ct);
     }
 }
 

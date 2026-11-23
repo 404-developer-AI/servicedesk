@@ -75,9 +75,7 @@ public sealed class SetQueueAutoFlipDbTests
             method.ReturnType == typeof(Task)
                 ? Task.CompletedTask
                 : throw new NotImplementedException($"Unexpected call: {method.Name}"));
-        var handler = new SetQueueHandler(
-            new SystemFieldMutator(_db.DataSource, sla), new InMemorySettingsService(),
-            new TaxonomyRepository(_db.DataSource), tickets);
+        var handler = new SetQueueHandler(TriggerWriteKit.Create(_db.DataSource, sla), new TaxonomyRepository(_db.DataSource));
 
         var ticket = (await tickets.GetCoreAsync(ticketId, default))!;
         var ctx = new TriggerEvaluationContext(

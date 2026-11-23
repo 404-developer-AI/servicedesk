@@ -163,7 +163,7 @@ public sealed class PendingTillInPastTests : IClassFixture<SharedHostFixture>
     public async Task Trigger_with_a_past_absolute_fails_without_writing()
     {
         // Null-backed mutator: reaching it would throw.
-        var handler = new SetPendingTillHandler(new SystemFieldMutator(null!, null!), null!, null!, null!);
+        var handler = new SetPendingTillHandler(new SystemFieldMutator(null!), null!, null!, null!);
         var action = JsonDocument.Parse("""{ "kind":"set_pending_till", "absolute":"2026-10-13T07:00:00Z" }""").RootElement;
 
         var result = await handler.ApplyAsync(action, TriggerContext(), default);
@@ -218,15 +218,16 @@ public sealed class PendingTillInPastTests : IClassFixture<SharedHostFixture>
         => new(
             Fake<ITicketRepository>.Create(TicketRepoHandler(ticket)),
             Fake<IQueueAccessService>.Create(QueueAccessHandler(hasQueueAccess)),
-            Fake<IQueueStatusScope>.Create(Unexpected),
+            new TicketFieldRules(
+                Fake<IQueueStatusScope>.Create(Unexpected),
+                Fake<IChecklistCloseGuard>.Create(Unexpected),
+                Fake<ISettingsService>.Create(Unexpected),
+                new FixedClock(Now)),
             Fake<IStatusGateService>.Create(Unexpected),
             Fake<IAuditLogger>.Create(Unexpected),
             Fake<ITicketListNotifier>.Create(Unexpected),
             Fake<ISlaEngine>.Create(Unexpected),
-            Fake<ITriggerService>.Create(Unexpected),
-            Fake<IChecklistCloseGuard>.Create(Unexpected),
-            Fake<ISettingsService>.Create(Unexpected),
-            new FixedClock(Now));
+            Fake<ITriggerService>.Create(Unexpected));
 
     private static Func<MethodInfo, object?[]?, object?> TicketRepoHandler(Ticket ticket) => (m, args) => m.Name switch
     {

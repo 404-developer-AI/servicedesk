@@ -413,8 +413,8 @@ public sealed class TicketMutationServiceTests
                 return Task.CompletedTask;
             });
 
-            return new TicketMutationService(tickets, Access, scope, gates, Audit, notifier, sla, triggers, guard,
-                Settings, new FixedClock(Now));
+            return new TicketMutationService(tickets, Access, new TicketFieldRules(scope, guard, Settings, new FixedClock(Now)),
+                gates, Audit, notifier, sla, triggers);
         }
 
         private Task<TicketEvent?> Record(NewTicketEvent input)
