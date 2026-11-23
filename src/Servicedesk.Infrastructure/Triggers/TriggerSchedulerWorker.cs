@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Hosting;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Sla;
@@ -31,7 +31,7 @@ namespace Servicedesk.Infrastructure.Triggers;
 /// one install. The same tick also runs the skipped-run retention sweep
 /// (<c>Triggers.SkippedRunRetentionDays</c>).
 /// </para>
-public sealed class TriggerSchedulerWorker : BackgroundService
+public sealed class TriggerSchedulerWorker : PeriodicWorker
 {
     private const int CandidateLimit = 500;
 
@@ -44,82 +44,25 @@ public sealed class TriggerSchedulerWorker : BackgroundService
     private static readonly TimeSpan SweepIdleInterval = TimeSpan.FromHours(1);
     internal DateTime NextSweepUtc { get; private set; } = DateTime.MinValue;
 
-    private readonly IServiceProvider _sp;
-    private readonly ILogger<TriggerSchedulerWorker> _logger;
+    public TriggerSchedulerWorker(IServiceProvider sp, ILogger<TriggerSchedulerWorker> logger) : base(sp, logger) { }
 
-    /// Single-instance overlap guard. Today the loop below already runs
-    /// ticks sequentially so this is belt-and-braces, but if a future
-    /// refactor fans the loop out (e.g. <c>Task.Run</c>) or a hosted-
-    /// service refresh ever spawns a second instance into the same
-    /// process, this guarantees only one tick scans the candidate
-    /// tables at a time. <c>0 = idle, 1 = running</c>; CompareExchange
-    /// races safely.
-    private int _running;
+    protected override string WorkerName => "trigger-scheduler";
+    // Stagger the first tick so the scheduler doesn't race the SLA
+    // recalc worker on container start. SlaRecalcWorker waits 10s; we
+    // wait 20s so the SLA state table is populated by the time we
+    // scan it for escalation candidates.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(20);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromSeconds(60);
 
-    public TriggerSchedulerWorker(IServiceProvider sp, ILogger<TriggerSchedulerWorker> logger)
+    protected override async Task<WorkerSchedule> GetScheduleAsync(IServiceProvider services, CancellationToken ct)
     {
-        _sp = sp;
-        _logger = logger;
+        var settings = services.GetRequiredService<ISettingsService>();
+        var seconds = Math.Max(15, await settings.GetAsync<int>(
+            SettingKeys.Triggers.SchedulerIntervalSeconds, ct));
+        return new WorkerSchedule(TimeSpan.FromSeconds(seconds));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Stagger the first tick so the scheduler doesn't race the SLA
-        // recalc worker on container start. SlaRecalcWorker waits 10s; we
-        // wait 20s so the SLA state table is populated by the time we
-        // scan it for escalation candidates.
-        try { await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            var interval = 60;
-            try
-            {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                interval = Math.Max(15, await settings.GetAsync<int>(
-                    SettingKeys.Triggers.SchedulerIntervalSeconds, stoppingToken));
-
-                if (System.Threading.Interlocked.CompareExchange(ref _running, 1, 0) != 0)
-                {
-                    _logger.LogWarning(
-                        "Trigger scheduler tick skipped: previous tick still running. Increase {Setting} if this happens consistently.",
-                        SettingKeys.Triggers.SchedulerIntervalSeconds);
-                }
-                else
-                {
-                    using var run = PerfWorkerRun.Start("trigger-scheduler");
-                    try
-                    {
-                        await TickAsync(scope.ServiceProvider, stoppingToken);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        run.Fail(ex);
-                        throw;
-                    }
-                    finally
-                    {
-                        System.Threading.Interlocked.Exchange(ref _running, 0);
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Trigger scheduler tick failed.");
-            }
-
-            try { await Task.Delay(TimeSpan.FromSeconds(interval), stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(IServiceProvider sp, CancellationToken ct)
+    protected override async Task RunAsync(IServiceProvider sp, PerfWorkerRun run, CancellationToken ct)
     {
         var repo = sp.GetRequiredService<ITriggerRepository>();
         var triggerService = sp.GetRequiredService<ITriggerService>();
@@ -264,7 +207,7 @@ public sealed class TriggerSchedulerWorker : BackgroundService
         NextSweepUtc = hitCap ? DateTime.MinValue : now + SweepIdleInterval;
         if (deleted > 0)
         {
-            _logger.LogInformation(
+            Logger.LogInformation(
                 "Trigger run retention: swept {Deleted} skipped run rows older than {Days} days{More}.",
                 deleted, days, hitCap ? " (backlog remains, continuing next tick)" : string.Empty);
         }

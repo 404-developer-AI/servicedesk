@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Hosting;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
@@ -25,18 +25,8 @@ namespace Servicedesk.Infrastructure.Integrations;
 /// Skipped when the integration isn't configured (no client_id / no
 /// secret) — no row, no SignalR push — so a vanilla install doesn't fill
 /// the audit table with "not_configured" heartbeats.
-public sealed class IntegrationsHealthcheckWorker : BackgroundService
+public sealed class IntegrationsHealthcheckWorker : PeriodicWorker
 {
-    private readonly IServiceProvider _sp;
-    private readonly ILogger<IntegrationsHealthcheckWorker> _logger;
-
-    /// Single-instance overlap guard. Same belt-and-braces pattern as
-    /// <c>TriggerSchedulerWorker</c>: even though the loop runs ticks
-    /// sequentially today, a future fan-out would silently break the
-    /// "one upstream call per interval" invariant without this guard.
-    /// 0 = idle, 1 = running.
-    private int _running;
-
     /// Tracks the last status broadcast per integration so we only push a
     /// SignalR notification when the resolved state actually flipped.
     /// Without this every tick would re-broadcast the same state and
@@ -47,69 +37,24 @@ public sealed class IntegrationsHealthcheckWorker : BackgroundService
 
     public IntegrationsHealthcheckWorker(
         IServiceProvider sp,
-        ILogger<IntegrationsHealthcheckWorker> logger)
+        ILogger<IntegrationsHealthcheckWorker> logger) : base(sp, logger) { }
+
+    protected override string WorkerName => "integrations-healthcheck";
+    // Stagger the first tick so the worker doesn't race the database
+    // bootstrapper or the secret-store warmup. 30s lines up with the
+    // existing security-activity monitor's stagger.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(30);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromSeconds(300);
+
+    protected override async Task<WorkerSchedule> GetScheduleAsync(IServiceProvider services, CancellationToken ct)
     {
-        _sp = sp;
-        _logger = logger;
+        var settings = services.GetRequiredService<ISettingsService>();
+        var seconds = Math.Max(60, await settings.GetAsync<int>(
+            SettingKeys.Integrations.HealthcheckIntervalSeconds, ct));
+        return new WorkerSchedule(TimeSpan.FromSeconds(seconds));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // Stagger the first tick so the worker doesn't race the database
-        // bootstrapper or the secret-store warmup. 30s lines up with the
-        // existing security-activity monitor's stagger.
-        try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            var interval = 300;
-            try
-            {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                interval = Math.Max(60, await settings.GetAsync<int>(
-                    SettingKeys.Integrations.HealthcheckIntervalSeconds, stoppingToken));
-
-                if (System.Threading.Interlocked.CompareExchange(ref _running, 1, 0) != 0)
-                {
-                    _logger.LogWarning(
-                        "Integrations healthcheck tick skipped: previous tick still running. Increase {Setting} if this happens consistently.",
-                        SettingKeys.Integrations.HealthcheckIntervalSeconds);
-                }
-                else
-                {
-                    using var run = PerfWorkerRun.Start("integrations-healthcheck");
-                    try
-                    {
-                        await TickAsync(scope.ServiceProvider, stoppingToken);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        run.Fail(ex);
-                        throw;
-                    }
-                    finally
-                    {
-                        System.Threading.Interlocked.Exchange(ref _running, 0);
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Integrations healthcheck tick failed.");
-            }
-
-            try { await Task.Delay(TimeSpan.FromSeconds(interval), stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(IServiceProvider sp, CancellationToken ct)
+    protected override async Task RunAsync(IServiceProvider sp, PerfWorkerRun run, CancellationToken ct)
     {
         await TickAdsolutAsync(sp, ct);
         await SweepNoisyAuditAsync(sp, ct);
@@ -145,7 +90,7 @@ public sealed class IntegrationsHealthcheckWorker : BackgroundService
                 NoisyAuditEventTypes, cutoff, ct);
             if (deleted > 0)
             {
-                _logger.LogInformation(
+                Logger.LogInformation(
                     "integration_audit retention sweep: deleted {Rows} rows older than {Hours}h",
                     deleted, retentionHours);
             }
@@ -155,7 +100,7 @@ public sealed class IntegrationsHealthcheckWorker : BackgroundService
             // Defensive — the logger swallows internally, but a settings
             // read could throw before we ever get there. A retention-sweep
             // failure must not cascade into the healthcheck status.
-            _logger.LogWarning(ex, "integration_audit retention sweep threw.");
+            Logger.LogWarning(ex, "integration_audit retention sweep threw.");
         }
     }
 
@@ -220,7 +165,7 @@ public sealed class IntegrationsHealthcheckWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Adsolut healthcheck active probe threw an unexpected exception.");
+                Logger.LogError(ex, "Adsolut healthcheck active probe threw an unexpected exception.");
                 errorCode = "probe_exception";
                 outcome = IntegrationAuditOutcome.Warn;
             }

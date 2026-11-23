@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Hosting;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
@@ -15,70 +15,41 @@ namespace Servicedesk.Infrastructure.IntakeForms;
 /// cannot succeed between sweeps. This worker exists so the agent-side
 /// timeline reflects expiry without waiting for someone to open the link,
 /// and so reporting queries over <c>status</c> are eventually consistent.
-public sealed class IntakeFormExpiryWorker : BackgroundService
+public sealed class IntakeFormExpiryWorker : PeriodicWorker
 {
-    private readonly IServiceProvider _sp;
-    private readonly ILogger<IntakeFormExpiryWorker> _logger;
+    public IntakeFormExpiryWorker(IServiceProvider sp, ILogger<IntakeFormExpiryWorker> logger) : base(sp, logger) { }
 
-    public IntakeFormExpiryWorker(IServiceProvider sp, ILogger<IntakeFormExpiryWorker> logger)
+    protected override string WorkerName => "intake-expiry";
+    // Stagger start-up so every background worker isn't racing the
+    // database at boot.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(20);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromMinutes(15);
+
+    protected override async Task<WorkerSchedule> GetScheduleAsync(IServiceProvider services, CancellationToken ct)
     {
-        _sp = sp;
-        _logger = logger;
+        var settings = services.GetRequiredService<ISettingsService>();
+        var minutes = Math.Max(1, await settings.GetAsync<int>(SettingKeys.IntakeForms.ExpirySweepMinutes, ct));
+        return new WorkerSchedule(TimeSpan.FromMinutes(minutes));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(IServiceProvider services, PerfWorkerRun run, CancellationToken ct)
     {
-        // Stagger start-up so every background worker isn't racing the
-        // database at boot.
-        try { await Task.Delay(TimeSpan.FromSeconds(20), stoppingToken); }
-        catch (OperationCanceledException) { return; }
+        var repo = services.GetRequiredService<IIntakeFormRepository>();
+        var listNotifier = services.GetRequiredService<ITicketListNotifier>();
 
-        while (!stoppingToken.IsCancellationRequested)
+        var expired = await repo.ExpireStaleAsync(maxBatch: 200, nowUtc: DateTime.UtcNow, ct);
+        run.AddItems(expired.Count);
+        if (expired.Count == 0) return;
+
+        Logger.LogInformation("Expired {Count} intake-form instance(s) this sweep.", expired.Count);
+        foreach (var e in expired)
         {
-            var intervalMinutes = 15;
-            using (var run = PerfWorkerRun.Start("intake-expiry"))
+            try { await listNotifier.NotifyUpdatedAsync(e.TicketId, ct); }
+            catch (Exception notifyEx)
             {
-                try
-                {
-                    using var scope = _sp.CreateScope();
-                    var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                    intervalMinutes = Math.Max(1, await settings.GetAsync<int>(SettingKeys.IntakeForms.ExpirySweepMinutes, stoppingToken));
-
-                    var repo = scope.ServiceProvider.GetRequiredService<IIntakeFormRepository>();
-                    var listNotifier = scope.ServiceProvider.GetRequiredService<ITicketListNotifier>();
-
-                    var expired = await repo.ExpireStaleAsync(maxBatch: 200, nowUtc: DateTime.UtcNow, stoppingToken);
-                    run.AddItems(expired.Count);
-                    if (expired.Count > 0)
-                    {
-                        _logger.LogInformation("Expired {Count} intake-form instance(s) this sweep.", expired.Count);
-                        foreach (var e in expired)
-                        {
-                            try
-                            {
-                                await listNotifier.NotifyUpdatedAsync(e.TicketId, stoppingToken);
-                            }
-                            catch (Exception notifyEx)
-                            {
-                                _logger.LogWarning(notifyEx,
-                                    "IntakeFormExpiryWorker: failed to broadcast TicketUpdated for {TicketId}.", e.TicketId);
-                            }
-                        }
-                    }
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    run.Fail(ex);
-                    _logger.LogError(ex, "IntakeFormExpiryWorker iteration failed.");
-                }
+                Logger.LogWarning(notifyEx,
+                    "IntakeFormExpiryWorker: failed to broadcast TicketUpdated for {TicketId}.", e.TicketId);
             }
-
-            try { await Task.Delay(TimeSpan.FromMinutes(intervalMinutes), stoppingToken); }
-            catch (OperationCanceledException) { return; }
         }
     }
 }

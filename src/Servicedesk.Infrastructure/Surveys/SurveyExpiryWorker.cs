@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Hosting;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
@@ -14,64 +14,41 @@ namespace Servicedesk.Infrastructure.Surveys;
 /// The public endpoint also re-checks expiry on GET + submit so a link
 /// cannot succeed between sweeps. This worker exists so the agent-side
 /// timeline reflects expiry without waiting for someone to open the link.
-public sealed class SurveyExpiryWorker : BackgroundService
+public sealed class SurveyExpiryWorker : PeriodicWorker
 {
-    private readonly IServiceProvider _sp;
-    private readonly ILogger<SurveyExpiryWorker> _logger;
+    public SurveyExpiryWorker(IServiceProvider sp, ILogger<SurveyExpiryWorker> logger) : base(sp, logger) { }
 
-    public SurveyExpiryWorker(IServiceProvider sp, ILogger<SurveyExpiryWorker> logger)
+    protected override string WorkerName => "survey-expiry";
+    // Stagger start so the survey + intake workers don't both hammer
+    // the DB the second the host comes up.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(30);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromMinutes(15);
+
+    protected override async Task<WorkerSchedule> GetScheduleAsync(IServiceProvider services, CancellationToken ct)
     {
-        _sp = sp;
-        _logger = logger;
+        var settings = services.GetRequiredService<ISettingsService>();
+        var minutes = Math.Max(1, await settings.GetAsync<int>(SettingKeys.Surveys.ExpirySweepMinutes, ct));
+        return new WorkerSchedule(TimeSpan.FromMinutes(minutes));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(IServiceProvider services, PerfWorkerRun run, CancellationToken ct)
     {
-        // Stagger start so the survey + intake workers don't both hammer
-        // the DB the second the host comes up.
-        try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
-        catch (OperationCanceledException) { return; }
+        var repo = services.GetRequiredService<ISurveyInvitationRepository>();
+        var listNotifier = services.GetRequiredService<ITicketListNotifier>();
 
-        while (!stoppingToken.IsCancellationRequested)
+        var expired = await repo.ExpireStaleAsync(maxBatch: 200, nowUtc: DateTime.UtcNow, ct);
+        run.AddItems(expired.Count);
+        if (expired.Count == 0) return;
+
+        Logger.LogInformation("Expired {Count} survey invitation(s) this sweep.", expired.Count);
+        foreach (var e in expired)
         {
-            var intervalMinutes = 15;
-            using (var run = PerfWorkerRun.Start("survey-expiry"))
+            try { await listNotifier.NotifyUpdatedAsync(e.TicketId, ct); }
+            catch (Exception notifyEx)
             {
-                try
-                {
-                    using var scope = _sp.CreateScope();
-                    var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                    intervalMinutes = Math.Max(1, await settings.GetAsync<int>(SettingKeys.Surveys.ExpirySweepMinutes, stoppingToken));
-
-                    var repo = scope.ServiceProvider.GetRequiredService<ISurveyInvitationRepository>();
-                    var listNotifier = scope.ServiceProvider.GetRequiredService<ITicketListNotifier>();
-
-                    var expired = await repo.ExpireStaleAsync(maxBatch: 200, nowUtc: DateTime.UtcNow, stoppingToken);
-                    run.AddItems(expired.Count);
-                    if (expired.Count > 0)
-                    {
-                        _logger.LogInformation("Expired {Count} survey invitation(s) this sweep.", expired.Count);
-                        foreach (var e in expired)
-                        {
-                            try { await listNotifier.NotifyUpdatedAsync(e.TicketId, stoppingToken); }
-                            catch (Exception notifyEx)
-                            {
-                                _logger.LogWarning(notifyEx,
-                                    "SurveyExpiryWorker: failed to broadcast TicketUpdated for {TicketId}.", e.TicketId);
-                            }
-                        }
-                    }
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
-                catch (Exception ex)
-                {
-                    run.Fail(ex);
-                    _logger.LogError(ex, "SurveyExpiryWorker iteration failed.");
-                }
+                Logger.LogWarning(notifyEx,
+                    "SurveyExpiryWorker: failed to broadcast TicketUpdated for {TicketId}.", e.TicketId);
             }
-
-            try { await Task.Delay(TimeSpan.FromMinutes(intervalMinutes), stoppingToken); }
-            catch (OperationCanceledException) { return; }
         }
     }
 }

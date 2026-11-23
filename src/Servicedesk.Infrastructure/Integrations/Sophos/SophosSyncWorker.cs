@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Hosting;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
@@ -12,60 +12,25 @@ namespace Servicedesk.Infrastructure.Integrations.Sophos;
 /// tenant list, reconciles the local snapshot and refreshes the protected
 /// mailbox set for every Microsoft 365-connected tenant. The sync service itself
 /// guards against overlapping runs, so a long pass never stacks.
-public sealed class SophosSyncWorker : BackgroundService
+public sealed class SophosSyncWorker : PeriodicWorker
 {
-    private readonly IServiceProvider _sp;
-    private readonly ILogger<SophosSyncWorker> _logger;
+    public SophosSyncWorker(IServiceProvider sp, ILogger<SophosSyncWorker> logger) : base(sp, logger) { }
 
-    public SophosSyncWorker(IServiceProvider sp, ILogger<SophosSyncWorker> logger)
+    protected override string WorkerName => "sophos-sync";
+    // Stagger past the M365 worker (120s) so startup reads don't all land at once.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(150);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromHours(6);
+
+    protected override async Task<WorkerSchedule> GetScheduleAsync(IServiceProvider services, CancellationToken ct)
     {
-        _sp = sp;
-        _logger = logger;
+        var settings = services.GetRequiredService<ISettingsService>();
+        var minutes = await settings.GetAsync<int>(SettingKeys.Sophos.SyncIntervalMinutes, ct);
+        var enabled = await settings.GetAsync<bool>(SettingKeys.Sophos.Enabled, ct);
+        return new WorkerSchedule(TimeSpan.FromMinutes(Math.Max(60, minutes)), enabled);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(IServiceProvider services, PerfWorkerRun run, CancellationToken ct)
     {
-        // Stagger past the M365 worker (120s) so startup reads don't all land at once.
-        try { await Task.Delay(TimeSpan.FromSeconds(150), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            var intervalSeconds = 6 * 60 * 60;
-            try
-            {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                var minutes = await settings.GetAsync<int>(SettingKeys.Sophos.SyncIntervalMinutes, stoppingToken);
-                intervalSeconds = Math.Max(60, minutes) * 60;
-
-                var enabled = await settings.GetAsync<bool>(SettingKeys.Sophos.Enabled, stoppingToken);
-                if (enabled)
-                {
-                    using var run = PerfWorkerRun.Start("sophos-sync");
-                    try
-                    {
-                        var sync = scope.ServiceProvider.GetRequiredService<ISophosSyncService>();
-                        await sync.SyncAsync(stoppingToken);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        run.Fail(ex);
-                        throw;
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Sophos sync tick failed.");
-            }
-
-            try { await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
+        await services.GetRequiredService<ISophosSyncService>().SyncAsync(ct);
     }
 }

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Hosting;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
@@ -12,73 +12,26 @@ namespace Servicedesk.Infrastructure.Integrations.M365;
 /// tenant links, reads users + mailbox types + licenses app-only, and skips the
 /// rewrite when a content hash shows nothing changed. A read denied with
 /// 401/403 flips that company's link to needs_reconsent; the rest keep syncing.
-public sealed class M365SyncWorker : BackgroundService
+public sealed class M365SyncWorker : PeriodicWorker
 {
-    private readonly IServiceProvider _sp;
-    private readonly ILogger<M365SyncWorker> _logger;
+    public M365SyncWorker(IServiceProvider sp, ILogger<M365SyncWorker> logger) : base(sp, logger) { }
 
-    private int _running;
+    protected override string WorkerName => "m365-sync";
+    // Stagger past the Adsolut workers so startup reads don't all land at once.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(120);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromHours(6);
 
-    public M365SyncWorker(IServiceProvider sp, ILogger<M365SyncWorker> logger)
+    protected override async Task<WorkerSchedule> GetScheduleAsync(IServiceProvider services, CancellationToken ct)
     {
-        _sp = sp;
-        _logger = logger;
+        var settings = services.GetRequiredService<ISettingsService>();
+        var minutes = await settings.GetAsync<int>(SettingKeys.M365.SyncIntervalMinutes, ct);
+        var enabled = await settings.GetAsync<bool>(SettingKeys.M365.Enabled, ct);
+        return new WorkerSchedule(TimeSpan.FromMinutes(Math.Max(60, minutes)), enabled);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(IServiceProvider services, PerfWorkerRun run, CancellationToken ct)
     {
-        // Stagger past the Adsolut workers so startup reads don't all land at once.
-        try { await Task.Delay(TimeSpan.FromSeconds(120), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            var intervalSeconds = 6 * 60 * 60;
-            try
-            {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                var minutes = await settings.GetAsync<int>(SettingKeys.M365.SyncIntervalMinutes, stoppingToken);
-                intervalSeconds = Math.Max(60, minutes) * 60;
-
-                var enabled = await settings.GetAsync<bool>(SettingKeys.M365.Enabled, stoppingToken);
-                if (enabled)
-                {
-                    if (System.Threading.Interlocked.CompareExchange(ref _running, 1, 0) != 0)
-                    {
-                        _logger.LogWarning("M365 sync tick skipped: previous tick still running.");
-                    }
-                    else
-                    {
-                        using var run = PerfWorkerRun.Start("m365-sync");
-                        try
-                        {
-                            var sync = scope.ServiceProvider.GetRequiredService<IM365SyncService>();
-                            await sync.SyncAllAsync(stoppingToken);
-
-                            var store = scope.ServiceProvider.GetRequiredService<IM365TenantStore>();
-                            await store.PurgeExpiredConsentStatesAsync(DateTime.UtcNow, stoppingToken);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException)
-                        {
-                            run.Fail(ex);
-                            throw;
-                        }
-                        finally { System.Threading.Interlocked.Exchange(ref _running, 0); }
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "M365 sync tick failed.");
-            }
-
-            try { await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
+        await services.GetRequiredService<IM365SyncService>().SyncAllAsync(ct);
+        await services.GetRequiredService<IM365TenantStore>().PurgeExpiredConsentStatesAsync(DateTime.UtcNow, ct);
     }
 }

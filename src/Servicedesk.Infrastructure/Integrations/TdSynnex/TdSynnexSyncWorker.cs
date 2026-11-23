@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Hosting;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
@@ -11,59 +11,25 @@ namespace Servicedesk.Infrastructure.Integrations.TdSynnex;
 /// <c>TdSynnex.SyncIntervalMinutes</c> (floor 10); the active refresh inside
 /// a pass follows <c>TdSynnex.ActiveRefreshMinutes</c>. The sync service
 /// guards against overlapping runs.
-public sealed class TdSynnexSyncWorker : BackgroundService
+public sealed class TdSynnexSyncWorker : PeriodicWorker
 {
-    private readonly IServiceProvider _sp;
-    private readonly ILogger<TdSynnexSyncWorker> _logger;
+    public TdSynnexSyncWorker(IServiceProvider sp, ILogger<TdSynnexSyncWorker> logger) : base(sp, logger) { }
 
-    public TdSynnexSyncWorker(IServiceProvider sp, ILogger<TdSynnexSyncWorker> logger)
+    protected override string WorkerName => "tdsynnex-sync";
+    // Stagger past the other integration workers so startup reads spread out.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(180);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromMinutes(30);
+
+    protected override async Task<WorkerSchedule> GetScheduleAsync(IServiceProvider services, CancellationToken ct)
     {
-        _sp = sp;
-        _logger = logger;
+        var settings = services.GetRequiredService<ISettingsService>();
+        var minutes = await settings.GetAsync<int>(SettingKeys.TdSynnex.SyncIntervalMinutes, ct);
+        var enabled = await settings.GetAsync<bool>(SettingKeys.TdSynnex.Enabled, ct);
+        return new WorkerSchedule(TimeSpan.FromMinutes(Math.Max(10, minutes)), enabled);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task RunAsync(IServiceProvider services, PerfWorkerRun run, CancellationToken ct)
     {
-        // Stagger past the other integration workers so startup reads spread out.
-        try { await Task.Delay(TimeSpan.FromSeconds(180), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            var intervalSeconds = 30 * 60;
-            try
-            {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                var minutes = await settings.GetAsync<int>(SettingKeys.TdSynnex.SyncIntervalMinutes, stoppingToken);
-                intervalSeconds = Math.Max(10, minutes) * 60;
-
-                if (await settings.GetAsync<bool>(SettingKeys.TdSynnex.Enabled, stoppingToken))
-                {
-                    using var run = PerfWorkerRun.Start("tdsynnex-sync");
-                    try
-                    {
-                        var sync = scope.ServiceProvider.GetRequiredService<ITdSynnexSyncService>();
-                        await sync.SyncAsync(forceActiveRefresh: false, stoppingToken);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        run.Fail(ex);
-                        throw;
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "TD SYNNEX sync tick failed.");
-            }
-
-            try { await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
+        await services.GetRequiredService<ITdSynnexSyncService>().SyncAsync(forceActiveRefresh: false, ct);
     }
 }
