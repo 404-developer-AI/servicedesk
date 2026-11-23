@@ -13,7 +13,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { EVENT_CONFIG } from "./TicketTimeline";
+import { EVENT_CONFIG } from "./timeline/eventConfig";
 import { stripBaseTags } from "@/lib/sanitize";
 
 type PinnedEventsSummaryProps = {

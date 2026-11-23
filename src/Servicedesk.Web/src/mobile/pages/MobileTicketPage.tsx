@@ -25,13 +25,10 @@ import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { useViewingTicket } from "@/hooks/usePresence";
 import { useServerNowMs, useServerTimeZone } from "@/hooks/useServerTime";
 import { useTicketTimeline } from "@/pages/tickets/useTicketTimeline";
-import {
-  CollapsibleBody,
-  EVENT_CONFIG,
-  EventBody,
-  TimelinePreviewProvider,
-  isSystemEvent,
-} from "@/pages/tickets/components/TicketTimeline";
+import { TimelinePreviewProvider } from "@/pages/tickets/components/TicketTimeline";
+import { CollapsibleBody } from "@/pages/tickets/components/timeline/CollapsibleBody";
+import { EVENT_CONFIG, isSystemEvent } from "@/pages/tickets/components/timeline/eventConfig";
+import { EventBody } from "@/pages/tickets/components/timeline/EventBody";
 import { CARD_ACCENT, parseMetadata } from "@/pages/tickets/components/timelineMeta";
 import { SlaPill } from "@/components/sla/SlaPill";
 import { Skeleton } from "@/components/ui/skeleton";

@@ -5,7 +5,6 @@
 # split, run the test with SD_FILE_SIZE_BASELINE=tighten to update this list.
 # Format: <lines> <path relative to the repository root>
 2182 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadApiClient.cs
-1988 src/Servicedesk.Web/src/pages/tickets/components/TicketTimeline.tsx
 1970 src/Servicedesk.Web/src/pages/tickets/components/TicketSidePanel.tsx
 1963 src/Servicedesk.Web/src/lib/ticket-api.ts
 1845 src/Servicedesk.Web/src/pages/settings/triggers/ActionsEditor.tsx

@@ -35,7 +35,8 @@ import { useViewingTicket } from "@/hooks/usePresence";
 import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { SlaPill } from "@/components/sla/SlaPill";
 import { TicketSidePanel, TicketPresence } from "./components/TicketSidePanel";
-import { TicketTimeline, isSystemEvent, isSystemEventType } from "./components/TicketTimeline";
+import { TicketTimeline } from "./components/TicketTimeline";
+import { isSystemEvent, isSystemEventType } from "./components/timeline/eventConfig";
 import { TimelineOlderBar } from "./components/TimelineOlderBar";
 import { useTicketTimeline, type TicketTimeline as TicketTimelineState } from "./useTicketTimeline";
 import { PortalRegistrationCard } from "@/components/portal/PortalRegistrationCard";
@@ -69,7 +70,6 @@ type TicketDetailPageProps = {
   /// (the overlay *is* the back-office way of working).
   embedded?: boolean;
 };
-
 
 function LoadingSkeleton() {
   return (
