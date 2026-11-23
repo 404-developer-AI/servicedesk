@@ -805,7 +805,7 @@ app.MapPortalAdminEndpoints();
 app.MapAdminUserEndpoints();
 app.MapTaxonomyEndpoints();
 app.MapCompanyEndpoints();
-app.MapTicketEndpoints().MapTicketGateEndpoints().MapTicketEventEndpoints().MapTicketComposeEndpoints().MapTicketRelationEndpoints();
+app.MapTicketEndpoints().MapTicketGateEndpoints().MapTicketEventEndpoints().MapTicketCreateEndpoints().MapTicketUpdateEndpoints().MapTicketCompanyEndpoints().MapTicketComposeEndpoints().MapTicketRelationEndpoints();
 app.MapTicketProjectEndpoints();
 app.MapTicketChecklistEndpoints();
 app.MapChecklistTemplateEndpoints();
