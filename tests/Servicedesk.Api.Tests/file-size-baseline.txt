@@ -65,13 +65,13 @@
 803 src/Servicedesk.Api/Users/AdminUserEndpoints.cs
 800 src/Servicedesk.Web/src/pages/insights/TicketCountReport.tsx
 799 src/Servicedesk.Web/src/components/forms/FormDialogs.tsx
-788 src/Servicedesk.Infrastructure/Integrations/Adsolut/AdsolutSyncWorker.cs
 786 src/Servicedesk.Infrastructure/Performance/PerfQueries.cs
 777 src/Servicedesk.Api/Insights/InsightsEndpoints.cs
 764 src/Servicedesk.Web/src/pages/companies/CompanyDetailPage.tsx
 733 src/Servicedesk.Infrastructure/IntakeForms/IntakeFormRepository.cs
 733 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadKbImportService.cs
 729 src/Servicedesk.Infrastructure/Integrations/Adsolut/AdsolutSalesReceiptRepository.cs
+729 src/Servicedesk.Infrastructure/Integrations/Adsolut/AdsolutSyncWorker.cs
 726 src/Servicedesk.Web/src/pages/settings/zammad/ZammadImportRunDetailPage.tsx
 716 tests/Servicedesk.Api.Tests/MailIngestServiceTests.cs
 695 src/Servicedesk.Web/src/components/dashboard/IntegrationsHealthTile.tsx

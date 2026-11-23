@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using Dapper;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Hosting;
 using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
@@ -29,91 +29,33 @@ namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 /// summary-row to <c>integration_audit</c>, and pushes
 /// <c>IntegrationSyncCompleted</c> over SignalR.</item>
 /// </list>
-public sealed class AdsolutSyncWorker : BackgroundService
+public sealed class AdsolutSyncWorker : PeriodicWorker
 {
-    private readonly IServiceProvider _sp;
     private readonly IAdsolutSyncWorkerSignal _signal;
-    private readonly ILogger<AdsolutSyncWorker> _logger;
-
-    private int _running;
 
     public AdsolutSyncWorker(
         IServiceProvider sp,
         IAdsolutSyncWorkerSignal signal,
-        ILogger<AdsolutSyncWorker> logger)
+        ILogger<AdsolutSyncWorker> logger) : base(sp, logger)
     {
-        _sp = sp;
         _signal = signal;
-        _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override string WorkerName => "adsolut-sync";
+    // Stagger past the healthcheck-worker stagger (30s) so a tight
+    // cluster of startup writes doesn't all land in the same instant.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(45);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromHours(1);
+    protected override IWorkerWakeSignal WakeSignal => _signal;
+
+    protected override async Task<WorkerSchedule> GetScheduleAsync(IServiceProvider services, CancellationToken ct)
     {
-        // Stagger past the healthcheck-worker stagger (30s) so a tight
-        // cluster of startup writes doesn't all land in the same instant.
-        try { await Task.Delay(TimeSpan.FromSeconds(45), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            var intervalSeconds = 60 * 60;
-            try
-            {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                var minutes = await settings.GetAsync<int>(SettingKeys.Adsolut.SyncIntervalMinutes, stoppingToken);
-                intervalSeconds = Math.Max(5, minutes) * 60;
-
-                if (System.Threading.Interlocked.CompareExchange(ref _running, 1, 0) != 0)
-                {
-                    _logger.LogWarning(
-                        "Adsolut sync tick skipped: previous tick still running. Increase {Setting} if this happens consistently.",
-                        SettingKeys.Adsolut.SyncIntervalMinutes);
-                }
-                else
-                {
-                    try
-                    {
-                        await TickAsync(scope.ServiceProvider, stoppingToken);
-                    }
-                    finally
-                    {
-                        System.Threading.Interlocked.Exchange(ref _running, 0);
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Adsolut sync tick failed.");
-            }
-
-            // Wait for either the interval to elapse or an admin-pressed
-            // "Sync now" signal — whichever comes first.
-            await WaitForNextTickAsync(intervalSeconds, stoppingToken);
-        }
+        var settings = services.GetRequiredService<ISettingsService>();
+        var minutes = await settings.GetAsync<int>(SettingKeys.Adsolut.SyncIntervalMinutes, ct);
+        return new WorkerSchedule(TimeSpan.FromMinutes(Math.Max(5, minutes)));
     }
 
-    private async Task WaitForNextTickAsync(int intervalSeconds, CancellationToken ct)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(intervalSeconds);
-        while (!ct.IsCancellationRequested)
-        {
-            if (_signal.ConsumeRequest()) return;
-            var remaining = deadline - DateTime.UtcNow;
-            if (remaining <= TimeSpan.Zero) return;
-            // Poll the signal at most every 2 seconds while waiting; long
-            // enough to be cheap, short enough that "Sync now" feels live.
-            var slice = remaining > TimeSpan.FromSeconds(2) ? TimeSpan.FromSeconds(2) : remaining;
-            try { await Task.Delay(slice, ct); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(IServiceProvider sp, CancellationToken ct)
+    protected override async Task RunAsync(IServiceProvider sp, PerfWorkerRun run, CancellationToken ct)
     {
         var settings = sp.GetRequiredService<ISettingsService>();
         var secrets = sp.GetRequiredService<IProtectedSecretStore>();
@@ -168,7 +110,6 @@ public sealed class AdsolutSyncWorker : BackgroundService
             return;
         }
 
-        using var run = PerfWorkerRun.Start("adsolut-sync");
         var pullUpdate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullCompaniesUpdate, ct);
         var pullCreate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullCompaniesCreate, ct);
         // v0.0.27 — IncludeSuppliers is backend-force OFF until the v0.0.28
@@ -194,7 +135,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
         // Load the freemail blacklist once per tick (same source the
         // mail-ingest auto-linker uses, so the two paths can never disagree
         // on which domains count as freemail).
-        var freemailBlacklist = await MailDomainBlacklist.LoadAsync(settings, _logger, ct);
+        var freemailBlacklist = await MailDomainBlacklist.LoadAsync(settings, Logger, ct);
         var options = new AdsolutSyncOptions(
             pullUpdate, pullCreate,
             LinkCompanyDomainsFromEmail: linkDomains,
@@ -313,13 +254,13 @@ public sealed class AdsolutSyncWorker : BackgroundService
         {
             run.Fail(ex);
             errorMessage = ex.UpstreamErrorCode ?? ex.HttpStatus?.ToString() ?? "api_error";
-            _logger.LogWarning(ex, "Adsolut sync tick failed mid-pass.");
+            Logger.LogWarning(ex, "Adsolut sync tick failed mid-pass.");
         }
         catch (Exception ex)
         {
             run.Fail(ex);
             errorMessage = "tick_exception";
-            _logger.LogError(ex, "Adsolut sync tick threw an unexpected exception.");
+            Logger.LogError(ex, "Adsolut sync tick threw an unexpected exception.");
         }
         stopwatch.Stop();
         run.AddItems(counts.Upserted);
@@ -461,7 +402,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
                 // Per-row failure already wrote a Warn/Error row via the
                 // invoker. Log at info-level so the worker output stays
                 // legible — we still continue with the next candidate.
-                _logger.LogInformation(
+                Logger.LogInformation(
                     "Adsolut push of company {CompanyId} failed: {Status} {Code}",
                     candidate.Id, ex.HttpStatus, ex.UpstreamErrorCode);
             }
@@ -518,7 +459,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
             catch (AdsolutApiException ex)
             {
                 counts.ContactsPushFailed++;
-                _logger.LogInformation(
+                Logger.LogInformation(
                     "Adsolut push of contact-link {LinkId} (contact {ContactId}, company {CompanyId}) failed: {Status} {Code}",
                     candidate.LinkId, candidate.ContactId, candidate.CompanyId,
                     ex.HttpStatus, ex.UpstreamErrorCode);
@@ -526,7 +467,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
             catch (Exception ex)
             {
                 counts.ContactsPushFailed++;
-                _logger.LogWarning(ex,
+                Logger.LogWarning(ex,
                     "Adsolut contact push threw an unexpected exception: link {LinkId}, contact {ContactId}, company {CompanyId}.",
                     candidate.LinkId, candidate.ContactId, candidate.CompanyId);
             }
@@ -673,7 +614,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
                     // forward progress). Log + count + continue. Pattern
                     // borrowed from PushTakAsync's per-candidate handling.
                     counts.ContactsFailed++;
-                    _logger.LogWarning(ex,
+                    Logger.LogWarning(ex,
                         "Adsolut contact upsert failed: company {CompanyId}, adsolut contact {AdsolutId}, email {Email}.",
                         pair.CompanyId, inbound.Id, inbound.Email);
                 }
@@ -694,7 +635,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex,
+                Logger.LogWarning(ex,
                     "Adsolut contact reconcile-missing failed for company {CompanyId} ({AdsolutId}).",
                     pair.CompanyId, pair.AdsolutId);
             }

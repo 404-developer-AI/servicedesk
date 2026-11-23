@@ -1,11 +1,10 @@
 using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Hosting;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
-using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
@@ -28,125 +27,40 @@ namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 /// </list>
 /// There is no status-skip and no purge — the mirror always holds every
 /// status. Deselecting a status only hides it in the overview + search.
-public sealed class AdsolutOrdersSyncWorker : BackgroundService
+public sealed class AdsolutOrdersSyncWorker : AdsolutSyncWorkerBase
 {
-    private readonly IServiceProvider _sp;
     private readonly IAdsolutOrdersSyncSignal _signal;
-    private readonly ILogger<AdsolutOrdersSyncWorker> _logger;
-
-    private int _running;
 
     public AdsolutOrdersSyncWorker(
         IServiceProvider sp,
         IAdsolutOrdersSyncSignal signal,
-        ILogger<AdsolutOrdersSyncWorker> logger)
+        ILogger<AdsolutOrdersSyncWorker> logger) : base(sp, logger)
     {
-        _sp = sp;
         _signal = signal;
-        _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override string WorkerName => "adsolut-orders";
+    // Stagger past the Companies (45s) + SalesReceipts (60s) workers so
+    // startup writes don't all land at once.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(75);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromHours(1);
+    protected override IWorkerWakeSignal WakeSignal => _signal;
+    protected override string IntervalMinutesKey => SettingKeys.Adsolut.ErpOrdersSyncIntervalMinutes;
+    protected override string EnabledKey => SettingKeys.Adsolut.ErpOrdersEnabled;
+    protected override string TickEventType => AdsolutEventTypes.ErpOrdersSyncTick;
+
+    protected override async Task SyncAsync(IServiceProvider sp, Guid administrationId, PerfWorkerRun run, CancellationToken ct)
     {
-        // Stagger past the Companies (45s) + SalesReceipts (60s) workers so
-        // startup writes don't all land at once.
-        try { await Task.Delay(TimeSpan.FromSeconds(75), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            var intervalSeconds = 60 * 60;
-            try
-            {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                var minutes = await settings.GetAsync<int>(SettingKeys.Adsolut.ErpOrdersSyncIntervalMinutes, stoppingToken);
-                intervalSeconds = Math.Max(5, minutes) * 60;
-
-                var enabled = await settings.GetAsync<bool>(SettingKeys.Adsolut.ErpOrdersEnabled, stoppingToken);
-                if (enabled)
-                {
-                    if (System.Threading.Interlocked.CompareExchange(ref _running, 1, 0) != 0)
-                    {
-                        _logger.LogWarning("Adsolut Orders tick skipped: previous tick still running.");
-                    }
-                    else
-                    {
-                        try { await TickAsync(scope.ServiceProvider, stoppingToken); }
-                        finally { System.Threading.Interlocked.Exchange(ref _running, 0); }
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Adsolut Orders sync tick failed.");
-            }
-
-            await WaitForNextTickAsync(intervalSeconds, stoppingToken);
-        }
-    }
-
-    private async Task WaitForNextTickAsync(int intervalSeconds, CancellationToken ct)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(intervalSeconds);
-        while (!ct.IsCancellationRequested)
-        {
-            if (_signal.ConsumeRequest()) return;
-            var remaining = deadline - DateTime.UtcNow;
-            if (remaining <= TimeSpan.Zero) return;
-            var slice = remaining > TimeSpan.FromSeconds(2) ? TimeSpan.FromSeconds(2) : remaining;
-            try { await Task.Delay(slice, ct); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(IServiceProvider sp, CancellationToken ct)
-    {
-        var settings = sp.GetRequiredService<ISettingsService>();
-        var secrets = sp.GetRequiredService<IProtectedSecretStore>();
-        var connections = sp.GetRequiredService<IAdsolutConnectionStore>();
         var client = sp.GetRequiredService<IAdsolutOrdersClient>();
         var repo = sp.GetRequiredService<IAdsolutOrderRepository>();
         var auditLog = sp.GetRequiredService<IIntegrationAuditLogger>();
         var notifier = sp.GetRequiredService<IIntegrationStatusNotifier>();
-
-        var clientId = (await settings.GetAsync<string>(SettingKeys.Adsolut.ClientId, ct) ?? string.Empty).Trim();
-        var hasSecret = await secrets.HasAsync(ProtectedSecretKeys.AdsolutClientSecret, ct);
-        var hasRefreshToken = await secrets.HasAsync(ProtectedSecretKeys.AdsolutRefreshToken, ct);
-        if (string.IsNullOrEmpty(clientId) || !hasSecret || !hasRefreshToken) return;
-
-        var connection = await connections.GetAsync(ct);
-        if (connection?.AdministrationId is not Guid administrationId)
-        {
-            await auditLog.LogAsync(new IntegrationAuditEvent(
-                Integration: AdsolutEventTypes.Integration,
-                EventType: AdsolutEventTypes.ErpOrdersSyncTick,
-                Outcome: IntegrationAuditOutcome.Warn,
-                ErrorCode: "no_administration_selected",
-                Payload: new { reason = "Admin must pick a dossier first." }), ct);
-            return;
-        }
-        if (string.Equals(connection.LastRefreshError, "invalid_grant", StringComparison.Ordinal))
-        {
-            await auditLog.LogAsync(new IntegrationAuditEvent(
-                Integration: AdsolutEventTypes.Integration,
-                EventType: AdsolutEventTypes.ErpOrdersSyncTick,
-                Outcome: IntegrationAuditOutcome.Warn,
-                ErrorCode: "invalid_grant",
-                Payload: new { reason = "Refresh token revoked — admin must reconnect." }), ct);
-            return;
-        }
 
         var existingState = await repo.GetSyncStateAsync(ct);
         var tickStartUtc = DateTime.UtcNow;
         var modifiedSince = existingState?.LastDeltaSyncUtc is { } d ? new DateTimeOffset(d, TimeSpan.Zero) : (DateTimeOffset?)null;
         var isFullSync = modifiedSince is null;
 
-        using var run = PerfWorkerRun.Start("adsolut-orders");
         var stopwatch = Stopwatch.StartNew();
         var seen = 0;
         var upserted = 0;
@@ -214,7 +128,7 @@ public sealed class AdsolutOrdersSyncWorker : BackgroundService
                         // count, continue. The row keeps its previous mirrored
                         // state (or stays absent) until the next tick.
                         failures++;
-                        _logger.LogWarning(ex, "Adsolut Order {Id} upsert failed; continuing.", order.Id);
+                        Logger.LogWarning(ex, "Adsolut Order {Id} upsert failed; continuing.", order.Id);
                     }
                 }
 
@@ -234,7 +148,7 @@ public sealed class AdsolutOrdersSyncWorker : BackgroundService
         {
             run.Fail(ex);
             errorMessage = "rate_limited";
-            _logger.LogWarning(ex, "Adsolut Orders hit 429 — pausing pass; will resume from checkpoint.");
+            Logger.LogWarning(ex, "Adsolut Orders hit 429 — pausing pass; will resume from checkpoint.");
             await CheckpointAsync(errorMessage);
             return;
         }
@@ -242,13 +156,13 @@ public sealed class AdsolutOrdersSyncWorker : BackgroundService
         {
             run.Fail(ex);
             errorMessage = ex.UpstreamErrorCode ?? ex.HttpStatus?.ToString() ?? "api_error";
-            _logger.LogWarning(ex, "Adsolut Orders tick failed mid-pass.");
+            Logger.LogWarning(ex, "Adsolut Orders tick failed mid-pass.");
         }
         catch (Exception ex)
         {
             run.Fail(ex);
             errorMessage = "tick_exception";
-            _logger.LogError(ex, "Adsolut Orders tick threw an unexpected exception.");
+            Logger.LogError(ex, "Adsolut Orders tick threw an unexpected exception.");
         }
         // Warehouses reference pass: a small full-list pull that keeps the
         // Stock/Location name mirror current. Runs every tick under the same
@@ -345,17 +259,17 @@ public sealed class AdsolutOrdersSyncWorker : BackgroundService
         }
         catch (AdsolutApiException ex) when (ex.HttpStatus == 429)
         {
-            _logger.LogWarning(ex, "Adsolut Warehouses hit 429 — skipping warehouse refresh this tick.");
+            Logger.LogWarning(ex, "Adsolut Warehouses hit 429 — skipping warehouse refresh this tick.");
             return new WarehousesPassResult(0, "rate_limited");
         }
         catch (AdsolutApiException ex)
         {
-            _logger.LogWarning(ex, "Adsolut Warehouses pass failed.");
+            Logger.LogWarning(ex, "Adsolut Warehouses pass failed.");
             return new WarehousesPassResult(0, ex.UpstreamErrorCode ?? ex.HttpStatus?.ToString() ?? "api_error");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Adsolut Warehouses pass threw an unexpected exception.");
+            Logger.LogError(ex, "Adsolut Warehouses pass threw an unexpected exception.");
             return new WarehousesPassResult(0, "warehouses_pass_exception");
         }
     }
@@ -402,7 +316,7 @@ public sealed class AdsolutOrdersSyncWorker : BackgroundService
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Adsolut SupplierOrder {Id} upsert failed; continuing.", order.Id);
+                        Logger.LogWarning(ex, "Adsolut SupplierOrder {Id} upsert failed; continuing.", order.Id);
                     }
                 }
 
@@ -419,17 +333,17 @@ public sealed class AdsolutOrdersSyncWorker : BackgroundService
         }
         catch (AdsolutApiException ex) when (ex.HttpStatus == 429)
         {
-            _logger.LogWarning(ex, "Adsolut SupplierOrders hit 429 — pausing supplier pass; resumes next tick.");
+            Logger.LogWarning(ex, "Adsolut SupplierOrders hit 429 — pausing supplier pass; resumes next tick.");
             return new SupplierPassResult(seen, upserted, highWater, "rate_limited");
         }
         catch (AdsolutApiException ex)
         {
-            _logger.LogWarning(ex, "Adsolut SupplierOrders pass failed.");
+            Logger.LogWarning(ex, "Adsolut SupplierOrders pass failed.");
             return new SupplierPassResult(seen, upserted, highWater, ex.UpstreamErrorCode ?? ex.HttpStatus?.ToString() ?? "api_error");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Adsolut SupplierOrders pass threw an unexpected exception.");
+            Logger.LogError(ex, "Adsolut SupplierOrders pass threw an unexpected exception.");
             return new SupplierPassResult(seen, upserted, highWater, "supplier_pass_exception");
         }
     }

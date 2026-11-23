@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Hosting;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
@@ -26,73 +26,30 @@ namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 /// Skipped silently when the integration isn't configured, no dossier is
 /// selected, the connection is in <c>invalid_grant</c>, or both contacts
 /// toggles are OFF.
-public sealed class AdsolutContactsReconcileWorker : BackgroundService
+public sealed class AdsolutContactsReconcileWorker : PeriodicWorker
 {
-    private readonly IServiceProvider _sp;
-    private readonly ILogger<AdsolutContactsReconcileWorker> _logger;
-
-    private int _running;
-
     public AdsolutContactsReconcileWorker(
         IServiceProvider sp,
-        ILogger<AdsolutContactsReconcileWorker> logger)
+        ILogger<AdsolutContactsReconcileWorker> logger) : base(sp, logger)
     {
-        _sp = sp;
-        _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override string WorkerName => "adsolut-contacts-reconcile";
+    // Stagger past the sync-worker stagger (45s) by another minute so a
+    // tight cluster of startup writes doesn't all land in the same
+    // instant, and so the very first tick happens AFTER the regular
+    // sync has had a chance to populate state.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(105);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromHours(24);
+
+    protected override async Task<WorkerSchedule> GetScheduleAsync(IServiceProvider services, CancellationToken ct)
     {
-        // Stagger past the sync-worker stagger (45s) by another minute so a
-        // tight cluster of startup writes doesn't all land in the same
-        // instant, and so the very first tick happens AFTER the regular
-        // sync has had a chance to populate state.
-        try { await Task.Delay(TimeSpan.FromSeconds(105), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            var intervalSeconds = 24 * 60 * 60;
-            try
-            {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                var hours = await settings.GetAsync<int>(SettingKeys.Adsolut.SyncContactsReconcileIntervalHours, stoppingToken);
-                intervalSeconds = Math.Max(1, hours) * 60 * 60;
-
-                if (System.Threading.Interlocked.CompareExchange(ref _running, 1, 0) != 0)
-                {
-                    _logger.LogWarning(
-                        "Adsolut contacts-reconcile tick skipped: previous tick still running. Increase {Setting} if this happens consistently.",
-                        SettingKeys.Adsolut.SyncContactsReconcileIntervalHours);
-                }
-                else
-                {
-                    try
-                    {
-                        await TickAsync(scope.ServiceProvider, stoppingToken);
-                    }
-                    finally
-                    {
-                        System.Threading.Interlocked.Exchange(ref _running, 0);
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Adsolut contacts-reconcile tick failed.");
-            }
-
-            try { await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken); }
-            catch (OperationCanceledException) { return; }
-        }
+        var settings = services.GetRequiredService<ISettingsService>();
+        var hours = await settings.GetAsync<int>(SettingKeys.Adsolut.SyncContactsReconcileIntervalHours, ct);
+        return new WorkerSchedule(TimeSpan.FromHours(Math.Max(1, hours)));
     }
 
-    private async Task TickAsync(IServiceProvider sp, CancellationToken ct)
+    protected override async Task RunAsync(IServiceProvider sp, PerfWorkerRun run, CancellationToken ct)
     {
         var settings = sp.GetRequiredService<ISettingsService>();
         var secrets = sp.GetRequiredService<IProtectedSecretStore>();
@@ -130,7 +87,6 @@ public sealed class AdsolutContactsReconcileWorker : BackgroundService
             return;
         }
 
-        using var run = PerfWorkerRun.Start("adsolut-contacts-reconcile");
         var options = new AdsolutContactsSyncOptions(pullContactsUpdate, pullContactsCreate);
         var stopwatch = Stopwatch.StartNew();
         AdsolutContactsReconcileResult result;
@@ -144,14 +100,14 @@ public sealed class AdsolutContactsReconcileWorker : BackgroundService
             run.Fail(ex);
             errorMessage = ex.UpstreamErrorCode ?? ex.HttpStatus?.ToString() ?? "api_error";
             result = new AdsolutContactsReconcileResult();
-            _logger.LogWarning(ex, "Adsolut contacts-reconcile tick failed mid-pass.");
+            Logger.LogWarning(ex, "Adsolut contacts-reconcile tick failed mid-pass.");
         }
         catch (Exception ex)
         {
             run.Fail(ex);
             errorMessage = "tick_exception";
             result = new AdsolutContactsReconcileResult();
-            _logger.LogError(ex, "Adsolut contacts-reconcile tick threw an unexpected exception.");
+            Logger.LogError(ex, "Adsolut contacts-reconcile tick threw an unexpected exception.");
         }
         stopwatch.Stop();
         run.AddItems(result.ContactsCreated + result.ContactsUpdated);

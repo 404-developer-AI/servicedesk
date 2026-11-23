@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Servicedesk.Infrastructure.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Performance;
@@ -21,125 +21,40 @@ namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 /// integration_audit summary are written at the end, plus a SignalR
 /// sync-completed ping. There is no purge — the mirror reflects the catalogue
 /// as the delta sees it.
-public sealed class AdsolutArticlesSyncWorker : BackgroundService
+public sealed class AdsolutArticlesSyncWorker : AdsolutSyncWorkerBase
 {
-    private readonly IServiceProvider _sp;
     private readonly IAdsolutArticlesSyncSignal _signal;
-    private readonly ILogger<AdsolutArticlesSyncWorker> _logger;
-
-    private int _running;
 
     public AdsolutArticlesSyncWorker(
         IServiceProvider sp,
         IAdsolutArticlesSyncSignal signal,
-        ILogger<AdsolutArticlesSyncWorker> logger)
+        ILogger<AdsolutArticlesSyncWorker> logger) : base(sp, logger)
     {
-        _sp = sp;
         _signal = signal;
-        _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override string WorkerName => "adsolut-articles";
+    // Stagger past the Companies (45s) + SalesReceipts (60s) + Orders (75s)
+    // workers so startup writes don't all land at once.
+    protected override TimeSpan StartDelay => TimeSpan.FromSeconds(90);
+    protected override TimeSpan FallbackInterval => TimeSpan.FromHours(1);
+    protected override IWorkerWakeSignal WakeSignal => _signal;
+    protected override string IntervalMinutesKey => SettingKeys.Adsolut.ErpArticlesSyncIntervalMinutes;
+    protected override string EnabledKey => SettingKeys.Adsolut.ErpArticlesEnabled;
+    protected override string TickEventType => AdsolutEventTypes.ErpArticlesSyncTick;
+
+    protected override async Task SyncAsync(IServiceProvider sp, Guid administrationId, PerfWorkerRun run, CancellationToken ct)
     {
-        // Stagger past the Companies (45s) + SalesReceipts (60s) + Orders (75s)
-        // workers so startup writes don't all land at once.
-        try { await Task.Delay(TimeSpan.FromSeconds(90), stoppingToken); }
-        catch (OperationCanceledException) { return; }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            var intervalSeconds = 60 * 60;
-            try
-            {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                var minutes = await settings.GetAsync<int>(SettingKeys.Adsolut.ErpArticlesSyncIntervalMinutes, stoppingToken);
-                intervalSeconds = Math.Max(5, minutes) * 60;
-
-                var enabled = await settings.GetAsync<bool>(SettingKeys.Adsolut.ErpArticlesEnabled, stoppingToken);
-                if (enabled)
-                {
-                    if (System.Threading.Interlocked.CompareExchange(ref _running, 1, 0) != 0)
-                    {
-                        _logger.LogWarning("Adsolut Articles tick skipped: previous tick still running.");
-                    }
-                    else
-                    {
-                        try { await TickAsync(scope.ServiceProvider, stoppingToken); }
-                        finally { System.Threading.Interlocked.Exchange(ref _running, 0); }
-                    }
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Adsolut Articles sync tick failed.");
-            }
-
-            await WaitForNextTickAsync(intervalSeconds, stoppingToken);
-        }
-    }
-
-    private async Task WaitForNextTickAsync(int intervalSeconds, CancellationToken ct)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(intervalSeconds);
-        while (!ct.IsCancellationRequested)
-        {
-            if (_signal.ConsumeRequest()) return;
-            var remaining = deadline - DateTime.UtcNow;
-            if (remaining <= TimeSpan.Zero) return;
-            var slice = remaining > TimeSpan.FromSeconds(2) ? TimeSpan.FromSeconds(2) : remaining;
-            try { await Task.Delay(slice, ct); }
-            catch (OperationCanceledException) { return; }
-        }
-    }
-
-    private async Task TickAsync(IServiceProvider sp, CancellationToken ct)
-    {
-        var settings = sp.GetRequiredService<ISettingsService>();
-        var secrets = sp.GetRequiredService<IProtectedSecretStore>();
-        var connections = sp.GetRequiredService<IAdsolutConnectionStore>();
         var client = sp.GetRequiredService<IAdsolutArticlesClient>();
         var repo = sp.GetRequiredService<IAdsolutArticleRepository>();
         var auditLog = sp.GetRequiredService<IIntegrationAuditLogger>();
         var notifier = sp.GetRequiredService<IIntegrationStatusNotifier>();
-
-        var clientId = (await settings.GetAsync<string>(SettingKeys.Adsolut.ClientId, ct) ?? string.Empty).Trim();
-        var hasSecret = await secrets.HasAsync(ProtectedSecretKeys.AdsolutClientSecret, ct);
-        var hasRefreshToken = await secrets.HasAsync(ProtectedSecretKeys.AdsolutRefreshToken, ct);
-        if (string.IsNullOrEmpty(clientId) || !hasSecret || !hasRefreshToken) return;
-
-        var connection = await connections.GetAsync(ct);
-        if (connection?.AdministrationId is not Guid administrationId)
-        {
-            await auditLog.LogAsync(new IntegrationAuditEvent(
-                Integration: AdsolutEventTypes.Integration,
-                EventType: AdsolutEventTypes.ErpArticlesSyncTick,
-                Outcome: IntegrationAuditOutcome.Warn,
-                ErrorCode: "no_administration_selected",
-                Payload: new { reason = "Admin must pick a dossier first." }), ct);
-            return;
-        }
-        if (string.Equals(connection.LastRefreshError, "invalid_grant", StringComparison.Ordinal))
-        {
-            await auditLog.LogAsync(new IntegrationAuditEvent(
-                Integration: AdsolutEventTypes.Integration,
-                EventType: AdsolutEventTypes.ErpArticlesSyncTick,
-                Outcome: IntegrationAuditOutcome.Warn,
-                ErrorCode: "invalid_grant",
-                Payload: new { reason = "Refresh token revoked — admin must reconnect." }), ct);
-            return;
-        }
 
         var existingState = await repo.GetSyncStateAsync(ct);
         var tickStartUtc = DateTime.UtcNow;
         var modifiedSince = existingState?.LastDeltaSyncUtc is { } d ? new DateTimeOffset(d, TimeSpan.Zero) : (DateTimeOffset?)null;
         var isFullSync = modifiedSince is null;
 
-        using var run = PerfWorkerRun.Start("adsolut-articles");
         var stopwatch = Stopwatch.StartNew();
         var seen = 0;
         var upserted = 0;
@@ -202,7 +117,7 @@ public sealed class AdsolutArticlesSyncWorker : BackgroundService
                         // count, continue. The row keeps its previous mirrored
                         // state (or stays absent) until the next tick.
                         failures++;
-                        _logger.LogWarning(ex, "Adsolut Article {Id} upsert failed; continuing.", article.Id);
+                        Logger.LogWarning(ex, "Adsolut Article {Id} upsert failed; continuing.", article.Id);
                     }
                 }
 
@@ -222,7 +137,7 @@ public sealed class AdsolutArticlesSyncWorker : BackgroundService
         {
             run.Fail(ex);
             errorMessage = "rate_limited";
-            _logger.LogWarning(ex, "Adsolut Articles hit 429 — pausing pass; will resume from checkpoint.");
+            Logger.LogWarning(ex, "Adsolut Articles hit 429 — pausing pass; will resume from checkpoint.");
             await CheckpointAsync(errorMessage);
             return;
         }
@@ -230,13 +145,13 @@ public sealed class AdsolutArticlesSyncWorker : BackgroundService
         {
             run.Fail(ex);
             errorMessage = ex.UpstreamErrorCode ?? ex.HttpStatus?.ToString() ?? "api_error";
-            _logger.LogWarning(ex, "Adsolut Articles tick failed mid-pass.");
+            Logger.LogWarning(ex, "Adsolut Articles tick failed mid-pass.");
         }
         catch (Exception ex)
         {
             run.Fail(ex);
             errorMessage = "tick_exception";
-            _logger.LogError(ex, "Adsolut Articles tick threw an unexpected exception.");
+            Logger.LogError(ex, "Adsolut Articles tick threw an unexpected exception.");
         }
 
         stopwatch.Stop();
