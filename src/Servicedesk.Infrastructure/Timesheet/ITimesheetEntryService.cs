@@ -21,15 +21,23 @@ public interface ITimesheetEntryService
         Guid userId,
         CancellationToken ct = default);
 
+    /// <paramref name="ticketScope"/> is the caller's queue access: a ticket
+    /// outside it is refused exactly like a missing one (same field error),
+    /// so an id probe cannot tell "exists but not yours" from "missing".
     Task<CreateTimesheetEntryResult> CreateAsync(
         Guid userId,
         TimesheetEntryInput input,
+        Access.QueueAccessScope ticketScope,
         CancellationToken ct = default);
 
+    /// Same rule as <see cref="CreateAsync"/>, except that keeping the
+    /// ticket the entry already has is always allowed — losing access to a
+    /// queue must not lock the agent out of editing their own history.
     Task<UpdateTimesheetEntryResult> UpdateAsync(
         Guid id,
         Guid userId,
         TimesheetEntryInput input,
+        Access.QueueAccessScope ticketScope,
         CancellationToken ct = default);
 
     /// Own-rows only. Returns false if the row doesn't exist or belongs

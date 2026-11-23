@@ -1,5 +1,6 @@
 using Dapper;
 using Microsoft.Extensions.Caching.Memory;
+using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Timesheet;
 using Xunit;
 
@@ -22,7 +23,7 @@ public sealed class TimesheetEntryRulesDbTests
     {
         var (svc, user, task, ticket) = await SetupAsync();
 
-        var result = await svc.CreateAsync(user, Input(task, ticket, 540, 615, "  Printer fixed  "));
+        var result = await Create(svc, user, Input(task, ticket, 540, 615, "  Printer fixed  "));
 
         var row = Assert.IsType<CreateTimesheetEntryResult.Created>(result).Row;
         Assert.Equal(75, row.Minutes);
@@ -40,7 +41,7 @@ public sealed class TimesheetEntryRulesDbTests
     {
         var (svc, user, task, ticket) = await SetupAsync();
 
-        var result = await svc.CreateAsync(user, Input(task, ticket, start, end));
+        var result = await Create(svc, user, Input(task, ticket, start, end));
 
         Assert.Contains(Errors(result), e => e.Field == field);
         Assert.Equal(0, await EntryCountAsync(user));
@@ -51,7 +52,7 @@ public sealed class TimesheetEntryRulesDbTests
     {
         var (svc, user, task, ticket) = await SetupAsync();
 
-        var result = await svc.CreateAsync(user, Input(task, ticket, 540, 600, "   "));
+        var result = await Create(svc, user, Input(task, ticket, 540, 600, "   "));
 
         Assert.Contains(Errors(result), e => e.Field == "description");
     }
@@ -62,9 +63,9 @@ public sealed class TimesheetEntryRulesDbTests
         var (svc, user, _, ticket) = await SetupAsync();
         var archived = await TaskAsync(requiresTicket: false, archived: true);
 
-        var none = await svc.CreateAsync(user, Input(Guid.Empty, ticket, 540, 600));
-        var gone = await svc.CreateAsync(user, Input(archived, ticket, 540, 600));
-        var unknown = await svc.CreateAsync(user, Input(Guid.NewGuid(), ticket, 540, 600));
+        var none = await Create(svc, user, Input(Guid.Empty, ticket, 540, 600));
+        var gone = await Create(svc, user, Input(archived, ticket, 540, 600));
+        var unknown = await Create(svc, user, Input(Guid.NewGuid(), ticket, 540, 600));
 
         Assert.Contains(Errors(none), e => e.Field == "taskId");
         Assert.Contains(Errors(gone), e => e.Field == "taskId");
@@ -76,7 +77,7 @@ public sealed class TimesheetEntryRulesDbTests
     {
         var (svc, user, task, _) = await SetupAsync();
 
-        var result = await svc.CreateAsync(user, Input(task, ticketId: null, 540, 600));
+        var result = await Create(svc, user, Input(task, ticketId: null, 540, 600));
 
         Assert.Contains(Errors(result), e => e.Field == "ticketId");
     }
@@ -87,8 +88,8 @@ public sealed class TimesheetEntryRulesDbTests
         var (svc, user, _, _) = await SetupAsync();
         var admin = await TaskAsync(requiresTicket: false);
 
-        var free = await svc.CreateAsync(user, Input(admin, ticketId: null, 540, 600));
-        var bogus = await svc.CreateAsync(user, Input(admin, Guid.NewGuid(), 600, 660));
+        var free = await Create(svc, user, Input(admin, ticketId: null, 540, 600));
+        var bogus = await Create(svc, user, Input(admin, Guid.NewGuid(), 600, 660));
 
         Assert.IsType<CreateTimesheetEntryResult.Created>(free);
         Assert.Contains(Errors(bogus), e => e.Field == "ticketId");
@@ -100,7 +101,7 @@ public sealed class TimesheetEntryRulesDbTests
         var (svc, user, task, ticket) = await SetupAsync();
         await ExecAsync("UPDATE tickets SET is_deleted = TRUE WHERE id = @ticket", new { ticket });
 
-        var result = await svc.CreateAsync(user, Input(task, ticket, 540, 600));
+        var result = await Create(svc, user, Input(task, ticket, 540, 600));
 
         Assert.Contains(Errors(result), e => e.Field == "ticketId");
     }
@@ -115,7 +116,7 @@ public sealed class TimesheetEntryRulesDbTests
         await ExecAsync("UPDATE tickets SET merged_into_ticket_id = @survivor WHERE id = @ticket", new { ticket, survivor });
         var number = await ScalarAsync<long>("SELECT number FROM tickets WHERE id = @survivor", new { survivor });
 
-        var result = await svc.CreateAsync(user, Input(task, ticket, 540, 600));
+        var result = await Create(svc, user, Input(task, ticket, 540, 600));
 
         var error = Assert.Single(Errors(result), e => e.Field == "ticketId");
         Assert.Contains($"#{number}", error.Message);
@@ -125,10 +126,10 @@ public sealed class TimesheetEntryRulesDbTests
     public async Task Update_applies_the_same_rules()
     {
         var (svc, user, task, ticket) = await SetupAsync();
-        var created = (CreateTimesheetEntryResult.Created)await svc.CreateAsync(user, Input(task, ticket, 540, 600));
+        var created = (CreateTimesheetEntryResult.Created)await Create(svc, user, Input(task, ticket, 540, 600));
 
-        var invalid = await svc.UpdateAsync(created.Row.Id, user, Input(task, ticket, 600, 540, ""));
-        var valid = await svc.UpdateAsync(created.Row.Id, user, Input(task, ticket, 540, 630));
+        var invalid = await Update(svc, created.Row.Id, user, Input(task, ticket, 600, 540, ""));
+        var valid = await Update(svc, created.Row.Id, user, Input(task, ticket, 540, 630));
 
         var failed = Assert.IsType<UpdateTimesheetEntryResult.ValidationFailed>(invalid);
         Assert.Contains(failed.Errors, e => e.Field == "endMinutes");
@@ -141,11 +142,11 @@ public sealed class TimesheetEntryRulesDbTests
     {
         var (svc, owner, task, ticket) = await SetupAsync();
         var other = await new DbSeed(_db.DataSource).UserAsync();
-        var created = (CreateTimesheetEntryResult.Created)await svc.CreateAsync(owner, Input(task, ticket, 540, 600));
+        var created = (CreateTimesheetEntryResult.Created)await Create(svc, owner, Input(task, ticket, 540, 600));
         var id = created.Row.Id;
 
         Assert.Null(await svc.GetForUserAsync(id, other));
-        Assert.IsType<UpdateTimesheetEntryResult.NotFound>(await svc.UpdateAsync(id, other, Input(task, ticket, 540, 700)));
+        Assert.IsType<UpdateTimesheetEntryResult.NotFound>(await Update(svc, id, other, Input(task, ticket, 540, 700)));
         Assert.False(await svc.DeleteOwnAsync(id, other));
         Assert.Empty(await svc.ListByDateAsync(other, Day));
 
@@ -154,7 +155,61 @@ public sealed class TimesheetEntryRulesDbTests
         Assert.True(await svc.DeleteOwnAsync(id, owner));
     }
 
+    // ---- queue access ---------------------------------------------------------
+
+    [PostgresFact]
+    public async Task A_ticket_in_a_queue_the_agent_cannot_see_is_refused_like_a_missing_one()
+    {
+        var (svc, user, task, ticket) = await SetupAsync();
+        var elsewhere = new QueueAccessScope(false, new HashSet<Guid> { Guid.NewGuid() });
+
+        var hidden = await svc.CreateAsync(user, Input(task, ticket, 540, 600, ""), elsewhere);
+        var missing = await svc.CreateAsync(user, Input(task, Guid.NewGuid(), 540, 600, ""), elsewhere);
+
+        // Same errors, same messages: an id probe learns nothing.
+        Assert.Equal(
+            Errors(missing).Select(e => (e.Field, e.Message)),
+            Errors(hidden).Select(e => (e.Field, e.Message)));
+        Assert.Contains(Errors(hidden), e => e.Field == "ticketId");
+        Assert.Equal(0, await EntryCountAsync(user));
+    }
+
+    [PostgresFact]
+    public async Task A_ticket_in_one_of_the_agents_queues_is_accepted()
+    {
+        var (svc, user, task, ticket) = await SetupAsync();
+        var queue = await ScalarAsync<Guid>("SELECT queue_id FROM tickets WHERE id = @ticket", new { ticket });
+
+        var result = await svc.CreateAsync(user, Input(task, ticket, 540, 600), new QueueAccessScope(false, new HashSet<Guid> { queue }));
+
+        Assert.IsType<CreateTimesheetEntryResult.Created>(result);
+    }
+
+    [PostgresFact]
+    public async Task An_entry_keeps_its_ticket_after_the_agent_lost_access_but_cannot_move_to_a_hidden_one()
+    {
+        var (svc, user, task, ticket) = await SetupAsync();
+        var created = (CreateTimesheetEntryResult.Created)await Create(svc, user, Input(task, ticket, 540, 600));
+        var noAccess = new QueueAccessScope(false, new HashSet<Guid>());
+        var seed = new DbSeed(_db.DataSource);
+        var (queue, status, priority) = await seed.TaxonomyAsync();
+        var other = await seed.TicketAsync("Other", await seed.ContactAsync(), queue, status, priority);
+
+        var keep = await svc.UpdateAsync(created.Row.Id, user, Input(task, ticket, 540, 660), noAccess);
+        var move = await svc.UpdateAsync(created.Row.Id, user, Input(task, other, 540, 660), noAccess);
+
+        Assert.IsType<UpdateTimesheetEntryResult.Updated>(keep);
+        Assert.Contains(Assert.IsType<UpdateTimesheetEntryResult.ValidationFailed>(move).Errors, e => e.Field == "ticketId");
+    }
+
     // ---- plumbing -----------------------------------------------------------
+
+    /// The rules themselves, with access to every queue (an admin).
+    private static Task<CreateTimesheetEntryResult> Create(TimesheetEntryService svc, Guid user, TimesheetEntryInput input) =>
+        svc.CreateAsync(user, input, QueueAccessScope.AdminScope);
+
+    private static Task<UpdateTimesheetEntryResult> Update(TimesheetEntryService svc, Guid id, Guid user, TimesheetEntryInput input) =>
+        svc.UpdateAsync(id, user, input, QueueAccessScope.AdminScope);
 
     private static TimesheetEntryInput Input(
         Guid taskId, Guid? ticketId, int start, int end, string description = "Work done") =>

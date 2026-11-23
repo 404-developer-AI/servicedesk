@@ -1,6 +1,8 @@
 using System.Globalization;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
+using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Timesheet;
@@ -45,12 +47,13 @@ public static class TimesheetEntryEndpoints
             ITimesheetEntryService svc,
             IAuditLogger audit,
             ITimesheetEntryNotifier notifier,
+            IQueueAccessService queueAccess,
             CancellationToken ct) =>
         {
             if (!TryBuildInput(req, out var input, out var error)) return error!;
             var userId = ActorContext.GetUserId(http);
 
-            var result = await svc.CreateAsync(userId, input, ct);
+            var result = await svc.CreateAsync(userId, input, await TicketScopeAsync(queueAccess, http, userId, ct), ct);
             return result switch
             {
                 CreateTimesheetEntryResult.Created created => await AuditNotifyAndReturn(audit, http, notifier,
@@ -68,6 +71,7 @@ public static class TimesheetEntryEndpoints
             ITimesheetEntryService svc,
             IAuditLogger audit,
             ITimesheetEntryNotifier notifier,
+            IQueueAccessService queueAccess,
             CancellationToken ct) =>
         {
             if (!TryBuildInput(req, out var input, out var error)) return error!;
@@ -77,7 +81,7 @@ public static class TimesheetEntryEndpoints
             // ticket B (or to no-ticket) still pings ticket A's viewers.
             var before = await svc.GetForUserAsync(id, userId, ct);
 
-            var result = await svc.UpdateAsync(id, userId, input, ct);
+            var result = await svc.UpdateAsync(id, userId, input, await TicketScopeAsync(queueAccess, http, userId, ct), ct);
             return result switch
             {
                 UpdateTimesheetEntryResult.Updated updated => await AuditNotifyAndReturn(audit, http, notifier,
@@ -221,6 +225,13 @@ public static class TimesheetEntryEndpoints
         error = null;
         return true;
     }
+
+    /// The caller's queue access: logging time on a ticket needs access to
+    /// its queue, like every other ticket action (*My day* and *+ Log time*
+    /// both come through here).
+    private static Task<QueueAccessScope> TicketScopeAsync(
+        IQueueAccessService queueAccess, HttpContext http, Guid userId, CancellationToken ct) =>
+        queueAccess.GetScopeAsync(userId, http.User.FindFirst(ClaimTypes.Role)?.Value ?? "", ct);
 
     private static bool TryParseDate(string? raw, out DateOnly date)
     {

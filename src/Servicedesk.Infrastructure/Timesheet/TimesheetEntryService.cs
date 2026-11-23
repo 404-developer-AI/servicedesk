@@ -1,5 +1,6 @@
 using Dapper;
 using Npgsql;
+using Servicedesk.Infrastructure.Access;
 
 namespace Servicedesk.Infrastructure.Timesheet;
 
@@ -69,9 +70,9 @@ public sealed class TimesheetEntryService : ITimesheetEntryService
     }
 
     public async Task<CreateTimesheetEntryResult> CreateAsync(
-        Guid userId, TimesheetEntryInput input, CancellationToken ct = default)
+        Guid userId, TimesheetEntryInput input, QueueAccessScope ticketScope, CancellationToken ct = default)
     {
-        var validation = await ValidateAsync(input, ct);
+        var validation = await ValidateAsync(input, ticketScope, ct);
         if (validation.Count > 0) return new CreateTimesheetEntryResult.ValidationFailed(validation);
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -103,12 +104,14 @@ public sealed class TimesheetEntryService : ITimesheetEntryService
     }
 
     public async Task<UpdateTimesheetEntryResult> UpdateAsync(
-        Guid id, Guid userId, TimesheetEntryInput input, CancellationToken ct = default)
+        Guid id, Guid userId, TimesheetEntryInput input, QueueAccessScope ticketScope, CancellationToken ct = default)
     {
         var existing = await GetForUserAsync(id, userId, ct);
         if (existing is null) return new UpdateTimesheetEntryResult.NotFound();
 
-        var validation = await ValidateAsync(input, ct);
+        // Keeping the ticket the entry already has is always allowed.
+        var scope = existing.TicketId is { } kept && kept == input.TicketId ? QueueAccessScope.AdminScope : ticketScope;
+        var validation = await ValidateAsync(input, scope, ct);
         if (validation.Count > 0) return new UpdateTimesheetEntryResult.ValidationFailed(validation);
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -156,7 +159,7 @@ public sealed class TimesheetEntryService : ITimesheetEntryService
     }
 
     private async Task<List<TimesheetFieldError>> ValidateAsync(
-        TimesheetEntryInput input, CancellationToken ct)
+        TimesheetEntryInput input, QueueAccessScope ticketScope, CancellationToken ct)
     {
         var errors = new List<TimesheetFieldError>();
 
@@ -194,7 +197,7 @@ public sealed class TimesheetEntryService : ITimesheetEntryService
         }
         else if (hasTicket)
         {
-            var check = await CheckTicketAsync(input.TicketId!.Value, ct);
+            var check = await CheckTicketAsync(input.TicketId!.Value, ticketScope, ct);
             if (!check.Exists)
             {
                 errors.Add(new TimesheetFieldError("ticketId", "Selected ticket does not exist."));
@@ -212,18 +215,21 @@ public sealed class TimesheetEntryService : ITimesheetEntryService
         return errors;
     }
 
-    private async Task<TicketCheck> CheckTicketAsync(Guid ticketId, CancellationToken ct)
+    /// A ticket outside <paramref name="scope"/> is "not found" — the same
+    /// answer as a missing or deleted one.
+    private async Task<TicketCheck> CheckTicketAsync(Guid ticketId, QueueAccessScope scope, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var row = await conn.QuerySingleOrDefaultAsync<TicketCheckRow>(new CommandDefinition(
-            """
+            $"""
             SELECT t.merged_into_ticket_id AS MergedIntoTicketId,
                    COALESCE(m.number, 0)    AS MergedIntoNumber
               FROM tickets t
               LEFT JOIN tickets m ON m.id = t.merged_into_ticket_id
              WHERE t.id = @ticketId AND t.is_deleted = FALSE
+               AND {scope.SqlPredicate("t.queue_id")}
             """,
-            new { ticketId }, cancellationToken: ct));
+            scope.Parameters(new { ticketId }), cancellationToken: ct));
         if (row is null) return new TicketCheck(false, false, 0);
         return new TicketCheck(true, row.MergedIntoTicketId is not null, row.MergedIntoNumber);
     }
