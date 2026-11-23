@@ -6,8 +6,6 @@
 # Format: <lines> <path relative to the repository root>
 2182 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadApiClient.cs
 1963 src/Servicedesk.Web/src/lib/ticket-api.ts
-1845 src/Servicedesk.Web/src/pages/settings/triggers/ActionsEditor.tsx
-1530 src/Servicedesk.Web/src/pages/settings/TimesheetSettingsPage.tsx
 1378 src/Servicedesk.Web/src/components/RichTextEditor.tsx
 1345 src/Servicedesk.Infrastructure/Forms/FormModels.cs
 1315 src/Servicedesk.Web/src/pages/feedback/FeedbackPage.tsx
