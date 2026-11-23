@@ -15,11 +15,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { ApiError, apiErrorMessage, apiFieldErrors } from "@/lib/http";
 import { cn } from "@/lib/utils";
+import { serverTodayNow } from "@/lib/serverToday";
 import {
   timesheetEntryApi,
   timesheetTaskApi,
   timesheetPreferencesApi,
-  todayLocalIso,
   currentLocalMinutes,
   parseHHMM,
   formatHHMM,
@@ -50,9 +50,9 @@ export function TicketLogTimeForm({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  // Same "today" as the Timesheet page (the agent's local day), so the new
+  // Same "today" as the Timesheet page (the server's calendar day), so the new
   // row lands on the day they see there.
-  const [entryDate] = React.useState(todayLocalIso);
+  const [entryDate] = React.useState(serverTodayNow);
 
   const entriesQ = useQuery({
     queryKey: ["timesheet", "entries", entryDate],

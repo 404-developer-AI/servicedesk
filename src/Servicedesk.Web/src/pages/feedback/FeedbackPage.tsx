@@ -44,8 +44,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
 import { TicketAutocomplete } from "@/components/TicketAutocomplete";
+import { serverTodayNow } from "@/lib/serverToday";
 import type { TicketPickerItem } from "@/lib/ticket-api";
-import { useServerTime } from "@/hooks/useServerTime";
 import { preferencesApi } from "@/lib/api";
 import {
   feedbackApi,
@@ -124,18 +124,6 @@ const PAGE_SIZE = 20;
 
 // ---- Helpers --------------------------------------------------------------
 
-function serverDateToday(time: ReturnType<typeof useServerTime>["time"]): string {
-  if (!time) {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  }
-  const d = time.serverLocal;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-}
-
-
 // Format a server-set UTC timestamp for a hover tooltip (local display only —
 // the value itself is server-authored). Falls back to the raw string.
 function formatStamp(utc: string | null | undefined): string {
@@ -164,7 +152,6 @@ function statusTooltip(
 
 export function FeedbackPage() {
   const qc = useQueryClient();
-  const { time } = useServerTime();
   const { user } = useAuth();
   // Full access = the shared board (CRUD every row + management fields).
   // Otherwise the user is in restricted "own-only" mode: they only see rows
@@ -534,7 +521,7 @@ export function FeedbackPage() {
                       employees={employees}
                       workPointTypes={workPointTypes}
                       visibleColumns={visibleColumns}
-                      serverToday={serverDateToday(time)}
+                      serverToday={serverTodayNow()}
                       readOnlyManagement={!fullAccess}
                       onCancel={() => setEditingId(null)}
                       onSaved={() => {

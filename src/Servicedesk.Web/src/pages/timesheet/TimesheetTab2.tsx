@@ -27,6 +27,9 @@ import {
 import { cn } from "@/lib/utils";
 import { ApiError, apiFieldErrors, errorMessage } from "@/lib/http";
 import { ticketApi, type TicketPickerItem } from "@/lib/ticket-api";
+import { TicketAutocomplete } from "@/components/TicketAutocomplete";
+import { TaskPill } from "@/components/TaskPill";
+import { serverTodayNow } from "@/lib/serverToday";
 import {
   timesheetManagerApi,
   timesheetTaskApi,
@@ -324,14 +327,7 @@ function defaultFilter(): ManagerEntryFilter {
   // Default to today. Clearing the day field widens the grid to every day
   // (still paginated). This keeps the first paint to a single day rather
   // than the whole table.
-  return { day: localIso(new Date()) };
-}
-
-function localIso(d: Date): string {
-  const y = d.getFullYear();
-  const m = (d.getMonth() + 1).toString().padStart(2, "0");
-  const day = d.getDate().toString().padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return { day: serverTodayNow() };
 }
 
 // ---- Filter bar -------------------------------------------------------
@@ -698,21 +694,6 @@ function ManagerDisplayRow({
         </div>
       </td>
     </tr>
-  );
-}
-
-function TaskPill({ name, isAbsence }: { name: string; isAbsence: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        isAbsence
-          ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-          : "border-glass bg-glass text-foreground/80",
-      )}
-    >
-      {name}
-    </span>
   );
 }
 
@@ -1084,160 +1065,6 @@ function formatLogDelta(minutes: number): string {
   const days = Math.floor(minutes / 1440);
   const rem = Math.round((minutes - days * 1440) / 60);
   return rem === 0 ? `${days}d` : `${days}d ${rem}h`;
-}
-
-// ---- Ticket autocomplete (shared shape with Tab 1) --------------------
-
-function TicketAutocomplete({
-  value,
-  disabled,
-  onChange,
-  error,
-}: {
-  value: TicketPickerItem | null;
-  disabled: boolean;
-  onChange: (t: TicketPickerItem | null) => void;
-  error?: string;
-}) {
-  const [query, setQuery] = React.useState("");
-  const [open, setOpen] = React.useState(false);
-  const [results, setResults] = React.useState<TicketPickerItem[]>([]);
-  const [searching, setSearching] = React.useState(false);
-  const inputRef = React.useRef<HTMLInputElement | null>(null);
-  const [anchor, setAnchor] = React.useState<DropdownAnchor | null>(null);
-
-  React.useEffect(() => {
-    if (disabled || !open) return;
-    let cancelled = false;
-    const handle = window.setTimeout(async () => {
-      setSearching(true);
-      try {
-        const res = await ticketApi.picker(query.trim() || undefined, undefined, 15);
-        if (!cancelled) setResults(res.items);
-      } catch {
-        if (!cancelled) setResults([]);
-      } finally {
-        if (!cancelled) setSearching(false);
-      }
-    }, 180);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [query, open, disabled]);
-
-  React.useLayoutEffect(() => {
-    if (!open || value) {
-      setAnchor(null);
-      return;
-    }
-    const place = () => {
-      const el = inputRef.current;
-      if (!el) return;
-      setAnchor(computeDropdownAnchor(el.getBoundingClientRect()));
-    };
-    place();
-    window.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
-    return () => {
-      window.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-    };
-  }, [open, value]);
-
-  if (disabled) {
-    return (
-      <div className="h-8 rounded-md border border-dashed border-glass bg-glass px-2 py-1 text-xs text-muted-foreground/60">
-        — (task has no ticket)
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative">
-      {value ? (
-        <div
-          className={cn(
-            "flex h-8 items-center justify-between gap-2 rounded-md border bg-glass px-2 text-xs",
-            error ? "border-red-400/60" : "border-glass",
-          )}
-        >
-          <span className="truncate font-mono">
-            #{value.number}
-            <span className="ml-2 font-sans text-foreground/70">{value.subject}</span>
-          </span>
-          <button
-            type="button"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              onChange(null);
-              setQuery("");
-            }}
-            aria-label="Clear ticket"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ) : (
-        <Input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => window.setTimeout(() => setOpen(false), 150)}
-          placeholder="Search ticket # or subject…"
-          className={cn("h-8 text-xs", error && "border-red-400/60")}
-        />
-      )}
-      {!value && open && anchor &&
-        createPortal(
-          <div
-            className="fixed z-50 overflow-y-auto rounded-md border border-glass bg-[hsl(var(--background))] p-1 shadow-2xl backdrop-blur-xl"
-            style={{
-              ...(anchor.top !== undefined ? { top: anchor.top } : {}),
-              ...(anchor.bottom !== undefined ? { bottom: anchor.bottom } : {}),
-              left: anchor.left,
-              width: Math.max(anchor.width, 384),
-              maxHeight: anchor.maxHeight,
-            }}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            {searching && (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">Searching…</div>
-            )}
-            {!searching && results.length === 0 && (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">No matches</div>
-            )}
-            {results.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onChange(r);
-                  setQuery("");
-                  setOpen(false);
-                }}
-                className="flex w-full flex-col items-start gap-0 rounded px-2 py-1.5 text-left text-xs hover:bg-glass-hover"
-              >
-                <span className="font-mono">
-                  #{r.number}
-                  <span className="ml-2 font-sans text-foreground">{r.subject}</span>
-                </span>
-                {r.companyName && (
-                  <span className="text-[10px] text-muted-foreground">{r.companyName}</span>
-                )}
-              </button>
-            ))}
-          </div>,
-          document.body,
-        )}
-      {error && <p className="mt-1 text-[10px] text-red-300">{error}</p>}
-    </div>
-  );
 }
 
 // ---- Filter-bar ticket picker (compact, no clear-X-then-edit) ---------

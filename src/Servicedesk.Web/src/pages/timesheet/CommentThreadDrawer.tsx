@@ -42,10 +42,6 @@ const CONTEXT_LABEL: Record<BackofficeContext, string> = {
   cwi: "CWI",
 };
 
-function formatStamp(iso: string): string {
-  return formatDayMonthTime(iso);
-}
-
 /// Shared chat panel for the Timesheet → Comments feature. Used from the
 /// Comments inbox and from the per-row comment button on the Adsolut /
 /// Resolved / CWI tabs. Renders the message history and a composer with a
@@ -287,7 +283,7 @@ function MessageBubble({ message, mine }: { message: CommentMessage; mine: boole
       <div className="flex items-center gap-1.5 px-1 text-[10px] text-muted-foreground/70">
         <span>{mine ? "You" : who}</span>
         <span>·</span>
-        <span>{formatStamp(message.createdUtc)}</span>
+        <span>{formatDayMonthTime(message.createdUtc)}</span>
         {message.recipients.length > 0 && (
           <>
             <span>·</span>

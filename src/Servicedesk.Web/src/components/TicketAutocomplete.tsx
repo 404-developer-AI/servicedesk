@@ -16,6 +16,7 @@ export function TicketAutocomplete({
   error,
   placeholder = "Search ticket # or subject…",
   disabledLabel = "—",
+  alwaysShowSubject = false,
 }: {
   value: TicketPickerItem | null;
   disabled: boolean;
@@ -23,6 +24,8 @@ export function TicketAutocomplete({
   error?: string;
   placeholder?: string;
   disabledLabel?: string;
+  /** Show the subject next to the number at every width (default: only from the 2xl breakpoint). */
+  alwaysShowSubject?: boolean;
 }) {
   const [query, setQuery] = React.useState("");
   const [open, setOpen] = React.useState(false);
@@ -122,7 +125,14 @@ export function TicketAutocomplete({
         >
           <span className="truncate font-mono">
             #{value.number}
-            <span className="ml-2 hidden font-sans text-foreground/70 2xl:inline">{value.subject}</span>
+            <span
+              className={cn(
+                "ml-2 font-sans text-foreground/70",
+                !alwaysShowSubject && "hidden 2xl:inline",
+              )}
+            >
+              {value.subject}
+            </span>
           </span>
           <button
             type="button"

@@ -148,17 +148,6 @@ export function formatHHMM(minutes: number): string {
   return `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
 }
 
-/// Today as YYYY-MM-DD in the user's local timezone — the date picker
-/// opens on this value. Server timezone is irrelevant here; the agent
-/// registers in their own day.
-export function todayLocalIso(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = (d.getMonth() + 1).toString().padStart(2, "0");
-  const day = d.getDate().toString().padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 /// Current local time as minutes since midnight (0..1439). Used as the
 /// default for the End field of a fresh draft row — and re-read on a
 /// ~30s tick so the field stays current while the agent fills in the

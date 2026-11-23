@@ -1,5 +1,4 @@
 import * as React from "react";
-import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -24,12 +23,14 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ApiError, apiFieldErrors, errorMessage } from "@/lib/http";
-import { ticketApi, type TicketPickerItem } from "@/lib/ticket-api";
+import { type TicketPickerItem } from "@/lib/ticket-api";
+import { TicketAutocomplete } from "@/components/TicketAutocomplete";
+import { TaskPill } from "@/components/TaskPill";
+import { serverTodayNow } from "@/lib/serverToday";
 import {
   timesheetEntryApi,
   timesheetTaskApi,
   timesheetPreferencesApi,
-  todayLocalIso,
   parseHHMM,
   formatHHMM,
   formatDuration,
@@ -48,7 +49,7 @@ import { useConfirm } from "@/components/ConfirmDialog";
 /// "save day" button) so the audit log captures one event per change and
 /// concurrent edits never overwrite each other implicitly.
 export function TimesheetTab1() {
-  const [date, setDate] = React.useState<string>(() => todayLocalIso());
+  const [date, setDate] = React.useState<string>(() => serverTodayNow());
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draftRow, setDraftRow] = React.useState<DraftRow | null>(null);
   const qc = useQueryClient();
@@ -206,7 +207,7 @@ export function TimesheetTab1() {
               size="sm"
               variant="ghost"
               onClick={() => {
-                setDate(todayLocalIso());
+                setDate(serverTodayNow());
                 setEditingId(null);
                 setDraftRow(null);
               }}
@@ -447,7 +448,7 @@ function DisplayRow({
         </span>
       </td>
       <td className="px-3 py-2">
-        <TaskPill name={entry.taskName} isAbsence={entry.taskIsAbsence} />
+        <TaskPill name={entry.taskName} isAbsence={entry.taskIsAbsence} truncate />
       </td>
       <td className="px-3 py-2 text-foreground/90 wrap-break-word whitespace-pre-wrap">{entry.description}</td>
       <td className="px-3 py-2 font-mono text-xs text-foreground/90">
@@ -487,22 +488,6 @@ function DisplayRow({
         </div>
       </td>
     </tr>
-  );
-}
-
-function TaskPill({ name, isAbsence }: { name: string; isAbsence: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex max-w-full items-center truncate rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        isAbsence
-          ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-          : "border-glass bg-glass text-foreground/80",
-      )}
-      title={name}
-    >
-      {name}
-    </span>
   );
 }
 
@@ -777,6 +762,7 @@ function EditableRow({
         <TicketAutocomplete
           value={row.ticket}
           disabled={false}
+          disabledLabel="— (task has no ticket)"
           onChange={(t) => setRow({ ...row, ticket: t })}
           error={errors.ticketId}
         />
@@ -862,224 +848,6 @@ function EditableRow({
         </div>
       </td>
     </tr>
-  );
-}
-
-// ---- Ticket autocomplete (reuses /api/tickets/picker) -----------------
-
-function TicketAutocomplete({
-  value,
-  disabled,
-  onChange,
-  error,
-}: {
-  value: TicketPickerItem | null;
-  disabled: boolean;
-  onChange: (t: TicketPickerItem | null) => void;
-  error?: string;
-}) {
-  const [query, setQuery] = React.useState("");
-  const [open, setOpen] = React.useState(false);
-  const [results, setResults] = React.useState<TicketPickerItem[]>([]);
-  const [searching, setSearching] = React.useState(false);
-  // The dropdown lives in a portal on document.body (see comment below)
-  // so its position is computed against the trigger's bounding rect and
-  // refreshed on scroll/resize while open.
-  const inputRef = React.useRef<HTMLInputElement | null>(null);
-  const [anchor, setAnchor] = React.useState<{
-    /// Either `top` (anchor top edge, dropdown grows downward) OR
-    /// `bottom` (anchor bottom edge, dropdown grows upward). Exactly
-    /// one is set. Using `bottom` for flip-above keeps the dropdown
-    /// glued to the input as the content height shrinks while the
-    /// user types — using `top` would freeze the top edge and leave
-    /// a floating gap above the input.
-    top?: number;
-    bottom?: number;
-    left: number;
-    width: number;
-    maxHeight: number;
-  } | null>(null);
-
-  React.useEffect(() => {
-    if (disabled || !open) return;
-    let cancelled = false;
-    const handle = window.setTimeout(async () => {
-      setSearching(true);
-      try {
-        const res = await ticketApi.picker(query.trim() || undefined, undefined, 15);
-        if (!cancelled) setResults(res.items);
-      } catch {
-        if (!cancelled) setResults([]);
-      } finally {
-        if (!cancelled) setSearching(false);
-      }
-    }, 180);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [query, open, disabled]);
-
-  // Track the trigger's screen-rect while the dropdown is open so the
-  // portal stays glued to it on page scroll / window resize. We render
-  // the dropdown via createPortal because the parent `<section
-  // class="glass-card overflow-hidden">` clips any descendant that
-  // extends past its bounds — a regular absolute-positioned popup ends
-  // up cropped at the bottom edge of the card. Portaling to body
-  // sidesteps both the overflow-hidden and any stacking-context oddities
-  // from the surrounding table / sticky sidebar.
-  React.useLayoutEffect(() => {
-    if (!open || value) {
-      setAnchor(null);
-      return;
-    }
-    const place = () => {
-      const el = inputRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      // Flip above when the row sits low in the viewport and the
-      // 288px dropdown would otherwise spill off-screen — happens on
-      // long days where the auto-spawned draft is the last visible
-      // row. Pick the side with more room when below is cramped.
-      const vh = window.innerHeight;
-      const margin = 8;
-      const gap = 4;
-      const preferredMax = 288; // matches the old max-h-72
-      const minBelow = 160;
-      const availBelow = vh - r.bottom - gap - margin;
-      const availAbove = r.top - gap - margin;
-      const flipAbove = availBelow < minBelow && availAbove > availBelow;
-      const maxHeight = Math.max(
-        120,
-        Math.min(preferredMax, flipAbove ? availAbove : availBelow),
-      );
-      // When flipping above, anchor via `bottom` so the dropdown's
-      // bottom edge stays glued to the input top as the result list
-      // shrinks during typing — using `top + maxHeight` would freeze
-      // the top, leaving a floating gap when actual content < maxHeight.
-      if (flipAbove) {
-        setAnchor({
-          bottom: vh - r.top + gap,
-          left: r.left,
-          width: r.width,
-          maxHeight,
-        });
-      } else {
-        setAnchor({
-          top: r.bottom + gap,
-          left: r.left,
-          width: r.width,
-          maxHeight,
-        });
-      }
-    };
-    place();
-    window.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
-    return () => {
-      window.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-    };
-  }, [open, value]);
-
-  if (disabled) {
-    return (
-      <div className="h-8 rounded-md border border-dashed border-glass bg-glass px-2 py-1 text-xs text-muted-foreground/60">
-        — (task has no ticket)
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative">
-      {value ? (
-        <div
-          className={cn(
-            "flex h-8 items-center justify-between gap-2 rounded-md border bg-glass px-2 text-xs",
-            error ? "border-red-400/60" : "border-glass",
-          )}
-          title={`#${value.number} ${value.subject ?? ""}`}
-        >
-          <span className="truncate font-mono">
-            #{value.number}
-            <span className="ml-2 hidden font-sans text-foreground/70 2xl:inline">{value.subject}</span>
-          </span>
-          <button
-            type="button"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              onChange(null);
-              setQuery("");
-            }}
-            aria-label="Clear ticket"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ) : (
-        <Input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => window.setTimeout(() => setOpen(false), 150)}
-          placeholder="Search ticket # or subject…"
-          className={cn("h-8 text-xs", error && "border-red-400/60")}
-          aria-invalid={!!error}
-        />
-      )}
-      {!value && open && anchor &&
-        createPortal(
-          <div
-            className="fixed z-50 overflow-y-auto rounded-md border border-glass bg-[hsl(var(--background))] p-1 shadow-2xl backdrop-blur-xl"
-            style={{
-              ...(anchor.top !== undefined ? { top: anchor.top } : {}),
-              ...(anchor.bottom !== undefined ? { bottom: anchor.bottom } : {}),
-              left: anchor.left,
-              // Picker is denser than the trigger column; clamp to a
-              // useful min so a tiny column doesn't squash the dropdown.
-              width: Math.max(anchor.width, 384),
-              maxHeight: anchor.maxHeight,
-            }}
-            // Keep the input focused — clicking inside should not blur
-            // the trigger and close the dropdown before the click lands.
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            {searching && (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">Searching…</div>
-            )}
-            {!searching && results.length === 0 && (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">No matches</div>
-            )}
-            {results.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onChange(r);
-                  setQuery("");
-                  setOpen(false);
-                }}
-                className="flex w-full flex-col items-start gap-0 rounded px-2 py-1.5 text-left text-xs hover:bg-glass-hover"
-              >
-                <span className="font-mono">
-                  #{r.number}
-                  <span className="ml-2 font-sans text-foreground">{r.subject}</span>
-                </span>
-                {r.companyName && (
-                  <span className="text-[10px] text-muted-foreground">{r.companyName}</span>
-                )}
-              </button>
-            ))}
-          </div>,
-          document.body,
-        )}
-      {error && <p className="mt-1 text-[10px] text-red-300">{error}</p>}
-    </div>
   );
 }
 

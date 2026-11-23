@@ -1,5 +1,6 @@
 import * as React from "react";
-import { useServerOffsetMinutes, useServerTimeZone, getServerTimeSnapshot, type ServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { serverTodayNow } from "@/lib/serverToday";
+import { useServerOffsetMinutes, useServerTimeZone, toServerLocal } from "@/hooks/useServerTime";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouterState } from "@tanstack/react-router";
 import { groupThreads, noteThreadApi, noteThreadKey, type NoteThreadData } from "@/lib/note-threads-api";
@@ -1824,16 +1825,6 @@ export function TicketTimeline({ ticketId, ticketNumber, events, pinnedEventIds 
 const FEEDBACK_SELECT_CLASS =
   "h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-ring";
 
-function logFeedbackToday(time: ServerTime | null): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  if (!time) {
-    const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  }
-  const d = time.serverLocal;
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-}
-
 function LogFeedbackDialog({
   open,
   onOpenChange,
@@ -1851,7 +1842,7 @@ function LogFeedbackDialog({
   // Read once when needed — a ticking subscription here re-rendered every
   // timeline event each second.
   const [targetUserId, setTargetUserId] = React.useState("");
-  const [entryDate, setEntryDate] = React.useState(() => logFeedbackToday(getServerTimeSnapshot()));
+  const [entryDate, setEntryDate] = React.useState(() => serverTodayNow());
   const [workPointTypeId, setWorkPointTypeId] = React.useState("");
   const [bodyHtml, setBodyHtml] = React.useState("");
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
@@ -1860,7 +1851,7 @@ function LogFeedbackDialog({
   React.useEffect(() => {
     if (open) {
       setTargetUserId("");
-      setEntryDate(logFeedbackToday(getServerTimeSnapshot()));
+      setEntryDate(serverTodayNow());
       setWorkPointTypeId("");
       setBodyHtml("");
       setFieldErrors({});

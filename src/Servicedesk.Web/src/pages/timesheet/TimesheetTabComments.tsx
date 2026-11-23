@@ -27,10 +27,6 @@ const CONTEXT_LABEL: Record<BackofficeContext, string> = {
   cwi: "CWI",
 };
 
-function formatStamp(iso: string): string {
-  return formatDayMonthTime(iso);
-}
-
 /// Timesheet → Comments tab. Lists the conversations the current user is
 /// linked into and that are still active (their origin row is not yet
 /// BO-checked). Each row opens the shared chat drawer; the ticket number is a
@@ -151,7 +147,7 @@ export function TimesheetTabComments() {
                   </div>
 
                   <span className="shrink-0 text-[11px] text-muted-foreground/60">
-                    {formatStamp(item.lastMessageUtc)}
+                    {formatDayMonthTime(item.lastMessageUtc)}
                   </span>
                 </button>
                 {canBoCheck(item.originContext) && <BoCheckCell item={item} />}
