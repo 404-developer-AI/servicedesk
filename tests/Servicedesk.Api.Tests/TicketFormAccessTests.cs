@@ -3,11 +3,9 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
-using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Domain.Search;
 using Servicedesk.Infrastructure.Search;
-using Servicedesk.Infrastructure.Settings;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -40,7 +38,7 @@ public sealed class TicketFormAccessTests : IClassFixture<SharedHostFixture>
     public async Task Customer_cannot_reach_the_forms_api(string method, string url)
     {
         var factory = _hosts.Base;
-        var client = await ClientAsync(factory, "Customer");
+        var client = await factory.SignedInClientAsync("Customer", _hosts.UnreachableDb, amr: "pwd");
 
         var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), url));
 
@@ -51,7 +49,7 @@ public sealed class TicketFormAccessTests : IClassFixture<SharedHostFixture>
     public async Task Customer_cannot_save_a_form()
     {
         var factory = _hosts.Base;
-        var client = await ClientAsync(factory, "Customer");
+        var client = await factory.SignedInClientAsync("Customer", _hosts.UnreachableDb, amr: "pwd");
 
         var response = await client.PostAsJsonAsync($"/api/tickets/{AnyId}/forms",
             new { templateId = AnyId, answers = new { } });
@@ -66,7 +64,7 @@ public sealed class TicketFormAccessTests : IClassFixture<SharedHostFixture>
     public async Task Agent_cannot_manage_templates(string method, string url)
     {
         var factory = _hosts.Base;
-        var client = await ClientAsync(factory, "Agent");
+        var client = await factory.SignedInClientAsync("Agent", _hosts.UnreachableDb);
 
         var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), url));
 
@@ -104,20 +102,5 @@ public sealed class TicketFormAccessTests : IClassFixture<SharedHostFixture>
         var src = new TicketFormSearchSource(null!);
         Assert.True(src.IsAvailableFor(new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>())));
         Assert.True(src.IsAvailableFor(new SearchPrincipal(Guid.NewGuid(), "Admin", null)));
-    }
-
-    private async Task<HttpClient> ClientAsync(SecurityBaselineFactory factory, string role)
-    {
-        var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = role;
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = _hosts.UnreachableDb.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
-        return client;
     }
 }

@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Domain.Companies;
 using Servicedesk.Domain.Taxonomy;
@@ -14,6 +13,7 @@ using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
 using Servicedesk.Infrastructure.Triggers;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -455,41 +455,23 @@ public sealed class MailIngestServiceTests
             AutoSubmitted: autoSubmitted,
             Attachments: Array.Empty<GraphAttachmentInfo>());
 
-    private static (MailIngestService svc, StubGraph graph, StubMailRepo mail, StubTickets tickets, StubContacts contacts) Build(string? allowedAutoSenders = null)
+    private static (MailIngestService svc, FakeGraphMailClient graph, StubMailRepo mail, StubTickets tickets, StubContacts contacts) Build(string? allowedAutoSenders = null)
     {
-        var graph = new StubGraph();
+        var graph = new FakeGraphMailClient();
         var mail = new StubMailRepo();
         var tickets = new StubTickets();
         var taxonomy = new StubTaxonomy();
         var inbound = new StubInboundRepo();
         var contacts = new StubContacts();
         var blobs = new StubBlobs();
-        var settings = new StubSettings { AllowedAutoSenders = allowedAutoSenders };
+        var settings = new InMemorySettingsService()
+            .With(SettingKeys.Mail.PlusAddressToken, "TCK")
+            .With(SettingKeys.Mail.AutoSubmittedAllowedSenders, allowedAutoSenders ?? "");
         var svc = new MailIngestService(graph, mail, tickets, taxonomy, inbound, contacts, blobs, settings,
             new NoopSlaEngine(), new NoopTriggerService(), NullLogger<MailIngestService>.Instance);
         return (svc, graph, mail, tickets, contacts);
     }
 
-    private sealed class StubGraph : IGraphMailClient
-    {
-        public GraphFullMessage Message { get; set; } = null!;
-        public Task<GraphFullMessage> FetchMessageAsync(string mbx, string id, CancellationToken ct)
-            => Task.FromResult(Message);
-        public Task<Stream> FetchRawMessageAsync(string mbx, string id, CancellationToken ct)
-            => Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes("raw")));
-        public Task<GraphDeltaPage> ListInboxDeltaAsync(string m, string f, string? d, int b, CancellationToken ct)
-            => throw new NotImplementedException();
-        public Task<IReadOnlyList<GraphMailFolderInfo>> ListMailFoldersAsync(string m, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<GraphMailFolderInfo>>(Array.Empty<GraphMailFolderInfo>());
-        public Task<TimeSpan> PingAsync(string mbx, CancellationToken ct) => Task.FromResult(TimeSpan.Zero);
-        public Task MarkAsReadAsync(string m, string id, CancellationToken ct) => Task.CompletedTask;
-        public Task MoveAsync(string m, string id, string f, CancellationToken ct) => Task.CompletedTask;
-        public Task<string> EnsureFolderAsync(string m, string n, CancellationToken ct) => Task.FromResult("f");
-        public Task<Stream> FetchAttachmentBytesAsync(string m, string id, string aid, CancellationToken ct)
-            => Task.FromResult<Stream>(new MemoryStream(Array.Empty<byte>()));
-        public Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage m, CancellationToken ct)
-            => throw new NotImplementedException();
-    }
 
     private sealed class StubMailRepo : IMailMessageRepository
     {
@@ -705,23 +687,6 @@ public sealed class MailIngestServiceTests
         public Task<bool> DeleteAsync(string hash, CancellationToken ct = default) => Task.FromResult(false);
     }
 
-    private sealed class StubSettings : ISettingsService
-    {
-        public string? AllowedAutoSenders { get; init; }
-        public Task<T> GetAsync<T>(string key, CancellationToken ct)
-        {
-            object value = key switch
-            {
-                "Mail.PlusAddressToken" => "TCK",
-                "Mail.AutoSubmittedAllowedSenders" => AllowedAutoSenders!,
-                _ => default(T)!,
-            };
-            return Task.FromResult((T)value!);
-        }
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task EnsureDefaultsAsync(CancellationToken ct = default) => Task.CompletedTask;
-    }
 
     private sealed class NoopSlaEngine : ISlaEngine
     {

@@ -3,9 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
-using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
-using Servicedesk.Infrastructure.Settings;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -31,7 +29,7 @@ public sealed class TagGroupAuthorizationTests : IClassFixture<SharedHostFixture
     public async Task Agents_cannot_manage_groups(string method, string url)
     {
         var factory = _hosts.Base;
-        var client = await ClientAsync(factory, "Agent");
+        var client = await factory.SignedInClientAsync("Agent", _hosts.UnreachableDb);
         var req = new HttpRequestMessage(new HttpMethod(method), url);
         if (method is "POST" or "PUT") req.Content = JsonContent.Create(new { name = "Back office", memberIds = Array.Empty<Guid>() });
 
@@ -46,25 +44,10 @@ public sealed class TagGroupAuthorizationTests : IClassFixture<SharedHostFixture
     public async Task Customers_never_reach_group_tags(string method, string url)
     {
         var factory = _hosts.Base;
-        var client = await ClientAsync(factory, "Customer");
+        var client = await factory.SignedInClientAsync("Customer", _hosts.UnreachableDb);
 
         var status = (await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), url))).StatusCode;
 
         Assert.True(status is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized, $"got {status}");
-    }
-
-    private async Task<HttpClient> ClientAsync(SecurityBaselineFactory factory, string role)
-    {
-        var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = role;
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: role == "Customer" ? "pwd+mfa" : "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var host = _hosts.UnreachableDb;
-        var client = host.CreateClient();
-        client.DefaultRequestHeaders.Add("Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
-        return client;
     }
 }

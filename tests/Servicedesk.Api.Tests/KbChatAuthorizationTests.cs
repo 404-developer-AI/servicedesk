@@ -55,7 +55,9 @@ public sealed class KbChatAuthorizationTests
         var ds = NpgsqlDataSource.Create("Host=localhost;Username=u;Password=p;Database=d");
         return new KbChatService(
             ds,
-            new StubSettings(kbChatEnabled),
+            new InMemorySettingsService()
+                .With(SettingKeys.Claude.KbChatEnabled, kbChatEnabled)
+                .With(SettingKeys.Claude.ZeroDataRetentionConfirmed, true),
             secrets,
             api,
             usage,
@@ -63,30 +65,6 @@ public sealed class KbChatAuthorizationTests
             NullLogger<KbChatService>.Instance);
     }
 
-    private sealed class StubSettings : ISettingsService
-    {
-        private readonly bool _kbChatEnabled;
-        public StubSettings(bool kbChatEnabled) => _kbChatEnabled = kbChatEnabled;
-
-        public Task EnsureDefaultsAsync(CancellationToken ct = default) => Task.CompletedTask;
-
-        public Task<T> GetAsync<T>(string key, CancellationToken ct = default)
-        {
-            object val = key switch
-            {
-                SettingKeys.Claude.KbChatEnabled => _kbChatEnabled,
-                SettingKeys.Claude.ZeroDataRetentionConfirmed => true,
-                _ => default(T)!,
-            };
-            return Task.FromResult((T)val);
-        }
-
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken ct = default) =>
-            Task.CompletedTask;
-
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
-    }
 
     private sealed class ThrowingApiClient : IClaudeApiClient
     {

@@ -8,6 +8,7 @@ using Servicedesk.Infrastructure.Health;
 using Servicedesk.Infrastructure.Search;
 using Servicedesk.Infrastructure.Security.IpBlocking;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -216,7 +217,7 @@ public sealed class IpBlockingTests
     {
         var d = new IpThreatDetector(List());
         d.UpdateConfig(new IpThreatConfig(true, TimeSpan.FromMinutes(10), 2, 100, 10, 1, TimeSpan.FromHours(24), null));
-        var decorator = new IpSignalAuditDecorator(new NullAudit(), d);
+        var decorator = new IpSignalAuditDecorator(new FakeAuditLogger(), d);
 
         await decorator.LogAsync(new AuditEvent("login_failed", "anon", "anon", "victim@example.com", "203.0.113.9"));
 
@@ -463,30 +464,17 @@ public sealed class IpBlockingTests
     private static IpThreatObservation Obs(string ip, IpSignalKind kind) =>
         new(ip, new Dictionary<IpSignalKind, int> { [kind] = 3 }, new[] { "/.env" }, new[] { kind }, Now, Now);
 
-    private static (IpBlockService Svc, FakeRepo Repo, IpBlockList List, RecordingAudit Audit) Service()
+    private static (IpBlockService Svc, FakeRepo Repo, IpBlockList List, FakeAuditLogger Audit) Service()
     {
         var list = List();
         var detector = new IpThreatDetector(list);
         detector.UpdateConfig(Config());
         var repo = new FakeRepo();
-        var audit = new RecordingAudit();
+        var audit = new FakeAuditLogger();
         return (new IpBlockService(repo, list, detector, audit), repo, list, audit);
     }
 
-    private sealed class NullAudit : IAuditLogger
-    {
-        public Task LogAsync(AuditEvent evt, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    }
 
-    private sealed class RecordingAudit : IAuditLogger
-    {
-        public List<AuditEvent> Events { get; } = new();
-        public Task LogAsync(AuditEvent evt, CancellationToken cancellationToken = default)
-        {
-            Events.Add(evt);
-            return Task.CompletedTask;
-        }
-    }
 
     private sealed class FakeRepo : IIpBlockRepository
     {

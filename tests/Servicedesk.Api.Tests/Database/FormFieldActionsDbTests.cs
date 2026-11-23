@@ -1,3 +1,4 @@
+using Servicedesk.Api.Tests.TestInfrastructure;
 using System.Text.Json;
 using Dapper;
 using Microsoft.Extensions.Caching.Memory;
@@ -159,7 +160,7 @@ public sealed class FormFieldActionsDbTests
         Assert.Null(await PendingTillAsync(ticketId));
     }
 
-    private static ISlaEngine NoSla() => PendingTillInPastTests.Fake<ISlaEngine>.Create((method, _) =>
+    private static ISlaEngine NoSla() => Fake<ISlaEngine>.Create((method, _) =>
         method.ReturnType == typeof(Task)
             ? Task.CompletedTask
             : throw new NotImplementedException($"Unexpected call: {method.Name}"));

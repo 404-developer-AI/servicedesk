@@ -3,6 +3,7 @@ using System.Text;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -15,7 +16,7 @@ public sealed class LocalFileBlobStoreTests : IDisposable
     {
         _root = Path.Combine(Path.GetTempPath(), "sd-blob-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_root);
-        _store = new LocalFileBlobStore(new StubSettings(_root), new BlobStoreHealth());
+        _store = new LocalFileBlobStore(new InMemorySettingsService().With(SettingKeys.Storage.BlobRoot, _root), new BlobStoreHealth());
     }
 
     public void Dispose()
@@ -192,7 +193,7 @@ public sealed class LocalFileBlobStoreTests : IDisposable
     public async Task Rejected_source_aborts_the_write_without_a_health_failure()
     {
         var health = new BlobStoreHealth();
-        var store = new LocalFileBlobStore(new StubSettings(_root), health);
+        var store = new LocalFileBlobStore(new InMemorySettingsService().With(SettingKeys.Storage.BlobRoot, _root), health);
 
         await Assert.ThrowsAsync<BlobSourceRejectedException>(() => store.WriteAsync(new RejectingStream()));
 
@@ -214,27 +215,4 @@ public sealed class LocalFileBlobStoreTests : IDisposable
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
-    private sealed class StubSettings : ISettingsService
-    {
-        private readonly string _root;
-        public StubSettings(string root) => _root = root;
-
-        public Task EnsureDefaultsAsync(CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task<T> GetAsync<T>(string key, CancellationToken cancellationToken = default)
-        {
-            if (key == SettingKeys.Storage.BlobRoot && typeof(T) == typeof(string))
-            {
-                return Task.FromResult((T)(object)_root);
-            }
-            throw new NotSupportedException($"StubSettings does not handle '{key}'.");
-        }
-
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-    }
 }

@@ -251,33 +251,11 @@ public sealed class ContactLookupServiceTests
 
     private static ContactLookupService Build(
         FakeCompanies repo, FakeAuditLogger audit, bool autoLinkEnabled, string[]? domainBlacklist = null)
-        => new(repo, new StubSettings(autoLinkEnabled, domainBlacklist), audit, NullLogger<ContactLookupService>.Instance);
+        => new(repo, new InMemorySettingsService()
+            .With(SettingKeys.Mail.AutoLinkCompanyByDomain, autoLinkEnabled)
+            .With(SettingKeys.Mail.AutoLinkDomainBlacklist,
+                domainBlacklist is null || domainBlacklist.Length == 0 ? "" : JsonSerializer.Serialize(domainBlacklist)), audit, NullLogger<ContactLookupService>.Instance);
 
-    private sealed class StubSettings : ISettingsService
-    {
-        private readonly bool _autoLinkEnabled;
-        private readonly string _blacklistJson;
-
-        public StubSettings(bool autoLinkEnabled, string[]? domainBlacklist)
-        {
-            _autoLinkEnabled = autoLinkEnabled;
-            _blacklistJson = domainBlacklist is null || domainBlacklist.Length == 0
-                ? ""
-                : JsonSerializer.Serialize(domainBlacklist);
-        }
-
-        public Task<T> GetAsync<T>(string key, CancellationToken ct = default)
-        {
-            if (key == SettingKeys.Mail.AutoLinkCompanyByDomain && typeof(T) == typeof(bool))
-                return Task.FromResult((T)(object)_autoLinkEnabled);
-            if (key == SettingKeys.Mail.AutoLinkDomainBlacklist && typeof(T) == typeof(string))
-                return Task.FromResult((T)(object)_blacklistJson);
-            return Task.FromResult(default(T)!);
-        }
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task EnsureDefaultsAsync(CancellationToken ct = default) => Task.CompletedTask;
-    }
 
     /// In-memory fake that mirrors just enough of <see cref="ICompanyRepository"/>
     /// for the mail auto-link paths plus the primary-move semantics asserted

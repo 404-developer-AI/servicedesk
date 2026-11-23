@@ -3,11 +3,9 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
-using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Domain.Search;
 using Servicedesk.Infrastructure.Search;
-using Servicedesk.Infrastructure.Settings;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -39,14 +37,7 @@ public sealed class NoteThreadAuthorizationTests : IClassFixture<SharedHostFixtu
     public async Task Customers_never_reach_note_threads(string method, string url)
     {
         var factory = _hosts.Base;
-        var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = "Customer";
-        var sessionId = await factory.Sessions.CreateAsync(userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd+mfa");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = _hosts.UnreachableDb.CreateClient();
-        client.DefaultRequestHeaders.Add("Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
+        var client = await factory.SignedInClientAsync("Customer", _hosts.UnreachableDb);
         var req = new HttpRequestMessage(new HttpMethod(method), url);
         if (method is "POST" or "PUT") req.Content = JsonContent.Create(new { bodyHtml = "<p>x</p>" });
 

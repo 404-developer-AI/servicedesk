@@ -1,5 +1,4 @@
 using Servicedesk.Domain.Tickets;
-using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Checklists;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Realtime;
@@ -7,6 +6,7 @@ using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Infrastructure.Triggers.StatusGate;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -42,7 +42,7 @@ public sealed class TicketChecklistServiceTests
         Assert.Equal(3, view.Items.Count);
         Assert.Equal(3, view.Checklist.RequiredTotal);
         Assert.Contains(f.Tickets.Events, e => e.EventType == "ChecklistAttached");
-        Assert.Contains(f.Audit.Rows, r => r.EventType == "ticket.checklist.attached");
+        Assert.Contains(f.Audit.Events, r => r.EventType == "ticket.checklist.attached");
         Assert.Contains(TicketInA, f.Notifier.Notified);
     }
 
@@ -183,7 +183,7 @@ public sealed class TicketChecklistServiceTests
             new ChecklistItemInput("Order headsets", "two of them", "Back Office", "Week 2", "https://example.com/manual", "Manual", null), default);
         Assert.True(added.IsAdHoc);
         Assert.Equal(AgentId, added.AddedByUserId);
-        Assert.Contains(f.Audit.Rows, r => r.EventType == "ticket.checklist.item_added");
+        Assert.Contains(f.Audit.Events, r => r.EventType == "ticket.checklist.item_added");
 
         // Another agent may not edit or remove it; the author and an admin may.
         var ex2 = await Assert.ThrowsAsync<ChecklistRejectedException>(() =>
@@ -241,7 +241,7 @@ public sealed class TicketChecklistServiceTests
         public readonly FakeMutations Mutations = new();
         public readonly RecordingTickets Tickets = new();
         public readonly MutableSettings Settings;
-        public readonly RecordingAudit Audit = new();
+        public readonly FakeAuditLogger Audit = new();
         public readonly RecordingNotifier Notifier = new();
         public readonly TicketChecklistService Service;
 
@@ -269,11 +269,6 @@ public sealed class TicketChecklistServiceTests
         public Task NotifyUpdatedAsync(Guid ticketId, CancellationToken ct) { Notified.Add(ticketId); return Task.CompletedTask; }
     }
 
-    private sealed class RecordingAudit : IAuditLogger
-    {
-        public readonly List<AuditEvent> Rows = new();
-        public Task LogAsync(AuditEvent evt, CancellationToken cancellationToken = default) { Rows.Add(evt); return Task.CompletedTask; }
-    }
 
     private sealed class InMemoryTemplates : IChecklistTemplateRepository
     {

@@ -10,6 +10,7 @@ using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -410,18 +411,6 @@ public sealed class HealthAggregatorTests
         Assert.Contains(sec.Details, d => d.Label == "Window" && d.Value.EndsWith("evaluated 07/10/2026 - 20:46"));
     }
 
-    private sealed class StubSettings : ISettingsService
-    {
-        private readonly string _timeZone;
-        public StubSettings(string timeZone) => _timeZone = timeZone;
-        public Task EnsureDefaultsAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<T> GetAsync<T>(string key, CancellationToken cancellationToken = default)
-            => Task.FromResult((T)(object)_timeZone);
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
-    }
 
     private static HealthAggregator Build(
         IReadOnlyList<Queue> queues,
@@ -448,7 +437,7 @@ public sealed class HealthAggregatorTests
             Options.Create(tlsOptions ?? new TlsCertHealthOptions()),
             securityActivity ?? new InMemorySecurityActivitySnapshot(),
             new Servicedesk.Infrastructure.Retention.RetentionHealth(),
-            new StubSettings(timeZone));
+            new InMemorySettingsService().With(SettingKeys.App.TimeZone, timeZone));
 
     private sealed class StubIncidentLog : IIncidentLog
     {

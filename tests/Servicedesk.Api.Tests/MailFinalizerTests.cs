@@ -6,6 +6,7 @@ using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Settings;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -24,7 +25,7 @@ public class MailFinalizerTests
         };
         var graph = new FakeGraph();
         var finalizer = new MailFinalizer(mail, graph, new FakeInboundRepo(Mailbox),
-            new FakeTaxonomy(Mailbox), new FakeSettings(doMove: true),
+            new FakeTaxonomy(Mailbox), Settings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
         await finalizer.SweepAsync(CancellationToken.None);
@@ -43,7 +44,7 @@ public class MailFinalizerTests
         };
         var graph = new FakeGraph();
         var finalizer = new MailFinalizer(mail, graph, new FakeInboundRepo(Mailbox),
-            new FakeTaxonomy(Mailbox), new FakeSettings(doMove: false),
+            new FakeTaxonomy(Mailbox), Settings(doMove: false),
             NullLogger<MailFinalizer>.Instance);
 
         await finalizer.SweepAsync(CancellationToken.None);
@@ -58,7 +59,7 @@ public class MailFinalizerTests
         var mail = new FakeMailRepo(); // empty Ready → Get returns null
         var graph = new FakeGraph();
         var finalizer = new MailFinalizer(mail, graph, new FakeInboundRepo(Mailbox),
-            new FakeTaxonomy(Mailbox), new FakeSettings(doMove: true),
+            new FakeTaxonomy(Mailbox), Settings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
         await finalizer.TryFinalizeMailAsync(Guid.NewGuid(), CancellationToken.None);
@@ -77,7 +78,7 @@ public class MailFinalizerTests
         };
         var graph = new FakeGraph { ThrowNotFound = true };
         var finalizer = new MailFinalizer(mail, graph, new FakeInboundRepo(Mailbox),
-            new FakeTaxonomy(Mailbox), new FakeSettings(doMove: true),
+            new FakeTaxonomy(Mailbox), Settings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
         await finalizer.SweepAsync(CancellationToken.None);
@@ -103,7 +104,7 @@ public class MailFinalizerTests
         var repo = new FakeInboundRepo(staleMailbox);
         repo.SeedProcessedFolder(staleMailbox, "stale-folder-id");
         var finalizer = new MailFinalizer(mail, graph, repo,
-            new FakeTaxonomy(staleMailbox), new FakeSettings(doMove: true),
+            new FakeTaxonomy(staleMailbox), Settings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
         await finalizer.SweepAsync(CancellationToken.None);
@@ -125,7 +126,7 @@ public class MailFinalizerTests
         };
         var graph = new FakeGraph();
         var finalizer = new MailFinalizer(mail, graph, new FakeInboundRepo(Mailbox),
-            new FakeTaxonomy(Mailbox), new FakeSettings(doMove: true),
+            new FakeTaxonomy(Mailbox), Settings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
         await finalizer.SweepAsync(CancellationToken.None);
@@ -143,7 +144,7 @@ public class MailFinalizerTests
         var repo = new FakeInboundRepo(mailbox);
         var sourceId = (await repo.ListAllAsync(default))[0].Id;
         var finalizer = new MailFinalizer(mail, graph, repo,
-            new FakeTaxonomy(mailbox), new FakeSettings(doMove: true),
+            new FakeTaxonomy(mailbox), Settings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
         await finalizer.MoveSkippedAsync(sourceId, mailbox, "graph-bulk-1", CancellationToken.None);
@@ -161,7 +162,7 @@ public class MailFinalizerTests
         var repo = new FakeInboundRepo(Mailbox);
         var sourceId = (await repo.ListAllAsync(default))[0].Id;
         var finalizer = new MailFinalizer(new FakeMailRepo(), graph, repo,
-            new FakeTaxonomy(Mailbox), new FakeSettings(doMove, moveSkipped: moveSkipped),
+            new FakeTaxonomy(Mailbox), Settings(doMove, moveSkipped: moveSkipped),
             NullLogger<MailFinalizer>.Instance);
 
         await finalizer.MoveSkippedAsync(sourceId, Mailbox, "g", CancellationToken.None);
@@ -177,7 +178,7 @@ public class MailFinalizerTests
         var repo = new FakeInboundRepo(mailbox);
         var sourceId = (await repo.ListAllAsync(default))[0].Id;
         var finalizer = new MailFinalizer(new FakeMailRepo(), graph, repo,
-            new FakeTaxonomy(mailbox), new FakeSettings(doMove: true),
+            new FakeTaxonomy(mailbox), Settings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
         await finalizer.MoveSkippedAsync(sourceId, mailbox, "g", CancellationToken.None);
@@ -310,6 +311,12 @@ public class MailFinalizerTests
         public Task ClearMailboxActionErrorAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
     }
 
+    private static InMemorySettingsService Settings(bool doMove, string folder = "Processed", bool moveSkipped = true)
+        => new InMemorySettingsService()
+            .With(SettingKeys.Mail.MoveOnIngest, doMove)
+            .With(SettingKeys.Mail.MoveSkippedOnIngest, moveSkipped)
+            .With(SettingKeys.Mail.ProcessedFolderName, folder);
+
     private sealed class FakeTaxonomy : ITaxonomyRepository
     {
         private readonly Queue _queue;
@@ -349,26 +356,4 @@ public class MailFinalizerTests
         public Task<DeleteResult> DeleteCategoryAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
     }
 
-    private sealed class FakeSettings : ISettingsService
-    {
-        private readonly bool _doMove;
-        private readonly bool _moveSkipped;
-        private readonly string _folder;
-        public FakeSettings(bool doMove, string folder = "Processed", bool moveSkipped = true)
-        { _doMove = doMove; _folder = folder; _moveSkipped = moveSkipped; }
-        public Task<T> GetAsync<T>(string key, CancellationToken ct = default)
-        {
-            if (key == SettingKeys.Mail.MoveOnIngest && typeof(T) == typeof(bool))
-                return Task.FromResult((T)(object)_doMove);
-            if (key == SettingKeys.Mail.MoveSkippedOnIngest && typeof(T) == typeof(bool))
-                return Task.FromResult((T)(object)_moveSkipped);
-            if (key == SettingKeys.Mail.ProcessedFolderName && typeof(T) == typeof(string))
-                return Task.FromResult((T)(object)_folder);
-            return Task.FromResult(default(T)!);
-        }
-        public Task EnsureDefaultsAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
-    }
 }

@@ -81,7 +81,7 @@ public sealed class SlaMasterSwitchDbTests
     public async Task Sla_escalation_and_warning_triggers_only_run_while_on(bool enabled, int expectedCandidateReads)
     {
         var reads = new List<string>();
-        var repo = PendingTillInPastTests.Fake<ITriggerRepository>.Create((method, _) =>
+        var repo = Fake<ITriggerRepository>.Create((method, _) =>
         {
             if (method.Name is "ListEscalationCandidatesAsync" or "ListEscalationWarningCandidatesAsync")
             {
@@ -90,9 +90,9 @@ public sealed class SlaMasterSwitchDbTests
             }
             throw new InvalidOperationException($"Unexpected call: {method.Name}");
         });
-        var triggers = PendingTillInPastTests.Fake<ITriggerService>.Create(
+        var triggers = Fake<ITriggerService>.Create(
             (method, _) => throw new InvalidOperationException($"Unexpected call: {method.Name}"));
-        var sla = PendingTillInPastTests.Fake<ISlaEngine>.Create((method, _) => method.Name == "IsEnabledAsync"
+        var sla = Fake<ISlaEngine>.Create((method, _) => method.Name == "IsEnabledAsync"
             ? Task.FromResult(enabled)
             : throw new InvalidOperationException($"Unexpected call: {method.Name}"));
 

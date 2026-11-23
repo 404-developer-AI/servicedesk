@@ -4,7 +4,6 @@ using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Api.Tickets;
 using Servicedesk.Domain.Taxonomy;
@@ -25,8 +24,28 @@ namespace Servicedesk.Api.Tests;
 /// field changes from metadata, the budget fit that keeps the newest events)
 /// and the endpoint: the note is internal, marked, posted through the shared
 /// mutation path, and never posted when the call is gated or refused.
-public sealed class ClaudeStatusTests
+public sealed class ClaudeStatusTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    // The host and its fakes are shared by the class; the registered fakes
+    // forward to these (static: the host outlives the per-test instance), and
+    // each test sets them through ClientAsync.
+    private static IClaudeAssistService? _assist;
+    private static ITicketMutationService? _mutations;
+    private static bool _aiOnQueue = true;
+    private static bool _hasQueueAccess = true;
+
+    public ClaudeStatusTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+        _assist = null;
+        _mutations = null;
+        _aiOnQueue = true;
+        _hasQueueAccess = true;
+    }
+
     private static readonly Guid TicketId = Guid.Parse("55555555-5555-5555-5555-555555555555");
     private static readonly Guid QueueId = Guid.Parse("66666666-6666-6666-6666-666666666666");
     private static readonly DateTime Now = new(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
@@ -169,7 +188,7 @@ public sealed class ClaudeStatusTests
             };
         });
 
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientAsync(factory, Ok("**Stand van zaken:**\n\n- Waiting on the customer."), mutations);
 
         var response = await client.PostAsJsonAsync($"/api/tickets/{TicketId}/ai-status", new { });
@@ -190,7 +209,7 @@ public sealed class ClaudeStatusTests
     {
         var mutations = Fake<ITicketMutationService>.Create((m, _) => Unexpected(m));
 
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientAsync(factory, new ClaudeProposalResult(
             ClaudeProposalOutcome.BudgetExceeded, null, null, "Budget exhausted.", 0, 0, 0, 0, 10, 10), mutations);
 
@@ -205,7 +224,7 @@ public sealed class ClaudeStatusTests
         var mutations = Fake<ITicketMutationService>.Create((m, _) => Unexpected(m));
         var assist = Fake<IClaudeAssistService>.Create((m, _) => Unexpected(m));
 
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientAsync(factory, assist, mutations, aiOnQueue: false);
 
         var response = await client.PostAsJsonAsync($"/api/tickets/{TicketId}/ai-status", new { });
@@ -220,7 +239,7 @@ public sealed class ClaudeStatusTests
         var assist = Fake<IClaudeAssistService>.Create((m, _) => Unexpected(m));
         var mutations = Fake<ITicketMutationService>.Create((m, _) => Unexpected(m));
 
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var client = await ClientAsync(factory, assist, mutations, hasQueueAccess: false);
 
         var response = await client.PostAsJsonAsync($"/api/tickets/{TicketId}/ai-status", new { });
@@ -233,20 +252,37 @@ public sealed class ClaudeStatusTests
     private static ClaudeProposalResult Ok(string text) => new(
         ClaudeProposalOutcome.Ok, text, ClaudeMarkdown.MarkdownToHtml(text), null, 100, 50, 1234, 0, 1234, 10_000_000);
 
-    private static Task<HttpClient> ClientAsync(
+    private Task<HttpClient> ClientAsync(
         SecurityBaselineFactory factory, ClaudeProposalResult result, ITicketMutationService mutations) =>
         ClientAsync(factory, Fake<IClaudeAssistService>.Create((m, _) => m.Name == "GenerateStatusAsync"
             ? Task.FromResult(result)
             : Unexpected(m)), mutations);
 
-    private static async Task<HttpClient> ClientAsync(
+    private static object? Forward(object? target, MethodInfo m, object?[]? args)
+    {
+        try
+        {
+            return m.Invoke(target, args);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            global::System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
+    }
+
+    private async Task<HttpClient> ClientAsync(
         SecurityBaselineFactory factory,
         IClaudeAssistService assist,
         ITicketMutationService mutations,
         bool aiOnQueue = true,
         bool hasQueueAccess = true)
     {
-        var host = factory.WithWebHostBuilder(b => b.ConfigureServices(services =>
+        _assist = assist;
+        _mutations = mutations;
+        _aiOnQueue = aiOnQueue;
+        _hasQueueAccess = hasQueueAccess;
+        var host = _hosts.Host("claude-status-fakes", b => b.ConfigureServices(services =>
         {
             services.RemoveAll<ITicketRepository>();
             services.AddSingleton(Fake<ITicketRepository>.Create((m, args) => m.Name == "GetCoreAsync"
@@ -254,30 +290,20 @@ public sealed class ClaudeStatusTests
                 : Unexpected(m)));
             services.RemoveAll<IQueueAccessService>();
             services.AddSingleton(Fake<IQueueAccessService>.Create((m, _) => m.Name == "HasQueueAccessAsync"
-                ? Task.FromResult(hasQueueAccess)
+                ? Task.FromResult(_hasQueueAccess)
                 : Unexpected(m)));
             services.RemoveAll<ITaxonomyRepository>();
             services.AddSingleton(Fake<ITaxonomyRepository>.Create((m, _) => m.Name == "GetQueueAsync"
                 ? Task.FromResult<Queue?>(new Queue(QueueId, "Support", "support", "", "#000", "inbox", 0, true, false, Now, Now,
-                    AiAssistEnabled: aiOnQueue))
+                    AiAssistEnabled: _aiOnQueue))
                 : Unexpected(m)));
             services.RemoveAll<IClaudeAssistService>();
-            services.AddSingleton(assist);
+            services.AddSingleton(Fake<IClaudeAssistService>.Create((m, args) => Forward(_assist, m, args)));
             services.RemoveAll<ITicketMutationService>();
-            services.AddSingleton(mutations);
+            services.AddSingleton(Fake<ITicketMutationService>.Create((m, args) => Forward(_mutations, m, args)));
         }));
 
-        var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = "Agent";
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = host.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
-        return client;
+        return await factory.SignedInClientAsync("Agent", host);
     }
 
     private static Ticket Ticket() => new(

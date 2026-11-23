@@ -3,9 +3,9 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Infrastructure.Mail.Attachments;
-using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Storage;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -23,7 +23,7 @@ public sealed class AttachmentWorkerTests
             AttemptCount: 1));
         var attachments = new StubAttachments();
         attachments.Rows[AttachmentId] = MakeAttachmentRow();
-        var graph = new StubGraph(bytes: "hello world");
+        var graph = new FakeGraphMailClient { AttachmentBytes = Encoding.UTF8.GetBytes("hello world") };
         var blobs = new StubBlobs();
 
         var ran = await AttachmentWorker.ProcessOneAsync(
@@ -47,7 +47,7 @@ public sealed class AttachmentWorkerTests
         var jobs = new StubJobs(new AttachmentJobClaim(10, "Ingest", MakePayload(), AttemptCount: 3));
         var attachments = new StubAttachments();
         attachments.Rows[AttachmentId] = MakeAttachmentRow();
-        var graph = new StubGraph(throwOnFetch: true);
+        var graph = new FakeGraphMailClient { ThrowOnAttachmentFetch = true };
         var blobs = new StubBlobs();
 
         var ran = await AttachmentWorker.ProcessOneAsync(
@@ -70,7 +70,7 @@ public sealed class AttachmentWorkerTests
         var jobs = new StubJobs(new AttachmentJobClaim(10, "Ingest", MakePayload(), AttemptCount: 7));
         var attachments = new StubAttachments();
         attachments.Rows[AttachmentId] = MakeAttachmentRow();
-        var graph = new StubGraph(throwOnFetch: true);
+        var graph = new FakeGraphMailClient { ThrowOnAttachmentFetch = true };
         var blobs = new StubBlobs();
 
         var ran = await AttachmentWorker.ProcessOneAsync(
@@ -90,7 +90,7 @@ public sealed class AttachmentWorkerTests
         var jobs = new StubJobs(new AttachmentJobClaim(10, "Ingest", MakePayload(), AttemptCount: 1));
         var attachments = new StubAttachments();
         attachments.Rows[AttachmentId] = MakeAttachmentRow() with { SizeBytes = 5_000 };
-        var graph = new StubGraph(throwOnFetch: true); // a download would throw
+        var graph = new FakeGraphMailClient { ThrowOnAttachmentFetch = true }; // a download would throw
         var blobs = new StubBlobs();
 
         var ran = await AttachmentWorker.ProcessOneAsync(
@@ -112,7 +112,7 @@ public sealed class AttachmentWorkerTests
         var jobs = new StubJobs(new AttachmentJobClaim(10, "Ingest", MakePayload(), AttemptCount: 1));
         var attachments = new StubAttachments();
         attachments.Rows[AttachmentId] = MakeAttachmentRow() with { SizeBytes = 10 };
-        var graph = new StubGraph(bytes: new string('x', 64));
+        var graph = new FakeGraphMailClient { AttachmentBytes = Encoding.UTF8.GetBytes(new string('x', 64)) };
         var blobs = new StubBlobs();
 
         await AttachmentWorker.ProcessOneAsync(
@@ -131,7 +131,7 @@ public sealed class AttachmentWorkerTests
         var jobs = new StubJobs(null);
 
         var ran = await AttachmentWorker.ProcessOneAsync(
-            jobs, new StubAttachments(), new StubGraph(), new StubBlobs(),
+            jobs, new StubAttachments(), new FakeGraphMailClient(), new StubBlobs(),
             maxAttempts: 7, retryBaseSeconds: 5,
             NullLogger<AttachmentWorkerTests>.Instance, default);
 
@@ -210,30 +210,6 @@ public sealed class AttachmentWorkerTests
         public Task<Guid> CreateForComposeTemplateImageAsync(NewComposeTemplateImage input, CancellationToken ct) => throw new NotImplementedException();
     }
 
-    private sealed class StubGraph : IGraphMailClient
-    {
-        private readonly byte[] _bytes;
-        private readonly bool _throwOnFetch;
-        public StubGraph(string bytes = "", bool throwOnFetch = false)
-        {
-            _bytes = Encoding.UTF8.GetBytes(bytes);
-            _throwOnFetch = throwOnFetch;
-        }
-        public Task<Stream> FetchAttachmentBytesAsync(string mailbox, string graphMessageId, string graphAttachmentId, CancellationToken ct)
-        {
-            if (_throwOnFetch) throw new InvalidOperationException("boom");
-            return Task.FromResult<Stream>(new MemoryStream(_bytes, writable: false));
-        }
-        public Task<GraphDeltaPage> ListInboxDeltaAsync(string m, string f, string? d, int b, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<GraphMailFolderInfo>> ListMailFoldersAsync(string m, CancellationToken ct) => Task.FromResult<IReadOnlyList<GraphMailFolderInfo>>(Array.Empty<GraphMailFolderInfo>());
-        public Task<TimeSpan> PingAsync(string mbx, CancellationToken ct) => Task.FromResult(TimeSpan.Zero);
-        public Task<GraphFullMessage> FetchMessageAsync(string m, string id, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Stream> FetchRawMessageAsync(string m, string id, CancellationToken ct) => throw new NotImplementedException();
-        public Task MarkAsReadAsync(string m, string id, CancellationToken ct) => Task.CompletedTask;
-        public Task MoveAsync(string m, string id, string f, CancellationToken ct) => Task.CompletedTask;
-        public Task<string> EnsureFolderAsync(string m, string n, CancellationToken ct) => Task.FromResult("f");
-        public Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage m, CancellationToken ct) => throw new NotImplementedException();
-    }
 
     private sealed class StubBlobs : IBlobStore
     {

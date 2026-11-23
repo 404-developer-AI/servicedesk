@@ -428,7 +428,7 @@ public sealed class InsightsAgentsTests : IClassFixture<SharedHostFixture>
             services.RemoveAll<IInsightsService>();
             services.AddSingleton<IInsightsService>(new StubClock());
             services.RemoveAll<IQueueAccessService>();
-            services.AddSingleton<IQueueAccessService>(new StubQueueAccess());
+            services.AddSingleton<IQueueAccessService>(new FakeQueueAccess(QueueA));
         }));
         stub = (StubAgentInsights)host.Services.GetRequiredService<IAgentInsightsService>();
         stub.Reset();
@@ -441,17 +441,8 @@ public sealed class InsightsAgentsTests : IClassFixture<SharedHostFixture>
         string role, bool insights)
     {
         var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = role;
         if (insights) factory.Users.InsightsEnabled[userId] = true;
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = host.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
-        return client;
+        return await factory.SignedInClientAsync(role, host, userId, amr: "pwd");
     }
 
     private sealed class StubAgentInsights : IAgentInsightsService
@@ -540,20 +531,4 @@ public sealed class InsightsAgentsTests : IClassFixture<SharedHostFixture>
             => throw new NotSupportedException();
     }
 
-    private sealed class StubQueueAccess : IQueueAccessService
-    {
-        public Task<IReadOnlyList<Guid>> GetAccessibleQueueIdsAsync(Guid userId, string role, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Guid>>(new[] { QueueA });
-
-        public Task<bool> HasQueueAccessAsync(Guid userId, string role, Guid queueId, CancellationToken ct = default)
-            => Task.FromResult(queueId == QueueA);
-
-        public Task SetQueueAccessAsync(Guid userId, IReadOnlyList<Guid> queueIds, CancellationToken ct = default)
-            => Task.CompletedTask;
-
-        public Task<IReadOnlyList<Guid>> GetUsersForQueueAsync(Guid queueId, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Guid>>(Array.Empty<Guid>());
-
-        public void InvalidateCache(Guid userId) { }
-    }
 }

@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Infrastructure.Auth;
-using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Realtime;
@@ -9,6 +8,7 @@ using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Domain.TaggingMailboxes;
 using Servicedesk.Infrastructure.TaggingMailboxes;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -58,8 +58,8 @@ public sealed class MentionNotificationServiceTests
     {
         var repo = new StubRepo();
         var notifier = new StubNotifier();
-        var graph = new StubGraph();
-        var settings = new StubSettings();
+        var graph = new FakeGraphMailClient();
+        var settings = NewSettings();
         settings.Set(SettingKeys.Notifications.MentionEmailEnabled, "true");
         var groupId = Guid.NewGuid();
         var member = Guid.NewGuid();
@@ -175,8 +175,8 @@ public sealed class MentionNotificationServiceTests
         var notifier = new StubNotifier();
         var users = new StubUsers("bob@example.com");
         var taxonomy = new StubTaxonomy("support@desk.test");
-        var graph = new StubGraph();
-        var settings = new StubSettings();
+        var graph = new FakeGraphMailClient();
+        var settings = NewSettings();
         var tagging = new StubTaggingMailboxes();
         var mailboxId = Guid.Parse("55555555-5555-5555-5555-555555555555");
         tagging.Active.Add(new TaggingMailbox(
@@ -206,8 +206,8 @@ public sealed class MentionNotificationServiceTests
         var notifier = new StubNotifier();
         var users = new StubUsers("bob@example.com");
         var taxonomy = new StubTaxonomy("support@desk.test");
-        var graph = new StubGraph();
-        var settings = new StubSettings();
+        var graph = new FakeGraphMailClient();
+        var settings = NewSettings();
         var tagging = new StubTaggingMailboxes();
         var mailboxId = Guid.Parse("66666666-6666-6666-6666-666666666666");
         // Present but inactive — ResolveActiveByIds filters it out, so no mail.
@@ -225,7 +225,7 @@ public sealed class MentionNotificationServiceTests
     // ---- helpers ----
 
     private static NotificationMailer Mailer(StubRepo repo, IUserService users, ITaxonomyRepository taxonomy,
-        StubGraph graph, StubSettings settings)
+        FakeGraphMailClient graph, InMemorySettingsService settings)
         => new(repo, users, taxonomy, graph, settings, NullLogger<NotificationMailer>.Instance);
 
     private static MentionNotificationSource MakeSource(
@@ -248,15 +248,15 @@ public sealed class MentionNotificationServiceTests
         MentionNotificationService svc,
         StubRepo repo,
         StubNotifier notifier,
-        StubGraph graph,
-        StubSettings settings) Build(string recipientEmail, string? mailbox)
+        FakeGraphMailClient graph,
+        InMemorySettingsService settings) Build(string recipientEmail, string? mailbox)
     {
         var repo = new StubRepo();
         var notifier = new StubNotifier();
         var users = new StubUsers(recipientEmail);
         var taxonomy = new StubTaxonomy(mailbox);
-        var graph = new StubGraph();
-        var settings = new StubSettings();
+        var graph = new FakeGraphMailClient();
+        var settings = NewSettings();
         var taggingMailboxes = new StubTaggingMailboxes();
         var svc = new MentionNotificationService(repo, notifier, Mailer(repo, users, taxonomy, graph, settings),
             taggingMailboxes, new StubTagGroups(), new StubGroupTags(), new RecordingGroupTagNotifier(),
@@ -411,62 +411,12 @@ public sealed class MentionNotificationServiceTests
         public Task<DeleteResult> DeleteCategoryAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
     }
 
-    private sealed class StubGraph : IGraphMailClient
-    {
-        public List<GraphOutboundMessage> Sent { get; } = new();
-        public bool ThrowOnSend { get; set; }
+    private static InMemorySettingsService NewSettings()
+        => new InMemorySettingsService()
+            .With(SettingKeys.Notifications.MentionEmailEnabled, true)
+            .With(SettingKeys.App.PublicBaseUrl, "");
 
-        public Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage message, CancellationToken ct)
-        {
-            if (ThrowOnSend) throw new InvalidOperationException("Graph boom");
-            Sent.Add(message);
-            return Task.FromResult(new GraphSentMailResult("id@graph", DateTimeOffset.UtcNow));
-        }
 
-        public Task<GraphFullMessage> FetchMessageAsync(string mbx, string id, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Stream> FetchRawMessageAsync(string mbx, string id, CancellationToken ct) => throw new NotImplementedException();
-        public Task<GraphDeltaPage> ListInboxDeltaAsync(string m, string f, string? d, int b, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<GraphMailFolderInfo>> ListMailFoldersAsync(string m, CancellationToken ct) => throw new NotImplementedException();
-        public Task<TimeSpan> PingAsync(string mbx, CancellationToken ct) => Task.FromResult(TimeSpan.Zero);
-        public Task MarkAsReadAsync(string m, string id, CancellationToken ct) => Task.CompletedTask;
-        public Task MoveAsync(string m, string id, string f, CancellationToken ct) => Task.CompletedTask;
-        public Task<string> EnsureFolderAsync(string m, string n, CancellationToken ct) => Task.FromResult("f");
-        public Task<Stream> FetchAttachmentBytesAsync(string m, string id, string aid, CancellationToken ct) => throw new NotImplementedException();
-    }
-
-    private sealed class StubSettings : ISettingsService
-    {
-        private readonly Dictionary<string, string> _values = new();
-
-        public void Set(string key, string value) => _values[key] = value;
-
-        public Task EnsureDefaultsAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task<T> GetAsync<T>(string key, CancellationToken cancellationToken = default)
-        {
-            if (!_values.TryGetValue(key, out var raw))
-            {
-                // Defaults that matter for the happy path.
-                if (key == SettingKeys.Notifications.MentionEmailEnabled) return Task.FromResult((T)(object)true);
-                if (key == SettingKeys.App.PublicBaseUrl) return Task.FromResult((T)(object)string.Empty);
-                return Task.FromResult(default(T)!);
-            }
-            if (typeof(T) == typeof(bool)) return Task.FromResult((T)(object)(raw == "true"));
-            if (typeof(T) == typeof(int)) return Task.FromResult((T)(object)int.Parse(raw));
-            if (typeof(T) == typeof(long)) return Task.FromResult((T)(object)long.Parse(raw));
-            if (typeof(T) == typeof(string)) return Task.FromResult((T)(object)raw);
-            return Task.FromResult(default(T)!);
-        }
-
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken cancellationToken = default)
-        {
-            _values[key] = value?.ToString() ?? "";
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
-    }
 
     private sealed class StubTaggingMailboxes : ITaggingMailboxRepository
     {

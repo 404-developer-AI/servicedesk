@@ -1,12 +1,10 @@
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Insights;
 using Servicedesk.Infrastructure.Insights.Rewind;
-using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Workflow;
 using Xunit;
 
@@ -15,16 +13,24 @@ namespace Servicedesk.Api.Tests;
 /// v0.1.32 — Insights Workflow: managers/admins only (on top of the Insights
 /// flag), view must be a tracked view the caller can open, capped window,
 /// queue-scoped, and every per-agent drill-down is audited.
-public sealed class InsightsWorkflowTests
+public sealed class InsightsWorkflowTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public InsightsWorkflowTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private static readonly Guid QueueA = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
     private static readonly Guid ViewId = Guid.Parse("cccccccc-0000-0000-0000-000000000001");
 
     [Fact]
     public async Task Agent_with_insights_but_not_manager_is_refused()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStubs(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStubs(out _);
         var client = await ClientAsync(factory, host, "Agent", insights: true, manager: false);
 
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/insights/workflow?period=week")).StatusCode);
@@ -34,8 +40,8 @@ public sealed class InsightsWorkflowTests
     [Fact]
     public async Task Manager_without_insights_flag_is_refused()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStubs(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStubs(out _);
         var client = await ClientAsync(factory, host, "Agent", insights: false, manager: true);
 
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/insights/workflow?period=week")).StatusCode);
@@ -44,8 +50,8 @@ public sealed class InsightsWorkflowTests
     [Fact]
     public async Task Manager_gets_a_report_scoped_to_their_queues()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStubs(factory, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStubs(out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true, manager: true);
 
         var response = await client.GetAsync($"/api/insights/workflow?period=week&viewId={ViewId}");
@@ -59,8 +65,8 @@ public sealed class InsightsWorkflowTests
     [Fact]
     public async Task Untracked_or_foreign_view_is_404_and_long_windows_400()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStubs(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStubs(out _);
         var client = await ClientAsync(factory, host, "Admin", insights: true, manager: false);
 
         Assert.Equal(HttpStatusCode.NotFound,
@@ -72,8 +78,8 @@ public sealed class InsightsWorkflowTests
     [Fact]
     public async Task Agent_cases_are_audited_and_validated()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStubs(factory, out _);
+        var factory = _hosts.Base;
+        var host = WithStubs(out _);
         var client = await ClientAsync(factory, host, "Admin", insights: true, manager: false);
         var agent = Guid.NewGuid();
 
@@ -103,6 +109,13 @@ public sealed class InsightsWorkflowTests
     {
         public QueueAccessScope? LastScope { get; private set; }
         public Guid? LastViewId { get; private set; }
+
+        public void Reset()
+        {
+            LastScope = null;
+            LastViewId = null;
+        }
+
         private static readonly WorkflowLimits Limits = new(15, 60, 15, 15, 60, 2, Array.Empty<Guid>());
 
         public Task<WorkflowLimits> GetLimitsAsync(CancellationToken ct = default) => Task.FromResult(Limits);
@@ -147,35 +160,23 @@ public sealed class InsightsWorkflowTests
             => throw new NotSupportedException();
     }
 
-    private sealed class OnlyQueueA : IQueueAccessService
-    {
-        public Task<IReadOnlyList<Guid>> GetAccessibleQueueIdsAsync(Guid userId, string role, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Guid>>(new[] { QueueA });
-        public Task<bool> HasQueueAccessAsync(Guid userId, string role, Guid queueId, CancellationToken ct = default)
-            => Task.FromResult(queueId == QueueA);
-        public Task SetQueueAccessAsync(Guid userId, IReadOnlyList<Guid> queueIds, CancellationToken ct = default)
-            => Task.CompletedTask;
-        public Task<IReadOnlyList<Guid>> GetUsersForQueueAsync(Guid queueId, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Guid>>(Array.Empty<Guid>());
-        public void InvalidateCache(Guid userId) { }
-    }
 
-    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithStubs(
-        SecurityBaselineFactory factory, out StubWorkflow stub)
+    private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithStubs(out StubWorkflow stub)
     {
-        var s = new StubWorkflow();
-        stub = s;
-        return factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        var host = _hosts.Host("stubs", builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IWorkflowReportService>();
-            services.AddSingleton<IWorkflowReportService>(s);
+            services.AddSingleton<IWorkflowReportService, StubWorkflow>();
             services.RemoveAll<IRewindService>();
             services.AddSingleton<IRewindService>(new StubRewind());
             services.RemoveAll<IQueueAccessService>();
-            services.AddSingleton<IQueueAccessService>(new OnlyQueueA());
+            services.AddSingleton<IQueueAccessService>(new FakeQueueAccess(QueueA));
             services.RemoveAll<IInsightsService>();
             services.AddSingleton<IInsightsService>(new ClockOnlyInsights());
         }));
+        stub = (StubWorkflow)host.Services.GetRequiredService<IWorkflowReportService>();
+        stub.Reset();
+        return host;
     }
 
     private static async Task<HttpClient> ClientAsync(
@@ -183,17 +184,8 @@ public sealed class InsightsWorkflowTests
         string role, bool insights, bool manager)
     {
         var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = role;
         if (insights) factory.Users.InsightsEnabled[userId] = true;
         if (manager) factory.Users.TimesheetManagers[userId] = true;
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = host.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
-        return client;
+        return await factory.SignedInClientAsync(role, host, userId, amr: "pwd");
     }
 }

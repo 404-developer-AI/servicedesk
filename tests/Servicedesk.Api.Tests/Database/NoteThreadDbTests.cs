@@ -1,7 +1,6 @@
 using Dapper;
 using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Domain.Tickets;
-using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Persistence.Tickets;
@@ -10,6 +9,7 @@ using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Tickets.NoteThreads;
 using Servicedesk.Infrastructure.Triggers;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests.Database;
 
@@ -44,7 +44,7 @@ public sealed class NoteThreadDbTests
         var svc = new NoteThreadService(
             new NoteThreadRepository(_db.DataSource), mutations, new TicketHtmlSanitizer(),
             new UserService(_db.DataSource), new NotificationRepository(_db.DataSource), new NullUserNotifier(),
-            mailer, mentions, new NullTicketListNotifier(), new NullAudit(),
+            mailer, mentions, new NullTicketListNotifier(), new FakeAuditLogger(),
             new Servicedesk.Infrastructure.Mail.Attachments.AttachmentRepository(_db.DataSource),
             NullLogger<NoteThreadService>.Instance);
         return new World(svc, ticketId, noteId, author, replier, mailer, mentions);
@@ -293,8 +293,4 @@ public sealed class NoteThreadDbTests
         }
     }
 
-    private sealed class NullAudit : IAuditLogger
-    {
-        public Task LogAsync(AuditEvent evt, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    }
 }

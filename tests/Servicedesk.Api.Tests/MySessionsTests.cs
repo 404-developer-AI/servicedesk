@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
-using Servicedesk.Infrastructure.Settings;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -63,7 +62,7 @@ public sealed class MySessionsTests : IClassFixture<SharedHostFixture>
         Assert.False(factory.Sessions.IsRevoked(currentSessionId));
         Assert.Contains(factory.Audit.Events, e => e.EventType == "session_revoked");
 
-        var probe = await CookieClient(factory, lostPhone).GetAsync("/api/settings/navigation");
+        var probe = await (await factory.SessionClientAsync(lostPhone)).GetAsync("/api/settings/navigation");
         Assert.Equal(HttpStatusCode.Unauthorized, probe.StatusCode);
     }
 
@@ -167,17 +166,6 @@ public sealed class MySessionsTests : IClassFixture<SharedHostFixture>
         factory.Sessions.Roles[userId] = "Agent";
         var sessionId = await factory.Sessions.CreateAsync(
             userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd+mfa");
-        return (CookieClient(factory, sessionId), sessionId);
-    }
-
-    private static HttpClient CookieClient(SecurityBaselineFactory factory, Guid sessionId)
-    {
-        var cookieName = factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName).GetAwaiter().GetResult();
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
-        return client;
+        return (await factory.SessionClientAsync(sessionId), sessionId);
     }
 }

@@ -2,12 +2,12 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Domain.Tickets;
-using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Infrastructure.Triggers.Templating;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -229,8 +229,8 @@ public class TriggerSchedulerTests
             dispatcher,
             new FakePreviewDispatcher(),
             new TriggerLoopGuard(),
-            new FakeSettings(),
-            new FakeAudit(),
+            new InMemorySettingsService().With(SettingKeys.Triggers.MaxChainPerMutation, 10),
+            new FakeAuditLogger(),
             new FakeRenderFactory(),
             new Servicedesk.Infrastructure.Realtime.NullTicketListNotifier(),
             new TestInfrastructure.FakeAdsolutOrderRepository(),
@@ -332,24 +332,7 @@ public class TriggerSchedulerTests
         public Task<bool> UnlinkParentAsync(Guid ticketId, Guid actorUserId, CancellationToken ct) => throw new NotImplementedException();
     }
 
-    private sealed class FakeSettings : ISettingsService
-    {
-        public Task EnsureDefaultsAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<T> GetAsync<T>(string key, CancellationToken cancellationToken = default)
-        {
-            // Triggers.MaxChainPerMutation is the only setting EvaluateScheduledAsync reads.
-            if (typeof(T) == typeof(int)) return Task.FromResult((T)(object)10);
-            return Task.FromResult(default(T)!);
-        }
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
-    }
 
-    private sealed class FakeAudit : IAuditLogger
-    {
-        public Task LogAsync(AuditEvent evt, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    }
 
     private sealed class FakePreviewDispatcher : ITriggerActionPreviewDispatcher
     {

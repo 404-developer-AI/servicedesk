@@ -4,7 +4,6 @@ using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Access;
@@ -32,8 +31,23 @@ namespace Servicedesk.Api.Tests;
 /// precheck), ticket create (endpoint), trigger set_pending_till (failed
 /// action), Zammad import (elapsed value → empty). The bulk leg lives in
 /// <see cref="TicketBulkActionServiceTests"/>.
-public sealed class PendingTillInPastTests
+public sealed class PendingTillInPastTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    // The host and its fakes are shared by the class; each endpoint test sets
+    // what the fakes answer (static: the host outlives the per-test instance).
+    private static Func<MethodInfo, object?[]?, object?> _ticketRepo = Unexpected;
+    private static Func<MethodInfo, object?[]?, object?> _queueAccess = Unexpected;
+
+    public PendingTillInPastTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+        _ticketRepo = Unexpected;
+        _queueAccess = Unexpected;
+    }
+
     private static readonly DateTime Now = new(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
     private static readonly Guid TicketId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private static readonly Guid QueueId = Guid.Parse("44444444-4444-4444-4444-444444444444");
@@ -107,16 +121,10 @@ public sealed class PendingTillInPastTests
     [Fact]
     public async Task Patch_with_a_past_pending_till_is_a_400()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = factory.WithWebHostBuilder(b => b.ConfigureServices(services =>
-        {
-            services.RemoveAll<ITicketRepository>();
-            services.AddSingleton(Fake<ITicketRepository>.Create(TicketRepoHandler(Ticket(pendingTill: null))));
-            services.RemoveAll<IQueueAccessService>();
-            services.AddSingleton(Fake<IQueueAccessService>.Create(QueueAccessHandler(true)));
-            ReplaceDbBacked(services);
-        }));
-        var client = await AgentClientAsync(factory, host.CreateClient);
+        var factory = _hosts.Base;
+        _ticketRepo = TicketRepoHandler(Ticket(pendingTill: null));
+        _queueAccess = QueueAccessHandler(true);
+        var client = await factory.SignedInClientAsync("Agent", EndpointHost());
 
         var response = await client.PatchAsJsonAsync($"/api/tickets/{TicketId}",
             new { pendingTillUtc = DateTime.UtcNow.AddHours(-1) });
@@ -128,16 +136,11 @@ public sealed class PendingTillInPastTests
     [Fact]
     public async Task Create_with_a_past_pending_till_is_a_400_before_anything_is_written()
     {
-        using var factory = new SecurityBaselineFactory();
+        var factory = _hosts.Base;
         var tickets = new List<string>();
-        using var host = factory.WithWebHostBuilder(b => b.ConfigureServices(services =>
-        {
-            // Any repository call would mean the check ran too late.
-            services.RemoveAll<ITicketRepository>();
-            services.AddSingleton(Fake<ITicketRepository>.Create((m, _) => { tickets.Add(m.Name); throw new InvalidOperationException(m.Name); }));
-            ReplaceDbBacked(services);
-        }));
-        var client = await AgentClientAsync(factory, host.CreateClient);
+        // Any repository call would mean the check ran too late.
+        _ticketRepo = (m, _) => { tickets.Add(m.Name); throw new InvalidOperationException(m.Name); };
+        var client = await factory.SignedInClientAsync("Agent", EndpointHost());
 
         var response = await client.PostAsJsonAsync("/api/tickets", new
         {
@@ -193,6 +196,16 @@ public sealed class PendingTillInPastTests
     }
 
     // ---- plumbing ------------------------------------------------------------
+
+    private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> EndpointHost() =>
+        _hosts.Host("pending-till-fakes", b => b.ConfigureServices(services =>
+        {
+            services.RemoveAll<ITicketRepository>();
+            services.AddSingleton(Fake<ITicketRepository>.Create((m, args) => _ticketRepo(m, args)));
+            services.RemoveAll<IQueueAccessService>();
+            services.AddSingleton(Fake<IQueueAccessService>.Create((m, args) => _queueAccess(m, args)));
+            ReplaceDbBacked(services);
+        }));
 
     private static readonly TicketMutationActor Actor = new(
         Guid.Parse("aaaaaaaa-0000-0000-0000-000000000002"), "Agent", "agent@desk.test", "Agent", "127.0.0.1", "xunit");
@@ -258,39 +271,8 @@ public sealed class PendingTillInPastTests
         }
     }
 
-    private static async Task<HttpClient> AgentClientAsync(SecurityBaselineFactory factory, Func<HttpClient> createClient)
-    {
-        var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = "Agent";
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = createClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
-        return client;
-    }
-
     private sealed class FixedClock(DateTime now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => new(now, TimeSpan.Zero);
-    }
-
-    /// Interface fake that routes every call (including default interface
-    /// methods) through one handler.
-    public class Fake<T> : DispatchProxy where T : class
-    {
-        private Func<MethodInfo, object?[]?, object?> _handler = null!;
-
-        public static T Create(Func<MethodInfo, object?[]?, object?> handler)
-        {
-            var proxy = Create<T, Fake<T>>();
-            ((Fake<T>)(object)proxy)._handler = handler;
-            return proxy;
-        }
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) => _handler(targetMethod!, args);
     }
 }

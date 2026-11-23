@@ -3,9 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
-using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Surveys;
 using Xunit;
 
@@ -14,8 +12,21 @@ namespace Servicedesk.Api.Tests;
 /// Results-page "Responses" list (GET /api/surveys/{id}/responses): admin
 /// only like the rest of the survey results, and the sort / comment filter
 /// map onto the fixed enum values (unknown input falls back to defaults).
-public sealed class SurveyResponsesEndpointTests
+public sealed class SurveyResponsesEndpointTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    // The host (and so the stub repository) is shared by the class; the
+    // recorder is cleared per test.
+    private static readonly List<(Guid, SurveyResponseSort, SurveyResponseCommentFilter, int, int)> Recorded = new();
+
+    public SurveyResponsesEndpointTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+        Recorded.Clear();
+    }
+
     private static readonly Guid SurveyId = Guid.Parse("cccccccc-0000-0000-0000-000000000001");
 
     [Theory]
@@ -23,9 +34,9 @@ public sealed class SurveyResponsesEndpointTests
     [InlineData("Customer")]
     public async Task Non_admin_is_refused(string role)
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var calls);
-        var client = await ClientAsync(factory, host, role);
+        var factory = _hosts.Base;
+        var host = WithStub(out var calls);
+        var client = await factory.SignedInClientAsync(role, host, amr: "pwd");
 
         var response = await client.GetAsync($"/api/surveys/{SurveyId}/responses");
 
@@ -36,9 +47,9 @@ public sealed class SurveyResponsesEndpointTests
     [Fact]
     public async Task Admin_gets_page_with_requested_sort_and_filter()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var calls);
-        var client = await ClientAsync(factory, host, "Admin");
+        var factory = _hosts.Base;
+        var host = WithStub(out var calls);
+        var client = await factory.SignedInClientAsync("Admin", host);
 
         var response = await client.GetAsync(
             $"/api/surveys/{SurveyId}/responses?sort=ScoreAsc&comment=WithComment&offset=50&limit=50");
@@ -57,9 +68,9 @@ public sealed class SurveyResponsesEndpointTests
     [Fact]
     public async Task Unknown_sort_and_filter_fall_back_to_defaults_and_limit_is_clamped()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, out var calls);
-        var client = await ClientAsync(factory, host, "Admin");
+        var factory = _hosts.Base;
+        var host = WithStub(out var calls);
+        var client = await factory.SignedInClientAsync("Admin", host);
 
         var response = await client.GetAsync(
             $"/api/surveys/{SurveyId}/responses?sort=score_asc;DROP&comment=99&offset=-5&limit=100000");
@@ -69,11 +80,10 @@ public sealed class SurveyResponsesEndpointTests
         Assert.Equal((SurveyId, SurveyResponseSort.SubmittedDesc, SurveyResponseCommentFilter.All, 0, 200), call);
     }
 
-    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithStub(
-        SecurityBaselineFactory factory,
+    private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithStub(
         out List<(Guid, SurveyResponseSort, SurveyResponseCommentFilter, int, int)> calls)
     {
-        var recorded = new List<(Guid, SurveyResponseSort, SurveyResponseCommentFilter, int, int)>();
+        var recorded = Recorded;
         calls = recorded;
         var repo = InsightsRewindTests.PartialFake<ISurveyInvitationRepository>.Create((method, args) =>
         {
@@ -88,28 +98,10 @@ public sealed class SurveyResponsesEndpointTests
                     "Jane Example", "Example Ltd", DateTime.UtcNow, 42.86m, "Could be faster"),
             }));
         });
-        return factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        return _hosts.Host("survey-repo", builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<ISurveyInvitationRepository>();
             services.AddSingleton(repo);
         }));
-    }
-
-    private static async Task<HttpClient> ClientAsync(
-        SecurityBaselineFactory factory,
-        Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> host,
-        string role)
-    {
-        var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = role;
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = host.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
-        return client;
     }
 }

@@ -71,7 +71,7 @@ public sealed class SetQueueAutoFlipDbTests
     private async Task<TriggerActionResult> ApplyAsync(Guid ticketId, Guid queueId)
     {
         var tickets = new TicketRepository(_db.DataSource);
-        var sla = PendingTillInPastTests.Fake<ISlaEngine>.Create((method, _) =>
+        var sla = Fake<ISlaEngine>.Create((method, _) =>
             method.ReturnType == typeof(Task)
                 ? Task.CompletedTask
                 : throw new NotImplementedException($"Unexpected call: {method.Name}"));

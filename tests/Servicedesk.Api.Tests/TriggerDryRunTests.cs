@@ -4,10 +4,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Persistence.Tickets;
-using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Infrastructure.Triggers.Templating;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -119,7 +119,7 @@ public class TriggerDryRunTests
             new ThrowingDispatcher(),
             preview,
             new TriggerLoopGuard(),
-            new FakeSettings(),
+            new InMemorySettingsService(),
             new ThrowingAudit(),
             new FakeRenderFactory(),
             new Servicedesk.Infrastructure.Realtime.NullTicketListNotifier(),
@@ -261,14 +261,6 @@ public class TriggerDryRunTests
             => throw new InvalidOperationException("DryRun must NEVER call the production action dispatcher.");
     }
 
-    private sealed class FakeSettings : ISettingsService
-    {
-        public Task EnsureDefaultsAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<T> GetAsync<T>(string key, CancellationToken cancellationToken = default) => Task.FromResult(default(T)!);
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
-    }
 
     private sealed class ThrowingAudit : IAuditLogger
     {

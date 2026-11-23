@@ -7,6 +7,7 @@ using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Infrastructure.Triggers.StatusGate;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -45,7 +46,7 @@ public sealed class TicketBulkActionServiceTests
             new Servicedesk.Infrastructure.Checklists.ChecklistBlocker(Guid.NewGuid(), "Onboarding", 3),
         });
 
-        var audit = new RecordingAudit();
+        var audit = new FakeAuditLogger();
         var svc = Build(mutations, audit);
 
         var result = await svc.ExecuteAsync(Actor, Request(new[] { okId, noAccessId, scopeId, gateId, missingId, checklistId }, statusId: StatusId), default);
@@ -68,7 +69,7 @@ public sealed class TicketBulkActionServiceTests
         // Every leg carries the batch id so timeline + audit can correlate.
         Assert.All(mutations.Applied, a => Assert.Equal(result.BatchId, a.Update.BulkBatchId));
 
-        var batchRow = Assert.Single(audit.Rows, r => r.EventType == "ticket.bulk_action");
+        var batchRow = Assert.Single(audit.Events, r => r.EventType == "ticket.bulk_action");
         Assert.Equal(result.BatchId.ToString(), batchRow.Target);
     }
 
@@ -78,7 +79,7 @@ public sealed class TicketBulkActionServiceTests
         var id = Guid.NewGuid();
         var mutations = new FakeMutations();
         mutations.Verdicts[id] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(id, 7).Ticket, Array.Empty<MatchedStatusGate>());
-        var svc = Build(mutations, new RecordingAudit());
+        var svc = Build(mutations, new FakeAuditLogger());
 
         var result = await svc.ExecuteAsync(Actor,
             Request(new[] { id }, statusId: StatusId, message: "<p>Closing in bulk</p>", isInternal: false), default);
@@ -100,7 +101,7 @@ public sealed class TicketBulkActionServiceTests
         mutations.Verdicts[boom] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(boom, 1).Ticket, Array.Empty<MatchedStatusGate>());
         mutations.Verdicts[fine] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(fine, 2).Ticket, Array.Empty<MatchedStatusGate>());
         mutations.ThrowOnApply.Add(boom);
-        var svc = Build(mutations, new RecordingAudit());
+        var svc = Build(mutations, new FakeAuditLogger());
 
         var result = await svc.ExecuteAsync(Actor, Request(new[] { boom, fine }, statusId: StatusId), default);
 
@@ -115,7 +116,7 @@ public sealed class TicketBulkActionServiceTests
     public async Task Rejects_when_over_the_configured_cap_without_touching_anything()
     {
         var mutations = new FakeMutations();
-        var svc = Build(mutations, new RecordingAudit(), maxSelection: 2);
+        var svc = Build(mutations, new FakeAuditLogger(), maxSelection: 2);
         var ids = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
 
         var ex = await Assert.ThrowsAsync<TicketBulkActionRejectedException>(
@@ -129,7 +130,7 @@ public sealed class TicketBulkActionServiceTests
     public async Task Rejects_a_request_that_changes_nothing()
     {
         var mutations = new FakeMutations();
-        var svc = Build(mutations, new RecordingAudit());
+        var svc = Build(mutations, new FakeAuditLogger());
 
         var ex = await Assert.ThrowsAsync<TicketBulkActionRejectedException>(
             () => svc.ExecuteAsync(Actor, Request(new[] { Guid.NewGuid() }), default));
@@ -142,7 +143,7 @@ public sealed class TicketBulkActionServiceTests
     public async Task Rejects_when_the_feature_is_disabled()
     {
         var mutations = new FakeMutations();
-        var svc = Build(mutations, new RecordingAudit(), enabled: false);
+        var svc = Build(mutations, new FakeAuditLogger(), enabled: false);
 
         var ex = await Assert.ThrowsAsync<TicketBulkActionRejectedException>(
             () => svc.ExecuteAsync(Actor, Request(new[] { Guid.NewGuid() }, statusId: StatusId), default));
@@ -156,7 +157,7 @@ public sealed class TicketBulkActionServiceTests
         var id = Guid.NewGuid();
         var mutations = new FakeMutations();
         mutations.Verdicts[id] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(id, 1).Ticket, Array.Empty<MatchedStatusGate>());
-        var svc = Build(mutations, new RecordingAudit());
+        var svc = Build(mutations, new FakeAuditLogger());
 
         var result = await svc.ExecuteAsync(Actor, Request(new[] { id, id, id }, message: "<p>x</p>"), default);
 
@@ -167,7 +168,9 @@ public sealed class TicketBulkActionServiceTests
     // ---- helpers ----
 
     private static TicketBulkActionService Build(FakeMutations mutations, IAuditLogger audit, bool enabled = true, int maxSelection = 100)
-        => new(mutations, new StubSettings(enabled, maxSelection), audit, NullLogger<TicketBulkActionService>.Instance,
+        => new(mutations, new InMemorySettingsService()
+            .With(SettingKeys.Tickets.BulkActionsEnabled, enabled)
+            .With(SettingKeys.Tickets.BulkActionsMaxSelection, maxSelection), audit, NullLogger<TicketBulkActionService>.Instance,
             new FixedClock(Now));
 
     // Fixed server clock so pending-till values in these tests never age
@@ -189,7 +192,7 @@ public sealed class TicketBulkActionServiceTests
         var withStatus = Guid.NewGuid();
         var mutations = new FakeMutations();
         mutations.Verdicts[withStatus] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(withStatus, 1).Ticket, Array.Empty<MatchedStatusGate>());
-        var svc = Build(mutations, new RecordingAudit());
+        var svc = Build(mutations, new FakeAuditLogger());
         var till = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc);
 
         await svc.ExecuteAsync(Actor, Request(new[] { withStatus }, statusId: StatusId, pendingTillUtc: till), default);
@@ -212,7 +215,7 @@ public sealed class TicketBulkActionServiceTests
         var id = Guid.NewGuid();
         var mutations = new FakeMutations();
         mutations.Verdicts[id] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(id, 1).Ticket, Array.Empty<MatchedStatusGate>());
-        var svc = Build(mutations, new RecordingAudit());
+        var svc = Build(mutations, new FakeAuditLogger());
 
         var ex = await Assert.ThrowsAsync<TicketBulkActionRejectedException>(() => svc.ExecuteAsync(Actor,
             Request(new[] { id }, statusId: StatusId, pendingTillUtc: Now.UtcDateTime.AddSeconds(offsetSeconds)), default));
@@ -228,7 +231,7 @@ public sealed class TicketBulkActionServiceTests
         var id = Guid.NewGuid();
         var mutations = new FakeMutations();
         mutations.Verdicts[id] = FieldUpdatePrecheck.Fail(TicketMutationCheck.PendingTillInPast);
-        var svc = Build(mutations, new RecordingAudit());
+        var svc = Build(mutations, new FakeAuditLogger());
 
         var result = await svc.ExecuteAsync(Actor,
             Request(new[] { id }, statusId: StatusId, pendingTillUtc: Now.UtcDateTime.AddDays(1)), default);
@@ -299,34 +302,5 @@ public sealed class TicketBulkActionServiceTests
             => Task.CompletedTask;
     }
 
-    private sealed class RecordingAudit : IAuditLogger
-    {
-        public readonly List<AuditEvent> Rows = new();
-        public Task LogAsync(AuditEvent evt, CancellationToken cancellationToken = default)
-        {
-            Rows.Add(evt);
-            return Task.CompletedTask;
-        }
-    }
 
-    private sealed class StubSettings : ISettingsService
-    {
-        private readonly bool _enabled;
-        private readonly int _max;
-        public StubSettings(bool enabled, int max) { _enabled = enabled; _max = max; }
-        public Task EnsureDefaultsAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public Task<T> GetAsync<T>(string key, CancellationToken ct = default)
-        {
-            object val = key switch
-            {
-                SettingKeys.Tickets.BulkActionsEnabled => _enabled,
-                SettingKeys.Tickets.BulkActionsMaxSelection => _max,
-                _ => default(T)!,
-            };
-            return Task.FromResult((T)val);
-        }
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
-    }
 }

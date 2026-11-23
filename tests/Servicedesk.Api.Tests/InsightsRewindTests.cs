@@ -3,13 +3,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Domain.Views;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Insights.Rewind;
 using Servicedesk.Infrastructure.Persistence.Tickets;
-using Servicedesk.Infrastructure.Settings;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -17,8 +15,16 @@ namespace Servicedesk.Api.Tests;
 /// v0.1.31 — Insights Rewind: view → query mapping, the server port of the
 /// grouped list layout, change-only capture, gap coverage, and the access
 /// rules (flag, view access, queue access on both tickets and counts).
-public sealed class InsightsRewindTests
+public sealed class InsightsRewindTests : IClassFixture<SharedHostFixture>
 {
+    private readonly SharedHostFixture _hosts;
+
+    public InsightsRewindTests(SharedHostFixture hosts)
+    {
+        _hosts = hosts;
+        hosts.Reset();
+    }
+
     private static readonly Guid QueueA = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
     private static readonly Guid QueueB = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000002");
     private static readonly Guid StatusOpen = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000001");
@@ -323,8 +329,8 @@ public sealed class InsightsRewindTests
     [InlineData("/api/insights/rewind/cccccccc-0000-0000-0000-000000000001/snapshot")]
     public async Task Agent_without_insights_flag_gets_403(string url)
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, viewAccess: true, out _);
+        var factory = _hosts.Base;
+        var host = WithStub(viewAccess: true, out _);
         var client = await ClientAsync(factory, host, "Agent", insights: false);
 
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(url)).StatusCode);
@@ -333,8 +339,8 @@ public sealed class InsightsRewindTests
     [Fact]
     public async Task View_without_access_is_404()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, viewAccess: false, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(viewAccess: false, out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         var response = await client.GetAsync($"/api/insights/rewind/{ViewId}/snapshot");
@@ -346,8 +352,8 @@ public sealed class InsightsRewindTests
     [Fact]
     public async Task Series_passes_the_callers_queue_scope_and_rejects_unknown_ranges()
     {
-        using var factory = new SecurityBaselineFactory();
-        using var host = WithStub(factory, viewAccess: true, out var stub);
+        var factory = _hosts.Base;
+        var host = WithStub(viewAccess: true, out var stub);
         var client = await ClientAsync(factory, host, "Agent", insights: true);
 
         Assert.Equal(HttpStatusCode.BadRequest,
@@ -500,6 +506,12 @@ public sealed class InsightsRewindTests
         public QueueAccessScope? LastScope { get; private set; }
         public TimeSpan? LastSpan { get; private set; }
 
+        public void Reset()
+        {
+            LastScope = null;
+            LastSpan = null;
+        }
+
         public Task<IReadOnlyList<RewindViewSummary>> ListViewsAsync(Guid userId, string role, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<RewindViewSummary>>(Array.Empty<RewindViewSummary>());
         public Task<bool> CanReadViewAsync(Guid userId, string role, Guid viewId, CancellationToken ct = default)
@@ -522,18 +534,18 @@ public sealed class InsightsRewindTests
         }
     }
 
-    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithStub(
-        SecurityBaselineFactory factory, bool viewAccess, out StubRewind stub)
+    private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithStub(bool viewAccess, out StubRewind stub)
     {
-        var s = new StubRewind(viewAccess);
-        stub = s;
-        return factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        var host = _hosts.Host("stub-view-access-" + viewAccess, builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IRewindService>();
-            services.AddSingleton<IRewindService>(s);
+            services.AddSingleton<IRewindService>(new StubRewind(viewAccess));
             services.RemoveAll<IQueueAccessService>();
-            services.AddSingleton<IQueueAccessService>(new OnlyQueueA());
+            services.AddSingleton<IQueueAccessService>(new FakeQueueAccess(QueueA));
         }));
+        stub = (StubRewind)host.Services.GetRequiredService<IRewindService>();
+        stub.Reset();
+        return host;
     }
 
     private static async Task<HttpClient> ClientAsync(
@@ -542,29 +554,8 @@ public sealed class InsightsRewindTests
         string role, bool insights)
     {
         var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = role;
         if (insights) factory.Users.InsightsEnabled[userId] = true;
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = host.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
-        return client;
+        return await factory.SignedInClientAsync(role, host, userId, amr: "pwd");
     }
 
-    private sealed class OnlyQueueA : IQueueAccessService
-    {
-        public Task<IReadOnlyList<Guid>> GetAccessibleQueueIdsAsync(Guid userId, string role, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Guid>>(new[] { QueueA });
-        public Task<bool> HasQueueAccessAsync(Guid userId, string role, Guid queueId, CancellationToken ct = default)
-            => Task.FromResult(queueId == QueueA);
-        public Task SetQueueAccessAsync(Guid userId, IReadOnlyList<Guid> queueIds, CancellationToken ct = default)
-            => Task.CompletedTask;
-        public Task<IReadOnlyList<Guid>> GetUsersForQueueAsync(Guid queueId, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Guid>>(Array.Empty<Guid>());
-        public void InvalidateCache(Guid userId) { }
-    }
 }

@@ -7,7 +7,6 @@ using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Domain.Search;
 using Servicedesk.Infrastructure.Search;
-using Servicedesk.Infrastructure.Settings;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -237,18 +236,10 @@ public sealed class FeatureFlagEnforcementTests : IClassFixture<SharedHostFixtur
         SecurityBaselineFactory factory, string role)
     {
         var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = role;
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
         // Handlers are bound (and their services resolved) before the endpoint
         // filter runs, so the host needs a data source — an unreachable one,
         // since a gated request must never reach it.
-        var client = _hosts.UnreachableDb.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
+        var client = await factory.SignedInClientAsync(role, _hosts.UnreachableDb, userId, amr: "pwd");
         return (client, userId);
     }
 }

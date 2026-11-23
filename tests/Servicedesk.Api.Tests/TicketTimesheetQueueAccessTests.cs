@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Access;
@@ -47,7 +46,7 @@ public sealed class TicketTimesheetQueueAccessTests : IClassFixture<SharedHostFi
     {
         var factory = _hosts.Base;
         var host = WithTicketFakes(hasQueueAccess: false);
-        var client = await AgentClientAsync(factory, host);
+        var client = await factory.SignedInClientAsync("Agent", host);
 
         var response = await SendAsync(client, method, url, body);
 
@@ -60,7 +59,7 @@ public sealed class TicketTimesheetQueueAccessTests : IClassFixture<SharedHostFi
     {
         var factory = _hosts.Base;
         var host = WithTicketFakes(hasQueueAccess: true);
-        var client = await AgentClientAsync(factory, host);
+        var client = await factory.SignedInClientAsync("Agent", host);
 
         var response = await SendAsync(client, method, url, body);
 
@@ -75,7 +74,7 @@ public sealed class TicketTimesheetQueueAccessTests : IClassFixture<SharedHostFi
     {
         var factory = _hosts.Base;
         var host = WithTicketFakes(hasQueueAccess: true, ticketExists: false);
-        var client = await AgentClientAsync(factory, host);
+        var client = await factory.SignedInClientAsync("Agent", host);
 
         var response = await SendAsync(client, method, url, body);
 
@@ -95,7 +94,7 @@ public sealed class TicketTimesheetQueueAccessTests : IClassFixture<SharedHostFi
         var factory = _hosts.Base;
         factory.Settings.Set(SettingKeys.Timesheet.TimeAlertAllowCancel, "false");
         var host = WithTicketFakes(hasQueueAccess: true);
-        var client = await AgentClientAsync(factory, host, role);
+        var client = await factory.SignedInClientAsync(role, host);
 
         var url = $"/api/timesheet/ticket/{TicketId}/time-alert/dismiss" + (silent ? "?silent=true" : "");
         var response = await SendAsync(client, "POST", url, null);
@@ -115,28 +114,12 @@ public sealed class TicketTimesheetQueueAccessTests : IClassFixture<SharedHostFi
                 services.RemoveAll<ITicketRepository>();
                 services.AddSingleton<ITicketRepository>(new StubTicketRepository(ticketExists));
                 services.RemoveAll<IQueueAccessService>();
-                services.AddSingleton<IQueueAccessService>(new StubQueueAccessService(hasQueueAccess));
+                services.AddSingleton<IQueueAccessService>((hasQueueAccess ? new FakeQueueAccess(QueueId) : FakeQueueAccess.None()));
                 services.RemoveAll<ITicketTimesheetService>();
                 services.AddSingleton<ITicketTimesheetService, StubTicketTimesheetService>();
                 services.RemoveAll<ITicketTimeAlertService>();
                 services.AddSingleton<ITicketTimeAlertService, StubTicketTimeAlertService>();
             }));
-
-    private static async Task<HttpClient> AgentClientAsync(
-        SecurityBaselineFactory factory, Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> host, string role = "Agent")
-    {
-        var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = role;
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = host.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
-        return client;
-    }
 
     private static Task<HttpResponseMessage> SendAsync(HttpClient client, string method, string url, object? body)
         => method == "GET"
@@ -145,22 +128,6 @@ public sealed class TicketTimesheetQueueAccessTests : IClassFixture<SharedHostFi
 
     // ---- fakes -------------------------------------------------------------
 
-    private sealed class StubQueueAccessService(bool allow) : IQueueAccessService
-    {
-        public Task<IReadOnlyList<Guid>> GetAccessibleQueueIdsAsync(Guid userId, string role, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Guid>>(allow ? new[] { QueueId } : Array.Empty<Guid>());
-
-        public Task<bool> HasQueueAccessAsync(Guid userId, string role, Guid queueId, CancellationToken ct = default)
-            => Task.FromResult(allow && queueId == QueueId);
-
-        public Task SetQueueAccessAsync(Guid userId, IReadOnlyList<Guid> queueIds, CancellationToken ct = default)
-            => Task.CompletedTask;
-
-        public Task<IReadOnlyList<Guid>> GetUsersForQueueAsync(Guid queueId, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Guid>>(Array.Empty<Guid>());
-
-        public void InvalidateCache(Guid userId) { }
-    }
 
     private sealed class StubTicketTimesheetService : ITicketTimesheetService
     {

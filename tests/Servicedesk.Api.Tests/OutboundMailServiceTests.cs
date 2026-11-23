@@ -20,6 +20,7 @@ using Servicedesk.Infrastructure.TaggingMailboxes;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Domain.TaggingMailboxes;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -618,7 +619,7 @@ public sealed class OutboundMailServiceTests
 
     private static (
         OutboundMailService svc,
-        StubGraph graph,
+        FakeGraphMailClient graph,
         StubMail mail,
         StubAttachments attachments,
         StubTickets tickets) Build(
@@ -629,13 +630,16 @@ public sealed class OutboundMailServiceTests
         IReadOnlyList<MailMessageRow>? mailRows = null,
         bool replyThreading = true)
     {
-        var graph = new StubGraph();
+        var graph = new FakeGraphMailClient();
         var taxonomy = new StubTaxonomy();
         var tickets = new StubTickets();
         var mail = new StubMail(mailRows);
         var atts = new StubAttachments(attachments ?? Array.Empty<AttachmentRow>());
         var blobs = new StubBlobs();
-        var settings = new StubSettings(maxOutboundBytes ?? (3L * 1024 * 1024), replyThreading);
+        var settings = new InMemorySettingsService()
+            .With(SettingKeys.Mail.PlusAddressToken, "TCK")
+            .With(SettingKeys.Mail.MaxOutboundTotalBytes, maxOutboundBytes ?? (3L * 1024 * 1024))
+            .With(SettingKeys.Mail.ReplyThreadingEnabled, replyThreading);
         var sla = new StubSla();
         var users = new StubUsers(knownAgents);
         var mentions = new StubMentions();
@@ -644,47 +648,11 @@ public sealed class OutboundMailServiceTests
         var intakeTokens = new StubIntakeTokens();
         var svc = new OutboundMailService(graph, taxonomy, tickets, mail, atts, blobs, settings, sla, users, mentions,
             taggingMailboxes, intakeForms, intakeTokens, new NoopTriggerService(), new NoopSignatureComposer(),
-            new StubQueueAccess(queueAccessAllowed), NullLogger<OutboundMailService>.Instance);
+            FakeQueueAccess.Allow(queueAccessAllowed), NullLogger<OutboundMailService>.Instance);
         return (svc, graph, mail, atts, tickets);
     }
 
-    private sealed class StubQueueAccess : IQueueAccessService
-    {
-        private readonly bool _allow;
-        public StubQueueAccess(bool allow) => _allow = allow;
-        public Task<bool> HasQueueAccessAsync(Guid userId, string role, Guid queueId, CancellationToken ct = default)
-            => Task.FromResult(_allow);
-        public Task<IReadOnlyList<Guid>> GetAccessibleQueueIdsAsync(Guid userId, string role, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task SetQueueAccessAsync(Guid userId, IReadOnlyList<Guid> queueIds, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<IReadOnlyList<Guid>> GetUsersForQueueAsync(Guid queueId, CancellationToken ct = default) => throw new NotImplementedException();
-        public void InvalidateCache(Guid userId) { }
-    }
 
-    private sealed class StubGraph : IGraphMailClient
-    {
-        public GraphOutboundMessage? LastMessage { get; private set; }
-        /// Simulates Graph refusing the reply draft (original gone) → plain send.
-        public bool FailReply { get; set; }
-        public Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage message, CancellationToken ct)
-        {
-            LastMessage = message;
-            var asReply = message.ReplyToGraphMessageId is not null && !FailReply;
-            return Task.FromResult(new GraphSentMailResult("msg-id@graph", DateTimeOffset.UtcNow)
-            {
-                SentAsReply = asReply,
-                ReplyFallbackReason = message.ReplyToGraphMessageId is not null && FailReply ? "createReply failed: status=404" : null,
-            });
-        }
-        public Task<GraphFullMessage> FetchMessageAsync(string mbx, string id, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Stream> FetchRawMessageAsync(string mbx, string id, CancellationToken ct) => throw new NotImplementedException();
-        public Task<GraphDeltaPage> ListInboxDeltaAsync(string m, string f, string? d, int b, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<GraphMailFolderInfo>> ListMailFoldersAsync(string m, CancellationToken ct) => throw new NotImplementedException();
-        public Task<TimeSpan> PingAsync(string mbx, CancellationToken ct) => Task.FromResult(TimeSpan.Zero);
-        public Task MarkAsReadAsync(string m, string id, CancellationToken ct) => Task.CompletedTask;
-        public Task MoveAsync(string m, string id, string f, CancellationToken ct) => Task.CompletedTask;
-        public Task<string> EnsureFolderAsync(string m, string n, CancellationToken ct) => Task.FromResult("f");
-        public Task<Stream> FetchAttachmentBytesAsync(string m, string id, string aid, CancellationToken ct) => throw new NotImplementedException();
-    }
 
     private sealed class StubTaxonomy : ITaxonomyRepository
     {
@@ -881,30 +849,6 @@ public sealed class OutboundMailServiceTests
         public Task<bool> DeleteAsync(string contentHash, CancellationToken ct = default) => Task.FromResult(false);
     }
 
-    private sealed class StubSettings : ISettingsService
-    {
-        private readonly long _maxOutboundBytes;
-        private readonly bool _replyThreading;
-        public StubSettings(long maxOutboundBytes, bool replyThreading = true)
-        {
-            _maxOutboundBytes = maxOutboundBytes;
-            _replyThreading = replyThreading;
-        }
-        public Task<T> GetAsync<T>(string key, CancellationToken ct = default)
-        {
-            object value = key switch
-            {
-                SettingKeys.Mail.PlusAddressToken => "TCK",
-                SettingKeys.Mail.MaxOutboundTotalBytes => _maxOutboundBytes,
-                SettingKeys.Mail.ReplyThreadingEnabled => _replyThreading,
-                _ => default(T)!,
-            };
-            return Task.FromResult((T)value!);
-        }
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task EnsureDefaultsAsync(CancellationToken ct = default) => Task.CompletedTask;
-    }
 
     private sealed class StubSla : ISlaEngine
     {

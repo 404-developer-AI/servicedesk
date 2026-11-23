@@ -2,12 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Servicedesk.Api.Auth;
 using Servicedesk.Api.Insights;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Insights;
-using Servicedesk.Infrastructure.Settings;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -407,7 +405,7 @@ public sealed class InsightsTests : IClassFixture<SharedHostFixture>
             services.RemoveAll<IInsightsService>();
             services.AddSingleton<IInsightsService, StubInsightsService>();
             services.RemoveAll<IQueueAccessService>();
-            services.AddSingleton<IQueueAccessService>(new StubQueueAccess());
+            services.AddSingleton<IQueueAccessService>(new FakeQueueAccess(QueueA));
         }));
         stub = (StubInsightsService)host.Services.GetRequiredService<IInsightsService>();
         stub.Reset();
@@ -420,16 +418,8 @@ public sealed class InsightsTests : IClassFixture<SharedHostFixture>
         string role, bool insights)
     {
         var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = role;
         if (insights) factory.Users.InsightsEnabled[userId] = true;
-        var sessionId = await factory.Sessions.CreateAsync(
-            userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
-        var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
-        var csrf = DoubleSubmitCsrfMiddleware.GenerateToken();
-        var client = host.CreateClient();
-        client.DefaultRequestHeaders.Add(
-            "Cookie", $"{cookieName}={sessionId}; {DoubleSubmitCsrfMiddleware.CookieName}={csrf}");
-        client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, csrf);
+        var client = await factory.SignedInClientAsync(role, host, userId, amr: "pwd");
         return (client, userId);
     }
 
@@ -484,20 +474,4 @@ public sealed class InsightsTests : IClassFixture<SharedHostFixture>
         }
     }
 
-    private sealed class StubQueueAccess : IQueueAccessService
-    {
-        public Task<IReadOnlyList<Guid>> GetAccessibleQueueIdsAsync(Guid userId, string role, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Guid>>(new[] { QueueA });
-
-        public Task<bool> HasQueueAccessAsync(Guid userId, string role, Guid queueId, CancellationToken ct = default)
-            => Task.FromResult(queueId == QueueA);
-
-        public Task SetQueueAccessAsync(Guid userId, IReadOnlyList<Guid> queueIds, CancellationToken ct = default)
-            => Task.CompletedTask;
-
-        public Task<IReadOnlyList<Guid>> GetUsersForQueueAsync(Guid queueId, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Guid>>(Array.Empty<Guid>());
-
-        public void InvalidateCache(Guid userId) { }
-    }
 }

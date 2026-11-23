@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
-using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Timesheet;
 using Xunit;
+using Servicedesk.Api.Tests.TestInfrastructure;
 
 namespace Servicedesk.Api.Tests;
 
@@ -73,21 +73,8 @@ public sealed class TicketTimeAlertServiceTests
         // guarded paths, so a null stand-in is safe here.
         var ds = NpgsqlDataSource.Create("Host=localhost;Username=u;Password=p;Database=d");
         return new TicketTimeAlertService(
-            ds, new StubSettings(), tickets: null!,
+            ds, new InMemorySettingsService(), tickets: null!,
             NullLogger<TicketTimeAlertService>.Instance);
     }
 
-    private sealed class StubSettings : ISettingsService
-    {
-        public Task EnsureDefaultsAsync(CancellationToken ct = default) => Task.CompletedTask;
-
-        public Task<T> GetAsync<T>(string key, CancellationToken ct = default) =>
-            Task.FromResult(default(T)!);
-
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken ct = default) =>
-            Task.CompletedTask;
-
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
-    }
 }
