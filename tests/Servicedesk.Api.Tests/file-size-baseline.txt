@@ -16,7 +16,6 @@
 1214 src/Servicedesk.Web/src/pages/settings/UsersSettingsPage.tsx
 1207 src/Servicedesk.Web/src/pages/settings/signatures/SignatureEditor.tsx
 1170 src/Servicedesk.Web/src/pages/settings/GeneralSettingsPage.tsx
-1161 src/Servicedesk.Web/src/pages/tickets/components/AddNoteForm.tsx
 1161 src/Servicedesk.Web/src/pages/views/ViewsPage.tsx
 1159 src/Servicedesk.Infrastructure/Performance/PerfFindings.cs
 1151 src/Servicedesk.Infrastructure/Health/IntegrationsHealthAggregator.cs
