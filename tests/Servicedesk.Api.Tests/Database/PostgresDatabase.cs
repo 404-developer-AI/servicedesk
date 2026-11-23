@@ -112,3 +112,13 @@ public sealed class PostgresFactAttribute : FactAttribute
             Skip = $"Set {PostgresDatabase.ConnectionStringVariable} to run database tests.";
     }
 }
+
+/// The [Theory] counterpart of <see cref="PostgresFactAttribute"/>.
+public sealed class PostgresTheoryAttribute : TheoryAttribute
+{
+    public PostgresTheoryAttribute()
+    {
+        if (PostgresDatabase.AdminConnectionString is null && !PostgresDatabase.Required)
+            Skip = $"Set {PostgresDatabase.ConnectionStringVariable} to run database tests.";
+    }
+}
