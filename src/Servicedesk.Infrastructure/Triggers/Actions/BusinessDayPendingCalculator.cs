@@ -1,4 +1,5 @@
 using Servicedesk.Domain.Sla;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Triggers.Actions;
 
@@ -134,16 +135,13 @@ public static class BusinessDayPendingCalculator
         if (string.IsNullOrWhiteSpace(id))
             throw new InvalidOperationException(
                 "Business-hours schedule has no timezone configured.");
-        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-        catch (TimeZoneNotFoundException)
+        return TimeZoneResolver.Lookup(id, out var zone) switch
         {
-            throw new InvalidOperationException(
-                $"Business-hours schedule timezone '{id}' is not a recognised IANA id.");
-        }
-        catch (InvalidTimeZoneException)
-        {
-            throw new InvalidOperationException(
-                $"Business-hours schedule timezone '{id}' is malformed.");
-        }
+            TimeZoneLookup.Found => zone!,
+            TimeZoneLookup.NotFound => throw new InvalidOperationException(
+                $"Business-hours schedule timezone '{id}' is not a recognised IANA id."),
+            _ => throw new InvalidOperationException(
+                $"Business-hours schedule timezone '{id}' is malformed."),
+        };
     }
 }

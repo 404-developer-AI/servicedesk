@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -80,30 +81,12 @@ public sealed class AdsolutAdministrationsClient : IAdsolutAdministrationsClient
         foreach (var el in items.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            if (!TryGetGuid(el, "id", out var id)) continue;
-            var name = TryGetString(el, "name") ?? "(unnamed)";
-            var code = TryGetString(el, "code");
+            if (!el.TryGetGuidProperty("id", out var id)) continue;
+            var name = el.GetStringOrNull("name") ?? "(unnamed)";
+            var code = el.GetStringOrNull("code");
             result.Add(new AdsolutAdministrationSummary(id, name, code));
         }
         return result;
     }
 
-    private static bool TryGetGuid(JsonElement el, string name, out Guid value)
-    {
-        value = Guid.Empty;
-        if (!el.TryGetProperty(name, out var prop)) return false;
-        if (prop.ValueKind == JsonValueKind.String)
-        {
-            return Guid.TryParse(prop.GetString(), out value);
-        }
-        return false;
-    }
-
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        if (prop.ValueKind == JsonValueKind.String) return prop.GetString();
-        if (prop.ValueKind == JsonValueKind.Null) return null;
-        return null;
-    }
 }

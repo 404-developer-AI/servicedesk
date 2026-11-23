@@ -16,19 +16,6 @@ public enum ZammadKbImportRunStatus
     Cancelled = 7,
 }
 
-/// Admin decision per Zammad category in the proposal-review step.
-/// <see cref="Create"/> is the default — the importer creates a new
-/// KbSection. <see cref="Merge"/> requires a target section id; articles
-/// in this Zammad category will land in the existing local section.
-/// <see cref="Skip"/> excludes the category — articles under it are
-/// recorded as <c>skipped_section_skipped</c>.
-public enum ZammadKbSectionAction
-{
-    Create = 0,
-    Merge = 1,
-    Skip = 2,
-}
-
 /// Per-article result vocabulary written into <c>kb_import_records.result</c>.
 public static class ZammadKbImportRecordResult
 {

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
+using static Servicedesk.Infrastructure.Integrations.Http.UpstreamHttp;
 
 namespace Servicedesk.Infrastructure.Integrations.Claude;
 
@@ -96,7 +97,7 @@ public sealed class ClaudeApiClient : IClaudeApiClient
                     HttpStatus: status,
                     LatencyMs: (int)stopwatch.ElapsedMilliseconds,
                     ErrorCode: upstreamCode ?? $"http_{status}",
-                    Payload: new { model, requestId, snippet = Truncate(upstreamMessage ?? responseBody, 256) }), ct);
+                    Payload: new { model, requestId, snippet = TruncateNoEllipsis(upstreamMessage ?? responseBody, 256) }), ct);
                 throw new ClaudeApiException(
                     upstreamMessage ?? $"Claude API returned HTTP {status}.",
                     httpStatus: status,
@@ -195,7 +196,7 @@ public sealed class ClaudeApiClient : IClaudeApiClient
                     HttpStatus: status,
                     LatencyMs: (int)stopwatch.ElapsedMilliseconds,
                     ErrorCode: upstreamCode ?? $"http_{status}",
-                    Payload: new { model, requestId, snippet = Truncate(upstreamMessage ?? responseBody, 256) }), ct);
+                    Payload: new { model, requestId, snippet = TruncateNoEllipsis(upstreamMessage ?? responseBody, 256) }), ct);
                 throw new ClaudeApiException(
                     upstreamMessage ?? $"Claude API returned HTTP {status}.",
                     httpStatus: status,
@@ -507,6 +508,4 @@ public sealed class ClaudeApiClient : IClaudeApiClient
         return null;
     }
 
-    private static string Truncate(string s, int max) =>
-        s.Length <= max ? s : s[..max];
 }

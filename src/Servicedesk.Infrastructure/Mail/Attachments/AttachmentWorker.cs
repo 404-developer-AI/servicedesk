@@ -7,6 +7,7 @@ using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
+using static Servicedesk.Infrastructure.Integrations.Http.UpstreamHttp;
 
 namespace Servicedesk.Infrastructure.Mail.Attachments;
 
@@ -207,7 +208,7 @@ public sealed class AttachmentWorker : BackgroundService
             var payloadForErr = TryParsePayload(job.PayloadJson);
             if (job.AttemptCount >= maxAttempts)
             {
-                await jobs.DeadLetterAsync(job.JobId, Truncate(errorDetail, 2000), sw.Elapsed, ct);
+                await jobs.DeadLetterAsync(job.JobId, TruncateNoEllipsis(errorDetail, 2000), sw.Elapsed, ct);
                 if (payloadForErr is not null)
                     await attachments.MarkFailedAsync(payloadForErr.AttachmentId, ct);
                 logger.LogError(ex,
@@ -224,7 +225,7 @@ public sealed class AttachmentWorker : BackgroundService
                 var delay = ComputeBackoff(job.AttemptCount, retryBaseSeconds);
                 await jobs.ScheduleRetryAsync(job.JobId,
                     DateTime.UtcNow.Add(delay),
-                    Truncate(errorDetail, 2000),
+                    TruncateNoEllipsis(errorDetail, 2000),
                     sw.Elapsed, ct);
                 logger.LogWarning(ex,
                     "[AttachmentWorker] jobId={JobId} attempt {Attempt} failed — retry in {Delay}. attachment={AttachmentId} graphMessageId={GraphMessageId} graphAttachmentId={GraphAttachmentId} detail={Detail}",
@@ -338,9 +339,6 @@ public sealed class AttachmentWorker : BackgroundService
             return null;
         }
     }
-
-    private static string Truncate(string s, int max)
-        => s.Length <= max ? s : s[..max];
 
     /// Graph SDK exceptions carry the useful bits (error code, inner message,
     /// request-id, details) on sub-properties. The top-level Message is often

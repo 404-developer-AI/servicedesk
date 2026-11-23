@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Triggers.Templating;
 
@@ -111,17 +112,14 @@ public sealed class TriggerTemplateRenderer : ITriggerTemplateRenderer
         TimeZoneInfo? zone = null;
         if (!string.IsNullOrWhiteSpace(tz))
         {
-            try
+            switch (TimeZoneResolver.Lookup(tz, out zone))
             {
-                zone = TimeZoneInfo.FindSystemTimeZoneById(tz);
-            }
-            catch (TimeZoneNotFoundException)
-            {
-                _logger.LogWarning("Trigger template dt() unknown timezone '{Tz}'; falling back to UTC.", tz);
-            }
-            catch (InvalidTimeZoneException)
-            {
-                _logger.LogWarning("Trigger template dt() invalid timezone '{Tz}'; falling back to UTC.", tz);
+                case TimeZoneLookup.NotFound:
+                    _logger.LogWarning("Trigger template dt() unknown timezone '{Tz}'; falling back to UTC.", tz);
+                    break;
+                case TimeZoneLookup.Invalid:
+                    _logger.LogWarning("Trigger template dt() invalid timezone '{Tz}'; falling back to UTC.", tz);
+                    break;
             }
         }
         var local = zone is null ? dt : TimeZoneInfo.ConvertTimeFromUtc(dt, zone);

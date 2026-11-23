@@ -52,7 +52,7 @@ public static class TriggerEndpoints
                 selfId: null, repo, ct);
             if (!chainCheck.IsValid) return Results.BadRequest(new { error = chainCheck.Error });
 
-            var creatorId = TryGetUserId(http);
+            var creatorId = ActorContext.TryGetUserId(http);
             var row = await repo.CreateAsync(new NewTrigger(
                 Name: normalized.Name,
                 Description: normalized.Description,
@@ -323,12 +323,6 @@ public static class TriggerEndpoints
             normalized.ActionsJson,
             normalized.Locale,
             normalized.Timezone);
-    }
-
-    private static Guid? TryGetUserId(HttpContext http)
-    {
-        var raw = http.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.TryParse(raw, out var id) ? id : null;
     }
 
     private static async Task LogAsync(IAuditLogger audit, HttpContext http, string eventType, string? target, object? payload)

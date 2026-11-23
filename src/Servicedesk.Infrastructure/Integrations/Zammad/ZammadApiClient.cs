@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Integrations.Http;
+using static Servicedesk.Infrastructure.Integrations.Http.UpstreamHttp;
 
 namespace Servicedesk.Infrastructure.Integrations.Zammad;
 
@@ -715,12 +717,6 @@ public sealed class ZammadApiClient : IZammadApiClient
         return raw.TrimEnd('/');
     }
 
-    private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
-    {
-        try { return await response.Content.ReadAsStringAsync(ct); }
-        catch { return string.Empty; }
-    }
-
     /// Normalises Zammad's various error-envelope shapes into a single
     /// upstream-error-code string. Empirically Zammad returns
     /// <c>{ error: "..." }</c> for most failures plus an additional
@@ -759,9 +755,6 @@ public sealed class ZammadApiClient : IZammadApiClient
         upstreamCode is null
             ? $"Zammad returned HTTP {status}."
             : $"Zammad returned HTTP {status}: {upstreamCode}";
-
-    private static string Truncate(string s, int max) =>
-        string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max] + "…";
 
     /// Diagnostic helper: produces a one-line summary of a JSON
     /// response's top-level shape so the audit log carries the structure
@@ -833,18 +826,18 @@ public sealed class ZammadApiClient : IZammadApiClient
             {
                 throw new ZammadApiException("Zammad /users/me did not return a JSON object.", httpStatus: 200);
             }
-            var id = TryGetLong(doc.RootElement, "id");
+            var id = doc.RootElement.GetInt64OrNumericString("id");
             if (id is null)
             {
                 throw new ZammadApiException("Zammad /users/me response is missing the 'id' field.", httpStatus: 200);
             }
             return new ZammadMe(
                 Id: id.Value,
-                Email: TryGetString(doc.RootElement, "email"),
-                FirstName: TryGetString(doc.RootElement, "firstname"),
-                LastName: TryGetString(doc.RootElement, "lastname"),
-                Login: TryGetString(doc.RootElement, "login"),
-                OrganizationId: TryGetLong(doc.RootElement, "organization_id"));
+                Email: doc.RootElement.GetStringOrNumber("email"),
+                FirstName: doc.RootElement.GetStringOrNumber("firstname"),
+                LastName: doc.RootElement.GetStringOrNumber("lastname"),
+                Login: doc.RootElement.GetStringOrNumber("login"),
+                OrganizationId: doc.RootElement.GetInt64OrNumericString("organization_id"));
         }
         catch (JsonException ex)
         {
@@ -867,7 +860,7 @@ public sealed class ZammadApiClient : IZammadApiClient
                 case JsonValueKind.String:
                     return doc.RootElement.GetString();
                 case JsonValueKind.Object:
-                    return TryGetString(doc.RootElement, "version");
+                    return doc.RootElement.GetStringOrNumber("version");
                 default:
                     return null;
             }
@@ -885,10 +878,10 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in array.Value.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
-            var name = TryGetString(el, "name") ?? string.Empty;
-            var active = TryGetBool(el, "active") ?? true;
+            var name = el.GetStringOrNumber("name") ?? string.Empty;
+            var active = el.GetBoolOrNull("active") ?? true;
             list.Add(new ZammadGroup(id.Value, name, active));
         }
         return list;
@@ -902,11 +895,11 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in array.Value.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
-            var name = TryGetString(el, "name") ?? string.Empty;
-            var stateTypeId = TryGetLong(el, "state_type_id");
-            var active = TryGetBool(el, "active") ?? true;
+            var name = el.GetStringOrNumber("name") ?? string.Empty;
+            var stateTypeId = el.GetInt64OrNumericString("state_type_id");
+            var active = el.GetBoolOrNull("active") ?? true;
             list.Add(new ZammadState(id.Value, name, stateTypeId, active));
         }
         return list;
@@ -920,16 +913,16 @@ public sealed class ZammadApiClient : IZammadApiClient
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return null;
-            var id = TryGetLong(root, "id");
+            var id = root.GetInt64OrNumericString("id");
             if (id is null) return null;
             return new ZammadUser(
                 Id: id.Value,
-                Email: TryGetString(root, "email"),
-                FirstName: TryGetString(root, "firstname"),
-                LastName: TryGetString(root, "lastname"),
-                Login: TryGetString(root, "login"),
-                OrganizationId: TryGetLong(root, "organization_id"),
-                Active: TryGetBool(root, "active") ?? true);
+                Email: root.GetStringOrNumber("email"),
+                FirstName: root.GetStringOrNumber("firstname"),
+                LastName: root.GetStringOrNumber("lastname"),
+                Login: root.GetStringOrNumber("login"),
+                OrganizationId: root.GetInt64OrNumericString("organization_id"),
+                Active: root.GetBoolOrNull("active") ?? true);
         }
         catch (JsonException)
         {
@@ -945,10 +938,10 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in array.Value.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
-            var name = TryGetString(el, "name") ?? string.Empty;
-            var active = TryGetBool(el, "active") ?? true;
+            var name = el.GetStringOrNumber("name") ?? string.Empty;
+            var active = el.GetBoolOrNull("active") ?? true;
             list.Add(new ZammadPriority(id.Value, name, active));
         }
         return list;
@@ -968,23 +961,23 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in array.Value.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
             list.Add(new ZammadArticle(
                 Id: id.Value,
-                TicketId: TryGetLong(el, "ticket_id") ?? 0,
-                Type: TryGetString(el, "type"),
-                Sender: TryGetString(el, "sender"),
-                From: TryGetString(el, "from"),
-                To: TryGetString(el, "to"),
-                Subject: TryGetString(el, "subject"),
-                Body: TryGetString(el, "body"),
-                ContentType: TryGetString(el, "content_type"),
-                Internal: TryGetBool(el, "internal") ?? false,
-                CreatedById: TryGetLong(el, "created_by_id"),
-                CreatedByEmail: TryGetString(el, "created_by"),
-                CreatedAt: TryGetDateTimeOffset(el, "created_at"),
-                MessageId: TryGetString(el, "message_id"),
+                TicketId: el.GetInt64OrNumericString("ticket_id") ?? 0,
+                Type: el.GetStringOrNumber("type"),
+                Sender: el.GetStringOrNumber("sender"),
+                From: el.GetStringOrNumber("from"),
+                To: el.GetStringOrNumber("to"),
+                Subject: el.GetStringOrNumber("subject"),
+                Body: el.GetStringOrNumber("body"),
+                ContentType: el.GetStringOrNumber("content_type"),
+                Internal: el.GetBoolOrNull("internal") ?? false,
+                CreatedById: el.GetInt64OrNumericString("created_by_id"),
+                CreatedByEmail: el.GetStringOrNumber("created_by"),
+                CreatedAt: el.GetUtcDateTimeOffset("created_at"),
+                MessageId: el.GetStringOrNumber("message_id"),
                 Attachments: ParseArticleAttachments(el)));
         }
         return list;
@@ -1021,11 +1014,11 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in arr.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
 
-            var filename = TryGetString(el, "filename") ?? string.Empty;
-            var size = TryGetLong(el, "size") ?? 0;
+            var filename = el.GetStringOrNumber("filename") ?? string.Empty;
+            var size = el.GetInt64OrNumericString("size") ?? 0;
 
             string? mime = null;
             string? contentId = null;
@@ -1033,10 +1026,10 @@ public sealed class ZammadApiClient : IZammadApiClient
             if (el.TryGetProperty("preferences", out var prefs)
                 && prefs.ValueKind == JsonValueKind.Object)
             {
-                mime = TryGetString(prefs, "Mime-Type")
-                    ?? TryGetString(prefs, "Content-Type");
-                contentId = TryGetString(prefs, "Content-ID");
-                disposition = TryGetString(prefs, "Content-Disposition");
+                mime = prefs.GetStringOrNumber("Mime-Type")
+                    ?? prefs.GetStringOrNumber("Content-Type");
+                contentId = prefs.GetStringOrNumber("Content-ID");
+                disposition = prefs.GetStringOrNumber("Content-Disposition");
             }
             if (string.IsNullOrWhiteSpace(mime))
             {
@@ -1083,16 +1076,16 @@ public sealed class ZammadApiClient : IZammadApiClient
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return null;
-            var id = TryGetLong(root, "id");
+            var id = root.GetInt64OrNumericString("id");
             if (id is null) return null;
 
             // Email resolution: Zammad 6's customer_email first, then
             // Zammad 7's customer-as-email fallback. The @-check keeps
             // a Zammad 6 display name from being mistaken for an email.
-            var customerEmail = TryGetString(root, "customer_email");
+            var customerEmail = root.GetStringOrNumber("customer_email");
             if (string.IsNullOrWhiteSpace(customerEmail) || !customerEmail.Contains('@'))
             {
-                var customerField = TryGetString(root, "customer");
+                var customerField = root.GetStringOrNumber("customer");
                 if (!string.IsNullOrWhiteSpace(customerField) && customerField.Contains('@'))
                 {
                     customerEmail = customerField;
@@ -1105,45 +1098,32 @@ public sealed class ZammadApiClient : IZammadApiClient
 
             return new ZammadTicket(
                 Id: id.Value,
-                Number: TryGetLongOrParse(root, "number"),
-                Title: TryGetString(root, "title") ?? string.Empty,
-                CustomerId: TryGetLong(root, "customer_id"),
+                Number: root.GetInt64OrNumericString("number"),
+                Title: root.GetStringOrNumber("title") ?? string.Empty,
+                CustomerId: root.GetInt64OrNumericString("customer_id"),
                 CustomerEmail: customerEmail,
-                CustomerFirstName: TryGetString(root, "customer_firstname"),
-                CustomerLastName: TryGetString(root, "customer_lastname"),
-                OrganizationId: TryGetLong(root, "organization_id"),
-                OrganizationName: TryGetString(root, "organization"),
-                GroupId: TryGetLong(root, "group_id"),
-                GroupName: TryGetString(root, "group"),
-                StateId: TryGetLong(root, "state_id"),
-                StateName: TryGetString(root, "state"),
-                PriorityId: TryGetLong(root, "priority_id"),
-                PriorityName: TryGetString(root, "priority"),
-                ArticleCount: TryGetInt(root, "article_count"),
-                CreatedAt: TryGetDateTimeOffset(root, "created_at"),
-                UpdatedAt: TryGetDateTimeOffset(root, "updated_at"),
+                CustomerFirstName: root.GetStringOrNumber("customer_firstname"),
+                CustomerLastName: root.GetStringOrNumber("customer_lastname"),
+                OrganizationId: root.GetInt64OrNumericString("organization_id"),
+                OrganizationName: root.GetStringOrNumber("organization"),
+                GroupId: root.GetInt64OrNumericString("group_id"),
+                GroupName: root.GetStringOrNumber("group"),
+                StateId: root.GetInt64OrNumericString("state_id"),
+                StateName: root.GetStringOrNumber("state"),
+                PriorityId: root.GetInt64OrNumericString("priority_id"),
+                PriorityName: root.GetStringOrNumber("priority"),
+                ArticleCount: root.GetInt32OrNumericString("article_count"),
+                CreatedAt: root.GetUtcDateTimeOffset("created_at"),
+                UpdatedAt: root.GetUtcDateTimeOffset("updated_at"),
                 // pending_time is only set when state_type is pending_*;
                 // null on regular tickets. Import keeps it so a Zammad
                 // pending-reminder lands as a local pending-till.
-                PendingTime: TryGetDateTimeOffset(root, "pending_time"));
+                PendingTime: root.GetUtcDateTimeOffset("pending_time"));
         }
         catch (JsonException)
         {
             return null;
         }
-    }
-
-    /// Zammad serializes <c>number</c> as a string ("12345") on some
-    /// versions and a number on others. Both are valid; tolerate.
-    private static long? TryGetLongOrParse(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind switch
-        {
-            JsonValueKind.Number when prop.TryGetInt64(out var n) => n,
-            JsonValueKind.String when long.TryParse(prop.GetString(), out var n) => n,
-            _ => null,
-        };
     }
 
     // ---- ticket search parser -----------------------------------------
@@ -1187,9 +1167,9 @@ public sealed class ZammadApiClient : IZammadApiClient
             // versions. Zammad 6 + assets-mode = `tickets_count`. Zammad
             // 7 + records-mode = `total_count`. Some intermediate variants
             // expose `total`. Try them in order — first non-null wins.
-            total = TryGetInt(root, "tickets_count")
-                ?? TryGetInt(root, "total_count")
-                ?? TryGetInt(root, "total");
+            total = root.GetInt32OrNumericString("tickets_count")
+                ?? root.GetInt32OrNumericString("total_count")
+                ?? root.GetInt32OrNumericString("total");
 
             // Locate the ticket payload array. Zammad 7 dropped the
             // legacy `tickets` key in favour of `records` (undocumented
@@ -1254,7 +1234,7 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in array.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
             list.Add(BuildItem(el, assets));
         }
@@ -1289,7 +1269,7 @@ public sealed class ZammadApiClient : IZammadApiClient
 
     private static ZammadTicketSearchItem BuildItem(JsonElement ticket, JsonElement? assets)
     {
-        var id = TryGetLong(ticket, "id") ?? 0;
+        var id = ticket.GetInt64OrNumericString("id") ?? 0;
         // Zammad's `number` is a STRING field carrying the human-readable
         // ticket number (often padded with leading zeros). We parse it
         // into a long for ordering, but stick with nullable so a future
@@ -1313,23 +1293,23 @@ public sealed class ZammadApiClient : IZammadApiClient
                     break;
             }
         }
-        var title = TryGetString(ticket, "title") ?? string.Empty;
-        var customerId = TryGetLong(ticket, "customer_id");
-        var groupId = TryGetLong(ticket, "group_id");
-        var stateId = TryGetLong(ticket, "state_id");
-        var articleCount = TryGetInt(ticket, "article_count");
-        var createdAt = TryGetDateTimeOffset(ticket, "created_at");
-        var updatedAt = TryGetDateTimeOffset(ticket, "updated_at");
+        var title = ticket.GetStringOrNumber("title") ?? string.Empty;
+        var customerId = ticket.GetInt64OrNumericString("customer_id");
+        var groupId = ticket.GetInt64OrNumericString("group_id");
+        var stateId = ticket.GetInt64OrNumericString("state_id");
+        var articleCount = ticket.GetInt32OrNumericString("article_count");
+        var createdAt = ticket.GetUtcDateTimeOffset("created_at");
+        var updatedAt = ticket.GetUtcDateTimeOffset("updated_at");
 
         // Relation strings: present when expand=true was set OR Zammad
         // returns full objects without flattening. Fall back to an
         // assets lookup when missing.
-        var groupName = TryGetString(ticket, "group");
+        var groupName = ticket.GetStringOrNumber("group");
         if (string.IsNullOrEmpty(groupName) && groupId is not null && assets is not null)
         {
             groupName = LookupAssetField(assets.Value, "Group", groupId.Value, "name");
         }
-        var stateName = TryGetString(ticket, "state");
+        var stateName = ticket.GetStringOrNumber("state");
         if (string.IsNullOrEmpty(stateName) && stateId is not null && assets is not null)
         {
             stateName = LookupAssetField(assets.Value, "TicketState", stateId.Value, "name");
@@ -1337,7 +1317,7 @@ public sealed class ZammadApiClient : IZammadApiClient
 
         string? customerName = null;
         string? customerEmail = null;
-        var customerFlat = TryGetString(ticket, "customer");
+        var customerFlat = ticket.GetStringOrNumber("customer");
         if (!string.IsNullOrEmpty(customerFlat))
         {
             // Zammad's flat customer field is rendered as
@@ -1350,11 +1330,11 @@ public sealed class ZammadApiClient : IZammadApiClient
             && customerId is not null && assets is not null
             && TryGetAssetObject(assets.Value, "User", customerId.Value, out var userEl))
         {
-            customerEmail ??= TryGetString(userEl, "email");
+            customerEmail ??= userEl.GetStringOrNumber("email");
             if (string.IsNullOrEmpty(customerName))
             {
-                var fn = TryGetString(userEl, "firstname");
-                var ln = TryGetString(userEl, "lastname");
+                var fn = userEl.GetStringOrNumber("firstname");
+                var ln = userEl.GetStringOrNumber("lastname");
                 var joined = string.Join(" ", new[] { fn, ln }.Where(s => !string.IsNullOrEmpty(s)));
                 if (!string.IsNullOrEmpty(joined)) customerName = joined;
             }
@@ -1420,7 +1400,7 @@ public sealed class ZammadApiClient : IZammadApiClient
     private static string? LookupAssetField(JsonElement assets, string typeName, long id, string field)
     {
         if (!TryGetAssetObject(assets, typeName, id, out var obj)) return null;
-        return TryGetString(obj, field);
+        return obj.GetStringOrNumber(field);
     }
 
     private static JsonElement? TryRootArray(string body)
@@ -1434,66 +1414,6 @@ public sealed class ZammadApiClient : IZammadApiClient
                 : null;
         }
         catch (JsonException) { return null; }
-    }
-
-    private static bool? TryGetBool(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind switch
-        {
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            _ => null,
-        };
-    }
-
-    private static int? TryGetInt(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind switch
-        {
-            JsonValueKind.Number when prop.TryGetInt32(out var v) => v,
-            JsonValueKind.String when int.TryParse(prop.GetString(), out var v) => v,
-            _ => null,
-        };
-    }
-
-    private static DateTimeOffset? TryGetDateTimeOffset(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String)
-            return null;
-        var raw = prop.GetString();
-        if (string.IsNullOrEmpty(raw)) return null;
-        return DateTimeOffset.TryParse(
-                raw,
-                System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
-                out var v)
-            ? v
-            : (DateTimeOffset?)null;
-    }
-
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind switch
-        {
-            JsonValueKind.String => prop.GetString(),
-            JsonValueKind.Number => prop.ToString(),
-            JsonValueKind.Null => null,
-            _ => null,
-        };
-    }
-
-    private static long? TryGetLong(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind switch
-        {
-            JsonValueKind.Number when prop.TryGetInt64(out var v) => v,
-            JsonValueKind.String when long.TryParse(prop.GetString(), out var v) => v,
-            _ => null,
-        };
     }
 
     // ---- KB parsers (v0.0.43) -----------------------------------------
@@ -1514,20 +1434,20 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in array.Value.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
             // Active flag — Zammad uses "active" or "kb_active" depending on version.
-            var active = TryGetBool(el, "active") ?? TryGetBool(el, "kb_active") ?? true;
+            var active = el.GetBoolOrNull("active") ?? el.GetBoolOrNull("kb_active") ?? true;
             // Name: try several common fallback fields; many installs
             // surface a translation-derived label only.
-            var name = TryGetString(el, "name")
-                ?? TryGetString(el, "title")
-                ?? TryGetString(el, "url_prefix")
+            var name = el.GetStringOrNumber("name")
+                ?? el.GetStringOrNumber("title")
+                ?? el.GetStringOrNumber("url_prefix")
                 ?? TryReadFirstLocaleTitle(el)
                 ?? $"Knowledge base #{id.Value}";
             var defaultLocale = TryReadDefaultLocaleCode(el);
-            var categoryCount = TryGetInt(el, "category_count") ?? 0;
-            var answerCount = TryGetInt(el, "answer_count") ?? 0;
+            var categoryCount = el.GetInt32OrNumericString("category_count") ?? 0;
+            var answerCount = el.GetInt32OrNumericString("answer_count") ?? 0;
             list.Add(new ZammadKnowledgeBase(
                 Id: id.Value,
                 Name: name,
@@ -1550,8 +1470,8 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var loc in arr.EnumerateArray())
         {
             if (loc.ValueKind != JsonValueKind.Object) continue;
-            var label = TryGetString(loc, "title")
-                ?? TryGetString(loc, "name");
+            var label = loc.GetStringOrNumber("title")
+                ?? loc.GetStringOrNumber("name");
             if (!string.IsNullOrWhiteSpace(label)) return label;
         }
         return null;
@@ -1569,11 +1489,11 @@ public sealed class ZammadApiClient : IZammadApiClient
             foreach (var loc in arr.EnumerateArray())
             {
                 if (loc.ValueKind != JsonValueKind.Object) continue;
-                var isPrimary = TryGetBool(loc, "primary") ?? false;
+                var isPrimary = loc.GetBoolOrNull("primary") ?? false;
                 if (!isPrimary) continue;
-                var code = TryGetString(loc, "system_locale")
-                    ?? TryGetString(loc, "locale")
-                    ?? TryGetString(loc, "name");
+                var code = loc.GetStringOrNumber("system_locale")
+                    ?? loc.GetStringOrNumber("locale")
+                    ?? loc.GetStringOrNumber("name");
                 if (!string.IsNullOrWhiteSpace(code)) return code;
             }
         }
@@ -1747,7 +1667,7 @@ public sealed class ZammadApiClient : IZammadApiClient
         var list = new List<ZammadKnowledgeBase>();
         foreach (var el in EnumerateAssetCollection(assets, "KnowledgeBase"))
         {
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
             // Zammad's KB object carries no direct name/title — the
             // display label lives on a `KnowledgeBaseTranslation` row
@@ -1757,18 +1677,18 @@ public sealed class ZammadApiClient : IZammadApiClient
             // category_ids[].length + answer_ids[].length give us
             // counts without scanning the full bundle.
             var categoryCount = CountArrayProperty(el, "category_ids")
-                ?? TryGetInt(el, "category_count") ?? 0;
+                ?? el.GetInt32OrNumericString("category_count") ?? 0;
             var answerCount = CountArrayProperty(el, "answer_ids")
-                ?? TryGetInt(el, "answer_count") ?? 0;
+                ?? el.GetInt32OrNumericString("answer_count") ?? 0;
             list.Add(new ZammadKnowledgeBase(
                 Id: id.Value,
                 Name: title
-                    ?? TryGetString(el, "name")
-                    ?? TryGetString(el, "title")
-                    ?? TryGetString(el, "url_prefix")
+                    ?? el.GetStringOrNumber("name")
+                    ?? el.GetStringOrNumber("title")
+                    ?? el.GetStringOrNumber("url_prefix")
                     ?? TryReadFirstLocaleTitle(el)
                     ?? $"Knowledge base #{id.Value}",
-                Active: TryGetBool(el, "active") ?? TryGetBool(el, "kb_active") ?? true,
+                Active: el.GetBoolOrNull("active") ?? el.GetBoolOrNull("kb_active") ?? true,
                 DefaultLocale: TryReadDefaultLocaleCode(el),
                 CategoryCount: categoryCount,
                 AnswerCount: answerCount));
@@ -1800,8 +1720,8 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in translations)
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var kbId = TryGetLong(el, "knowledge_base_id");
-            var title = TryGetString(el, "title");
+            var kbId = el.GetInt64OrNumericString("knowledge_base_id");
+            var title = el.GetStringOrNumber("title");
             if (kbId is null || string.IsNullOrWhiteSpace(title)) continue;
             if (!result.ContainsKey(kbId.Value)) result[kbId.Value] = title;
         }
@@ -1819,9 +1739,9 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in locales)
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            if (TryGetBool(el, "primary") == true)
+            if (el.GetBoolOrNull("primary") == true)
             {
-                var id = TryGetLong(el, "id");
+                var id = el.GetInt64OrNumericString("id");
                 if (id is not null) return id.Value;
             }
         }
@@ -1855,19 +1775,19 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in array.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
             list.Add(new ZammadKnowledgeBase(
                 Id: id.Value,
-                Name: TryGetString(el, "name")
-                    ?? TryGetString(el, "title")
-                    ?? TryGetString(el, "url_prefix")
+                Name: el.GetStringOrNumber("name")
+                    ?? el.GetStringOrNumber("title")
+                    ?? el.GetStringOrNumber("url_prefix")
                     ?? TryReadFirstLocaleTitle(el)
                     ?? $"Knowledge base #{id.Value}",
-                Active: TryGetBool(el, "active") ?? TryGetBool(el, "kb_active") ?? true,
+                Active: el.GetBoolOrNull("active") ?? el.GetBoolOrNull("kb_active") ?? true,
                 DefaultLocale: TryReadDefaultLocaleCode(el),
-                CategoryCount: TryGetInt(el, "category_count") ?? 0,
-                AnswerCount: TryGetInt(el, "answer_count") ?? 0));
+                CategoryCount: el.GetInt32OrNumericString("category_count") ?? 0,
+                AnswerCount: el.GetInt32OrNumericString("answer_count") ?? 0));
         }
         return list;
     }
@@ -1880,8 +1800,8 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in translations)
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var categoryId = TryGetLong(el, "category_id");
-            var title = TryGetString(el, "title");
+            var categoryId = el.GetInt64OrNumericString("category_id");
+            var title = el.GetStringOrNumber("title");
             if (categoryId is null || string.IsNullOrWhiteSpace(title)) continue;
             // Determine the locale-code to emit under. When the row's
             // numeric kb_locale_id matches the source primary, we emit
@@ -1906,7 +1826,7 @@ public sealed class ZammadApiClient : IZammadApiClient
     /// per-install id mapping.
     private static string? ResolveEmitLocale(JsonElement el, long? primaryKbLocaleId)
     {
-        var localeId = TryGetLong(el, "kb_locale_id");
+        var localeId = el.GetInt64OrNumericString("kb_locale_id");
         if (localeId is not null
             && primaryKbLocaleId is not null
             && localeId.Value == primaryKbLocaleId.Value)
@@ -1926,12 +1846,12 @@ public sealed class ZammadApiClient : IZammadApiClient
     /// the importer treats unrecognised locales as a soft skip.
     private static string? TryReadTranslationLocaleCode(JsonElement el)
     {
-        var s = TryGetString(el, "kb_locale_system")
-            ?? TryGetString(el, "system_locale")
-            ?? TryGetString(el, "locale_code")
-            ?? TryGetString(el, "locale");
+        var s = el.GetStringOrNumber("kb_locale_system")
+            ?? el.GetStringOrNumber("system_locale")
+            ?? el.GetStringOrNumber("locale_code")
+            ?? el.GetStringOrNumber("locale");
         if (!string.IsNullOrWhiteSpace(s)) return s;
-        var localeId = TryGetLong(el, "kb_locale_id");
+        var localeId = el.GetInt64OrNumericString("kb_locale_id");
         return localeId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
@@ -1943,7 +1863,7 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in elements)
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
             var translations = new List<ZammadKbCategoryTranslation>();
             if (categoryTitles.TryGetValue(id.Value, out var perLocale))
@@ -1955,9 +1875,9 @@ public sealed class ZammadApiClient : IZammadApiClient
             }
             list.Add(new ZammadKbCategory(
                 Id: id.Value,
-                KnowledgeBaseId: TryGetLong(el, "knowledge_base_id") ?? 0,
-                ParentId: TryGetLong(el, "parent_id"),
-                Position: TryGetInt(el, "position") ?? 0,
+                KnowledgeBaseId: el.GetInt64OrNumericString("knowledge_base_id") ?? 0,
+                ParentId: el.GetInt64OrNumericString("parent_id"),
+                Position: el.GetInt32OrNumericString("position") ?? 0,
                 Translations: translations));
         }
         return list;
@@ -1975,16 +1895,16 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in contents)
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
             // Zammad uses translation_id on some versions and a flat
             // 1:1 join on others — fall back to id when explicit
             // translation_id is missing.
-            var translationId = TryGetLong(el, "translation_id") ?? id.Value;
-            var body = TryGetString(el, "body");
+            var translationId = el.GetInt64OrNumericString("translation_id") ?? id.Value;
+            var body = el.GetStringOrNumber("body");
             if (string.IsNullOrEmpty(body))
             {
-                var bodyText = TryGetString(el, "body_text");
+                var bodyText = el.GetStringOrNumber("body_text");
                 if (!string.IsNullOrEmpty(bodyText))
                 {
                     body = "<p>" + System.Net.WebUtility.HtmlEncode(bodyText).Replace("\n", "<br/>") + "</p>";
@@ -2004,18 +1924,18 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in translations)
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
-            var answerId = TryGetLong(el, "answer_id");
+            var id = el.GetInt64OrNumericString("id");
+            var answerId = el.GetInt64OrNumericString("answer_id");
             if (id is null || answerId is null) continue;
             var locale = ResolveEmitLocale(el, primaryKbLocaleId) ?? string.Empty;
-            var title = TryGetString(el, "title") ?? string.Empty;
+            var title = el.GetStringOrNumber("title") ?? string.Empty;
             // content_id points at the contents-row OR Zammad inlines
             // the body directly (some versions). Try inline first, then
             // resolved via content_id, then via the translation's own id.
-            var bodyHtml = TryGetString(el, "body");
+            var bodyHtml = el.GetStringOrNumber("body");
             if (string.IsNullOrEmpty(bodyHtml))
             {
-                var contentId = TryGetLong(el, "content_id");
+                var contentId = el.GetInt64OrNumericString("content_id");
                 if (contentId is not null && contentsByTranslationId.TryGetValue(contentId.Value, out var byContent))
                 {
                     bodyHtml = byContent;
@@ -2047,22 +1967,22 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in elements)
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetLong(el, "id");
+            var id = el.GetInt64OrNumericString("id");
             if (id is null) continue;
             var translations = translationsByAnswerId.TryGetValue(id.Value, out var t)
                 ? (IReadOnlyList<ZammadKbAnswerTranslation>)t
                 : Array.Empty<ZammadKbAnswerTranslation>();
             list.Add(new ZammadKbAnswer(
                 Id: id.Value,
-                KnowledgeBaseId: TryGetLong(el, "knowledge_base_id") ?? 0,
-                CategoryId: TryGetLong(el, "category_id") ?? 0,
-                Position: TryGetInt(el, "position") ?? 0,
-                Promoted: TryGetBool(el, "promoted") ?? false,
-                InternalAt: TryGetDateTimeOffset(el, "internal_at"),
-                PublishedAt: TryGetDateTimeOffset(el, "published_at"),
-                ArchivedAt: TryGetDateTimeOffset(el, "archived_at"),
-                CreatedById: TryGetLong(el, "created_by_id"),
-                InternalNote: TryGetString(el, "internal_note"),
+                KnowledgeBaseId: el.GetInt64OrNumericString("knowledge_base_id") ?? 0,
+                CategoryId: el.GetInt64OrNumericString("category_id") ?? 0,
+                Position: el.GetInt32OrNumericString("position") ?? 0,
+                Promoted: el.GetBoolOrNull("promoted") ?? false,
+                InternalAt: el.GetUtcDateTimeOffset("internal_at"),
+                PublishedAt: el.GetUtcDateTimeOffset("published_at"),
+                ArchivedAt: el.GetUtcDateTimeOffset("archived_at"),
+                CreatedById: el.GetInt64OrNumericString("created_by_id"),
+                InternalNote: el.GetStringOrNumber("internal_note"),
                 Translations: translations,
                 Attachments: ParseKbAnswerAttachments(el)));
         }
@@ -2081,21 +2001,21 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in arr.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var recordId = TryGetLong(el, "id");
+            var recordId = el.GetInt64OrNumericString("id");
             string? mime = null;
             string? contentId = null;
             string? disposition = null;
             if (el.TryGetProperty("preferences", out var prefs)
                 && prefs.ValueKind == JsonValueKind.Object)
             {
-                mime = TryGetString(prefs, "Mime-Type")
-                    ?? TryGetString(prefs, "Content-Type");
-                contentId = TryGetString(prefs, "Content-ID");
-                disposition = TryGetString(prefs, "Content-Disposition");
+                mime = prefs.GetStringOrNumber("Mime-Type")
+                    ?? prefs.GetStringOrNumber("Content-Type");
+                contentId = prefs.GetStringOrNumber("Content-ID");
+                disposition = prefs.GetStringOrNumber("Content-Disposition");
             }
-            mime ??= TryGetString(el, "type") ?? "application/octet-stream";
-            var previewUrl = TryGetString(el, "preview_url")
-                ?? TryGetString(el, "url");
+            mime ??= el.GetStringOrNumber("type") ?? "application/octet-stream";
+            var previewUrl = el.GetStringOrNumber("preview_url")
+                ?? el.GetStringOrNumber("url");
 
             // The numeric id in Zammad's body HTML img-src is the
             // Store::File id (e.g. `/api/v1/attachments/253306`), which
@@ -2122,8 +2042,8 @@ public sealed class ZammadApiClient : IZammadApiClient
 
             list.Add(new ZammadKbAnswerAttachment(
                 Id: effectiveId.Value,
-                Filename: TryGetString(el, "filename") ?? string.Empty,
-                SizeBytes: TryGetLong(el, "size") ?? 0,
+                Filename: el.GetStringOrNumber("filename") ?? string.Empty,
+                SizeBytes: el.GetInt64OrNumericString("size") ?? 0,
                 MimeType: mime,
                 IsInline: isInline,
                 ContentId: normalisedCid,
@@ -2195,13 +2115,13 @@ public sealed class ZammadApiClient : IZammadApiClient
                 "KnowledgeBase::Answer::Translation::Content"))
             {
                 if (el.ValueKind != JsonValueKind.Object) continue;
-                var contentTranslationId = TryGetLong(el, "translation_id") ?? TryGetLong(el, "id");
+                var contentTranslationId = el.GetInt64OrNumericString("translation_id") ?? el.GetInt64OrNumericString("id");
                 if (contentTranslationId is null) continue;
                 if (contentTranslationId.Value != translationId) continue;
-                bodyHtml = TryGetString(el, "body");
+                bodyHtml = el.GetStringOrNumber("body");
                 if (string.IsNullOrEmpty(bodyHtml))
                 {
-                    var bodyText = TryGetString(el, "body_text");
+                    var bodyText = el.GetStringOrNumber("body_text");
                     if (!string.IsNullOrEmpty(bodyText))
                     {
                         bodyHtml = "<p>" + System.Net.WebUtility.HtmlEncode(bodyText).Replace("\n", "<br/>") + "</p>";
@@ -2216,9 +2136,9 @@ public sealed class ZammadApiClient : IZammadApiClient
                     "KnowledgeBaseAnswerTranslation", "KnowledgeBase::Answer::Translation"))
                 {
                     if (el.ValueKind != JsonValueKind.Object) continue;
-                    var tid = TryGetLong(el, "id");
+                    var tid = el.GetInt64OrNumericString("id");
                     if (tid is null || tid.Value != translationId) continue;
-                    bodyHtml = TryGetString(el, "body");
+                    bodyHtml = el.GetStringOrNumber("body");
                     if (!string.IsNullOrEmpty(bodyHtml)) break;
                 }
             }
@@ -2232,7 +2152,7 @@ public sealed class ZammadApiClient : IZammadApiClient
                 "KnowledgeBaseAnswer", "KnowledgeBase::Answer"))
             {
                 if (el.ValueKind != JsonValueKind.Object) continue;
-                var aid = TryGetLong(el, "id");
+                var aid = el.GetInt64OrNumericString("id");
                 if (aid is null || aid.Value != answerId) continue;
                 attachments = ParseKbAnswerAttachments(el);
                 break;
@@ -2252,9 +2172,9 @@ public sealed class ZammadApiClient : IZammadApiClient
         foreach (var el in elements)
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var locale = TryGetString(el, "system_locale")
-                ?? TryGetString(el, "locale")
-                ?? TryGetString(el, "name");
+            var locale = el.GetStringOrNumber("system_locale")
+                ?? el.GetStringOrNumber("locale")
+                ?? el.GetStringOrNumber("name");
             if (!string.IsNullOrWhiteSpace(locale)) set.Add(locale);
         }
         return set.ToArray();

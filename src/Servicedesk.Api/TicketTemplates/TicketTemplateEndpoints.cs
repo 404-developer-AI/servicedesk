@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
@@ -64,7 +63,7 @@ public static class TicketTemplateEndpoints
             var err = Validate(req);
             if (err is not null) return Results.BadRequest(new { error = err });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var template = ToDomain(Guid.Empty, req, sanitizer, userId);
 
             Guid id;

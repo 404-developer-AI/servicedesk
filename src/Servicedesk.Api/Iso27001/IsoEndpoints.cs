@@ -61,7 +61,7 @@ public static class IsoEndpoints
     private static async Task<IResult> GetConfig(
         HttpContext http, ISettingsService settings, IUserService users, CancellationToken ct)
     {
-        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = ActorContext.GetUserId(http);
         var flags = await users.GetIsoFlagsAsync(userId, ct);
         if (!flags.Mgm)
             return Results.Json(
@@ -152,7 +152,7 @@ public static class IsoEndpoints
             return Results.Conflict(new { error = "ISO 27001 workflow is not configured.", code = "workflow_disabled" });
 
         // 3. User identity + ISO flag check.
-        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = ActorContext.GetUserId(http);
         var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
         var flags = await users.GetIsoFlagsAsync(userId, ct);
         if (!flagCheck(flags))

@@ -281,7 +281,7 @@ public static class OrderManagementEndpoints
     }
 
     private static (Guid UserId, string Role) Caller(HttpContext http) =>
-        (Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value),
+        (ActorContext.GetUserId(http),
          http.User.FindFirst(ClaimTypes.Role)!.Value);
 
     private static Task LogLinkAsync(

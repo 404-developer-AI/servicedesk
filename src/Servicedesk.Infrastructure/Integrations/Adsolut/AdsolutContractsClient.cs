@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -99,7 +100,7 @@ public sealed class AdsolutContractsClient : IAdsolutContractsClient
         var hasNext = false;
         if (root.TryGetProperty("pagingData", out var paging) && paging.ValueKind == JsonValueKind.Object)
         {
-            nextCursor = TryGetString(paging, "nextCursor");
+            nextCursor = paging.GetStringOrNull("nextCursor");
             if (paging.TryGetProperty("hasNext", out var hn) &&
                 (hn.ValueKind == JsonValueKind.True || hn.ValueKind == JsonValueKind.False))
             {
@@ -113,14 +114,14 @@ public sealed class AdsolutContractsClient : IAdsolutContractsClient
     private static AdsolutContract? ParseContract(JsonElement root)
     {
         if (root.ValueKind != JsonValueKind.Object) return null;
-        if (!TryGetGuid(root, "id", out var id)) return null;
+        if (!root.TryGetGuidProperty("id", out var id)) return null;
 
         // contractState { code, state: [{language,value}], … } — note the
         // translation array is named "state" here, not "description".
         string? stateCode = null, stateDescription = null;
         if (root.TryGetProperty("contractState", out var state) && state.ValueKind == JsonValueKind.Object)
         {
-            stateCode = TryGetString(state, "code");
+            stateCode = state.GetStringOrNull("code");
             stateDescription = PickTranslation(state, "state");
         }
 
@@ -128,14 +129,14 @@ public sealed class AdsolutContractsClient : IAdsolutContractsClient
         string? periodicityCode = null, periodicityLabel = null;
         if (root.TryGetProperty("periodicity", out var per) && per.ValueKind == JsonValueKind.Object)
         {
-            periodicityCode = TryGetString(per, "code");
+            periodicityCode = per.GetStringOrNull("code");
             periodicityLabel = PickTranslation(per, "term");
         }
 
         string? invPeriodicityCode = null, invPeriodicityLabel = null;
         if (root.TryGetProperty("invoicingPeriodicity", out var inv) && inv.ValueKind == JsonValueKind.Object)
         {
-            invPeriodicityCode = TryGetString(inv, "code");
+            invPeriodicityCode = inv.GetStringOrNull("code");
             invPeriodicityLabel = PickTranslation(inv, "term");
         }
 
@@ -143,31 +144,31 @@ public sealed class AdsolutContractsClient : IAdsolutContractsClient
 
         return new AdsolutContract(
             Id: id,
-            DocNr: TryGetInt(root, "docNr"),
-            CustomerAdsolutId: TryGetGuid(root, "customerId", out var cid) ? cid : (Guid?)null,
-            InvoiceCustomerAdsolutId: TryGetGuid(root, "invoiceCustomerId", out var icid) ? icid : (Guid?)null,
+            DocNr: root.GetInt32OrNull("docNr"),
+            CustomerAdsolutId: root.TryGetGuidProperty("customerId", out var cid) ? cid : (Guid?)null,
+            InvoiceCustomerAdsolutId: root.TryGetGuidProperty("invoiceCustomerId", out var icid) ? icid : (Guid?)null,
             // description = the contract title; name = the customer/company name.
-            CustomerName: TryGetString(root, "name"),
+            CustomerName: root.GetStringOrNull("name"),
             StateCode: stateCode,
             StateDescription: stateDescription,
-            DocDate: TryGetDateTimeOffset(root, "date"),
-            StartDate: TryGetDateTimeOffset(root, "startDate"),
-            StopDate: TryGetDateTimeOffset(root, "stopDate"),
-            EndDate: TryGetDateTimeOffset(root, "endDate"),
-            Description: TryGetString(root, "description"),
-            Memo: TryGetString(root, "memo"),
+            DocDate: root.GetDateTimeOffsetUnsetAsNull("date"),
+            StartDate: root.GetDateTimeOffsetUnsetAsNull("startDate"),
+            StopDate: root.GetDateTimeOffsetUnsetAsNull("stopDate"),
+            EndDate: root.GetDateTimeOffsetUnsetAsNull("endDate"),
+            Description: root.GetStringOrNull("description"),
+            Memo: root.GetStringOrNull("memo"),
             PeriodicityCode: periodicityCode,
             PeriodicityLabel: periodicityLabel,
             InvoicingPeriodicityCode: invPeriodicityCode,
             InvoicingPeriodicityLabel: invPeriodicityLabel,
-            NumberOfTerms: TryGetInt(root, "numberOfTerms"),
+            NumberOfTerms: root.GetInt32OrNull("numberOfTerms"),
             // totalExcl == totalExclIV in every sample; the plain totals are
             // canonical. Stored verbatim (no compute).
-            TotalExclVat: TryGetDecimal(root, "totalExcl") ?? 0m,
-            TotalVat: TryGetDecimal(root, "totalVat") ?? 0m,
-            TotalInclVat: TryGetDecimal(root, "totalIncl") ?? 0m,
-            AdsolutCreatedUtc: TryGetDateTimeOffset(root, "created"),
-            AdsolutLastModified: TryGetDateTimeOffset(root, "lastModified"),
+            TotalExclVat: root.GetDecimalOrNull("totalExcl") ?? 0m,
+            TotalVat: root.GetDecimalOrNull("totalVat") ?? 0m,
+            TotalInclVat: root.GetDecimalOrNull("totalIncl") ?? 0m,
+            AdsolutCreatedUtc: root.GetDateTimeOffsetUnsetAsNull("created"),
+            AdsolutLastModified: root.GetDateTimeOffsetUnsetAsNull("lastModified"),
             Lines: lines);
     }
 
@@ -183,22 +184,22 @@ public sealed class AdsolutContractsClient : IAdsolutContractsClient
         {
             ordinal++;
             if (el.ValueKind != JsonValueKind.Object) continue;
-            if (!TryGetGuid(el, "contractDetailArticleId", out var id)) continue;
+            if (!el.TryGetGuidProperty("contractDetailArticleId", out var id)) continue;
 
             list.Add(new AdsolutContractLine(
                 Id: id,
                 LineNr: ordinal,
-                ArticleId: TryGetGuid(el, "articleId", out var aid) ? aid : (Guid?)null,
-                Name: TryGetString(el, "name"),
-                Description: TryGetString(el, "description"),
-                Quantity: TryGetDecimal(el, "quantity"),
-                GrossUnitPrice: TryGetDecimal(el, "grossUnitPrice"),
-                Discount1: TryGetDecimal(el, "discount1"),
-                Discount2: TryGetDecimal(el, "discount2"),
-                UnitPrice: TryGetDecimal(el, "unitPrice"),
-                UnitPriceIncl: TryGetDecimal(el, "unitPriceIncl"),
-                StartDate: TryGetDateTimeOffset(el, "startDate"),
-                EndDate: TryGetDateTimeOffset(el, "endDate")));
+                ArticleId: el.TryGetGuidProperty("articleId", out var aid) ? aid : (Guid?)null,
+                Name: el.GetStringOrNull("name"),
+                Description: el.GetStringOrNull("description"),
+                Quantity: el.GetDecimalOrNull("quantity"),
+                GrossUnitPrice: el.GetDecimalOrNull("grossUnitPrice"),
+                Discount1: el.GetDecimalOrNull("discount1"),
+                Discount2: el.GetDecimalOrNull("discount2"),
+                UnitPrice: el.GetDecimalOrNull("unitPrice"),
+                UnitPriceIncl: el.GetDecimalOrNull("unitPriceIncl"),
+                StartDate: el.GetDateTimeOffsetUnsetAsNull("startDate"),
+                EndDate: el.GetDateTimeOffsetUnsetAsNull("endDate")));
         }
         return list;
     }
@@ -212,10 +213,10 @@ public sealed class AdsolutContractsClient : IAdsolutContractsClient
         foreach (var el in arr.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var value = TryGetString(el, "value");
+            var value = el.GetStringOrNull("value");
             if (value is null) continue;
             first ??= value;
-            if (string.Equals(TryGetString(el, "language"), "Nl", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(el.GetStringOrNull("language"), "Nl", StringComparison.OrdinalIgnoreCase))
             {
                 return value;
             }
@@ -223,44 +224,4 @@ public sealed class AdsolutContractsClient : IAdsolutContractsClient
         return first;
     }
 
-    private static bool TryGetGuid(JsonElement el, string name, out Guid value)
-    {
-        value = Guid.Empty;
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return false;
-        return Guid.TryParse(prop.GetString(), out value);
-    }
-
-    private static int? TryGetInt(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var v)) return v;
-        return null;
-    }
-
-    private static decimal? TryGetDecimal(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetDecimal(out var v)) return v;
-        return null;
-    }
-
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind == JsonValueKind.String ? prop.GetString() : null;
-    }
-
-    /// Adsolut serialises dates offset-less (no 'Z'), e.g. "2026-06-02T08:05:52".
-    /// Parse as UTC (AssumeUniversal). The sentinel "0001-01-01T00:00:00" means
-    /// "unset" → null, so a default date never lands in the mirror.
-    private static DateTimeOffset? TryGetDateTimeOffset(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return null;
-        var raw = prop.GetString();
-        if (string.IsNullOrEmpty(raw)) return null;
-        if (raw.StartsWith("0001-01-01", StringComparison.Ordinal)) return null;
-        return DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dto)
-            ? dto.ToUniversalTime()
-            : null;
-    }
 }

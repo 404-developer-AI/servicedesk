@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Performance;
 
@@ -38,7 +39,7 @@ public sealed class PerfReportBuilder
     private string BuildMarkdownCore(PerfDataset d, IReadOnlyList<PerfFinding> findings, IReadOnlyList<PerfCategoryScore> scores,
         string timeZoneId, IReadOnlyDictionary<string, string>? plans)
     {
-        var tz = ResolveZone(timeZoneId);
+        var tz = TimeZoneResolver.Resolve(timeZoneId, TimeZoneInfo.Utc);
         var sb = new StringBuilder();
         string Local(DateTimeOffset t) => TimeZoneInfo.ConvertTime(t, tz).ToString("yyyy-MM-dd HH:mm", C);
 
@@ -646,14 +647,4 @@ public sealed class PerfReportBuilder
     private static string Num(double? v, string format = "0") => v is null ? "–" : v.Value.ToString(format, C);
 
     private static string Pct(double? v) => v is null ? "–" : PerfFormat.Pct(v.Value);
-
-    private static TimeZoneInfo ResolveZone(string id)
-    {
-        if (!string.IsNullOrWhiteSpace(id))
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-            catch { /* fall through */ }
-        }
-        return TimeZoneInfo.Utc;
-    }
 }

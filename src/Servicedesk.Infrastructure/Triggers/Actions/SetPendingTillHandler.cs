@@ -6,6 +6,7 @@ using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Tickets;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Triggers.Actions;
 
@@ -248,16 +249,8 @@ internal static class SetPendingTillResolver
         if (string.IsNullOrWhiteSpace(tzId))
             return (DateTime.SpecifyKind(parsed, DateTimeKind.Utc), null);
 
-        TimeZoneInfo tz;
-        try { tz = TimeZoneInfo.FindSystemTimeZoneById(tzId); }
-        catch (TimeZoneNotFoundException)
-        {
+        if (TimeZoneResolver.Lookup(tzId, out var tz) != TimeZoneLookup.Found || tz is null)
             return (DateTime.SpecifyKind(parsed, DateTimeKind.Utc), null);
-        }
-        catch (InvalidTimeZoneException)
-        {
-            return (DateTime.SpecifyKind(parsed, DateTimeKind.Utc), null);
-        }
 
         if (tz.IsInvalidTime(parsed))
             return (null, $"Action 'absolute' '{raw}' is in the DST gap for {tz.Id}.");

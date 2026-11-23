@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Auth;
 
 namespace Servicedesk.Api.Activity;
@@ -48,8 +49,7 @@ public sealed class ActivityFeedHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        var idClaim = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (Guid.TryParse(idClaim, out var userId))
+        if (ActorContext.TryGetUserId(Context.User) is { } userId)
         {
             var enabled = await _users.GetActivityFeedEnabledAsync(userId, Context.ConnectionAborted);
             if (enabled)

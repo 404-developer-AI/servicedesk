@@ -9,6 +9,7 @@ using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Zammad;
 
@@ -619,10 +620,10 @@ public sealed class ZammadDryRunWorker : BackgroundService
             using var doc = JsonDocument.Parse(row.MappingJson);
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return null;
-            Guid? contactId = TryGetGuid(root, "contactId");
-            Guid? queueId = TryGetGuid(root, "queueId");
-            Guid? statusId = TryGetGuid(root, "statusId");
-            Guid? priorityId = TryGetGuid(root, "priorityId");
+            Guid? contactId = root.GetGuidOrNull("contactId");
+            Guid? queueId = root.GetGuidOrNull("queueId");
+            Guid? statusId = root.GetGuidOrNull("statusId");
+            Guid? priorityId = root.GetGuidOrNull("priorityId");
             if (contactId is null || queueId is null || statusId is null || priorityId is null)
                 return null;
             return new DryRunMappedSnapshot(
@@ -638,16 +639,6 @@ public sealed class ZammadDryRunWorker : BackgroundService
                 MappingJson: row.MappingJson);
         }
         catch (JsonException) { return null; }
-    }
-
-    private static Guid? TryGetGuid(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind switch
-        {
-            JsonValueKind.String when Guid.TryParse(prop.GetString(), out var g) => g,
-            _ => null,
-        };
     }
 
     private static DateTime? TryGetUtcDateTime(JsonElement el, string name)

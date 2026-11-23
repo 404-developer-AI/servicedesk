@@ -93,7 +93,7 @@ public static class TicketEndpoints
                 }
             }
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             // Queue-access enforcement: admins get null (no filter), agents
@@ -159,7 +159,7 @@ public static class TicketEndpoints
             Servicedesk.Infrastructure.Auth.IUserService users,
             [FromServices] Npgsql.NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             // v0.1.33 — the latest page of the timeline only (older events via
@@ -291,7 +291,7 @@ public static class TicketEndpoints
             if (untilId is <= 0)
                 return Results.BadRequest(new { error = "untilId must be a positive event id." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
             var ticket = await repo.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
             if (ticket is null) return Results.NotFound();
@@ -338,7 +338,7 @@ public static class TicketEndpoints
             if (PendingTillRules.IsInPast(req.PendingTillUtc, clock.GetUtcNow().UtcDateTime))
                 return Results.BadRequest(new { error = PendingTillRules.PastMessage, code = PendingTillRules.PastCode });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             // v0.0.105 — project tickets are pinned to the configured project
@@ -494,7 +494,7 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IStatusGateService gates, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var current = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -518,7 +518,7 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IFirstOpenGateService gates, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var current = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -540,7 +540,7 @@ public static class TicketEndpoints
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
             IFirstOpenGateService gates, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var current = await tickets.GetAccessibleDetailAsync(queueAccess, userId, userRole, id, ct);
@@ -687,7 +687,7 @@ public static class TicketEndpoints
             ITicketMutationService mutations, IStatusGateService gateService,
             Servicedesk.Infrastructure.Persistence.Taxonomy.ITaxonomyRepository taxonomy, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             if (req.ClearCategory && req.CategoryId.HasValue)
                 return Results.BadRequest(new { error = "Choose a category or clear it, not both.", code = "category_conflict" });
             if (req.CategoryId is Guid categoryId)
@@ -970,7 +970,7 @@ public static class TicketEndpoints
             if (req.CompanyId == Guid.Empty)
                 return Results.BadRequest(new { error = "companyId is required." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var current = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1056,7 +1056,7 @@ public static class TicketEndpoints
             if (req.ContactId == Guid.Empty)
                 return Results.BadRequest(new { error = "contactId is required." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var current = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1132,7 +1132,7 @@ public static class TicketEndpoints
             if (req.EventType != "Comment" && req.EventType != "Note" && req.EventType != "Call")
                 return Results.BadRequest(new { error = "eventType must be 'Comment', 'Note' or 'Call'." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var actor = ResolveMutationActor(http);
 
             // Queue-access check via parent ticket (shared rule, v0.0.102)
@@ -1276,7 +1276,7 @@ public static class TicketEndpoints
             CancellationToken ct) =>
         {
             req = req with { BodyHtml = htmlSanitizer.Sanitize(req.BodyHtml) };
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1379,7 +1379,7 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             ISettingsService settings, ISignatureComposer signatures, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1404,7 +1404,7 @@ public static class TicketEndpoints
             IRecipientSuggestionRepository suggestions, IQueueAccessService queueAccess,
             CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var context = await suggestions.GetTicketContextAsync(id, ct);
@@ -1425,7 +1425,7 @@ public static class TicketEndpoints
             CancellationToken ct) =>
         {
             req = req with { BodyHtml = htmlSanitizer.Sanitize(req.BodyHtml) };
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             // Images pasted while editing arrive as staged uploads. An edit
@@ -1474,7 +1474,7 @@ public static class TicketEndpoints
             Guid id, long eventId, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             // Queue-access check via parent ticket
@@ -1494,7 +1494,7 @@ public static class TicketEndpoints
             Guid id, long eventId, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
@@ -1527,7 +1527,7 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1555,7 +1555,7 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1583,7 +1583,7 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1616,7 +1616,7 @@ public static class TicketEndpoints
             HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
             ISettingsService settings, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             IReadOnlyList<Guid>? accessibleQueueIds = null;
@@ -1661,7 +1661,7 @@ public static class TicketEndpoints
             if (req.TargetTicketId == id)
                 return Results.BadRequest(new { error = "A ticket cannot be merged into itself." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             // Both tickets must be visible to the actor through queue-access.
@@ -1773,7 +1773,7 @@ public static class TicketEndpoints
             if (req.ParentTicketId == id)
                 return Results.BadRequest(new { error = "A ticket cannot be its own parent." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var source = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1848,7 +1848,7 @@ public static class TicketEndpoints
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit,
             CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var source = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1889,7 +1889,7 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             ILinkedTicketPresetService presets, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var source = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1915,7 +1915,7 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             ILinkedTicketPresetService presets, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var source = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
@@ -1944,7 +1944,7 @@ public static class TicketEndpoints
             if (string.IsNullOrWhiteSpace(req.NewSubject))
                 return Results.BadRequest(new { error = "newSubject is required." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var source = await tickets.GetAccessibleDetailAsync(queueAccess, userId, userRole, id, ct);
@@ -2382,7 +2382,7 @@ public static class TicketEndpoints
     /// the endpoints already derived via <see cref="ActorContext.Resolve"/>.
     internal static TicketMutationActor ResolveMutationActor(HttpContext http)
     {
-        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = ActorContext.GetUserId(http);
         var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
         var (actor, role) = ActorContext.Resolve(http);
         return new TicketMutationActor(

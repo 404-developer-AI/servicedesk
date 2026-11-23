@@ -1,6 +1,6 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Servicedesk.Api.Auth;
 using Servicedesk.Api.Presence;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 
@@ -24,7 +24,7 @@ public static class RecentTicketsEndpoints
             IRecentTicketsService service,
             CancellationToken ct) =>
         {
-            var userId = ResolveUserId(httpContext);
+            var userId = ActorContext.TryGetUserId(httpContext);
             if (userId is null) return Results.Unauthorized();
             var items = await service.ListForUserAsync(userId.Value, ct);
             return Results.Ok(new { items });
@@ -37,7 +37,7 @@ public static class RecentTicketsEndpoints
             IHubContext<UserNotificationHub> hub,
             CancellationToken ct) =>
         {
-            var userId = ResolveUserId(httpContext);
+            var userId = ActorContext.TryGetUserId(httpContext);
             if (userId is null) return Results.Unauthorized();
             var changed = await service.AddAsync(userId.Value, ticketId, ct);
             if (changed)
@@ -54,7 +54,7 @@ public static class RecentTicketsEndpoints
             IHubContext<UserNotificationHub> hub,
             CancellationToken ct) =>
         {
-            var userId = ResolveUserId(httpContext);
+            var userId = ActorContext.TryGetUserId(httpContext);
             if (userId is null) return Results.Unauthorized();
             var changed = await service.RemoveAsync(userId.Value, ticketId, ct);
             if (changed)
@@ -72,7 +72,7 @@ public static class RecentTicketsEndpoints
             IHubContext<UserNotificationHub> hub,
             CancellationToken ct) =>
         {
-            var userId = ResolveUserId(httpContext);
+            var userId = ActorContext.TryGetUserId(httpContext);
             if (userId is null) return Results.Unauthorized();
             var removed = await service.ClearAsync(userId.Value, ct);
             if (removed > 0)
@@ -89,7 +89,7 @@ public static class RecentTicketsEndpoints
             IHubContext<UserNotificationHub> hub,
             CancellationToken ct) =>
         {
-            var userId = ResolveUserId(httpContext);
+            var userId = ActorContext.TryGetUserId(httpContext);
             if (userId is null) return Results.Unauthorized();
             await service.ReorderAsync(userId.Value, request.TicketIds ?? Array.Empty<Guid>(), ct);
             await BroadcastAsync(hub, userId.Value, ct);
@@ -101,12 +101,6 @@ public static class RecentTicketsEndpoints
 
     private static Task BroadcastAsync(IHubContext<UserNotificationHub> hub, Guid userId, CancellationToken ct) =>
         hub.Clients.Group($"user:{userId}").SendAsync("RecentTicketsUpdated", ct);
-
-    private static Guid? ResolveUserId(HttpContext httpContext)
-    {
-        var raw = httpContext.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        return Guid.TryParse(raw, out var id) ? id : null;
-    }
 }
 
 public sealed record ReorderRecentTicketsRequest(IReadOnlyList<Guid>? TicketIds);

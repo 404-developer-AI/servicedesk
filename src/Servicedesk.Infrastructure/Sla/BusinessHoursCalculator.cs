@@ -1,4 +1,5 @@
 using Servicedesk.Domain.Sla;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Sla;
 
@@ -17,7 +18,7 @@ public sealed class BusinessHoursCalculator : IBusinessHoursCalculator
     {
         if (minutes <= 0) return DateTime.SpecifyKind(startUtc, DateTimeKind.Utc);
 
-        var tz = ResolveTimezone(schema.Timezone);
+        var tz = TimeZoneResolver.Resolve(schema.Timezone, TimeZoneInfo.Utc);
         var holidays = new HashSet<DateOnly>(schema.Holidays.Select(h => h.Date));
         var slotsByDay = GroupSlotsByDay(schema.Slots);
 
@@ -63,7 +64,7 @@ public sealed class BusinessHoursCalculator : IBusinessHoursCalculator
     public int BusinessMinutesBetween(DateTime fromUtc, DateTime toUtc, BusinessHoursSchema schema)
     {
         if (toUtc <= fromUtc) return 0;
-        var tz = ResolveTimezone(schema.Timezone);
+        var tz = TimeZoneResolver.Resolve(schema.Timezone, TimeZoneInfo.Utc);
         var holidays = new HashSet<DateOnly>(schema.Holidays.Select(h => h.Date));
         var slotsByDay = GroupSlotsByDay(schema.Slots);
         if (slotsByDay.Count == 0)
@@ -92,12 +93,6 @@ public sealed class BusinessHoursCalculator : IBusinessHoursCalculator
             cursor = cursor.AddDays(1);
         }
         return total;
-    }
-
-    private static TimeZoneInfo ResolveTimezone(string id)
-    {
-        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-        catch { return TimeZoneInfo.Utc; }
     }
 
     private static Dictionary<int, List<BusinessHoursSlot>> GroupSlotsByDay(IReadOnlyList<BusinessHoursSlot> slots)

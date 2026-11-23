@@ -28,7 +28,7 @@ public static class DashboardEndpoints
             IQueueAccessService queueAccess,
             CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
             var scope = await queueAccess.GetScopeAsync(userId, role, ct);
 

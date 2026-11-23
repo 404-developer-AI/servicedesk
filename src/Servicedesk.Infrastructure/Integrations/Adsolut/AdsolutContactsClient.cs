@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -112,7 +113,7 @@ public sealed class AdsolutContactsClient : IAdsolutContactsClient
         foreach (var el in items.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            if (!TryGetGuid(el, "id", out var id)) continue;
+            if (!el.TryGetGuidProperty("id", out var id)) continue;
 
             var (lastModified, wasOffsetless) = TryGetDateTimeOffset(el, "lastModified");
             if (wasOffsetless) offsetlessCount++;
@@ -124,46 +125,16 @@ public sealed class AdsolutContactsClient : IAdsolutContactsClient
             // trigger the unique-constraint on insert.
             list.Add(new AdsolutContact(
                 Id: id,
-                FirstName: TryGetString(el, "firstName") ?? string.Empty,
-                LastName: TryGetString(el, "lastName") ?? string.Empty,
-                Email: (TryGetString(el, "email") ?? string.Empty).Trim(),
-                Phone: TryGetString(el, "phone") ?? string.Empty,
-                MobilePhone: TryGetString(el, "mobilePhone") ?? string.Empty,
-                Active: TryGetBool(el, "active", defaultValue: true),
+                FirstName: el.GetStringOrNull("firstName") ?? string.Empty,
+                LastName: el.GetStringOrNull("lastName") ?? string.Empty,
+                Email: (el.GetStringOrNull("email") ?? string.Empty).Trim(),
+                Phone: el.GetStringOrNull("phone") ?? string.Empty,
+                MobilePhone: el.GetStringOrNull("mobilePhone") ?? string.Empty,
+                Active: el.GetBool("active", defaultValue: true),
                 LastModified: lastModified));
         }
 
         return new ParseResult(list, offsetlessCount);
-    }
-
-    private static bool TryGetGuid(JsonElement el, string name, out Guid value)
-    {
-        value = Guid.Empty;
-        if (!el.TryGetProperty(name, out var prop)) return false;
-        if (prop.ValueKind != JsonValueKind.String) return false;
-        return Guid.TryParse(prop.GetString(), out value);
-    }
-
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind switch
-        {
-            JsonValueKind.String => prop.GetString(),
-            JsonValueKind.Null => null,
-            _ => null,
-        };
-    }
-
-    private static bool TryGetBool(JsonElement el, string name, bool defaultValue)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return defaultValue;
-        return prop.ValueKind switch
-        {
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            _ => defaultValue,
-        };
     }
 
     private static (DateTimeOffset? Value, bool WasOffsetless) TryGetDateTimeOffset(JsonElement el, string name)

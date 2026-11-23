@@ -4,6 +4,7 @@ using Npgsql;
 using Servicedesk.Domain.Reports;
 using Servicedesk.Infrastructure.Integrations.M365;
 using Servicedesk.Infrastructure.Mail.Graph;
+using static Servicedesk.Infrastructure.Integrations.Http.UpstreamHttp;
 
 namespace Servicedesk.Infrastructure.Contracts.Reports;
 
@@ -156,7 +157,7 @@ public sealed class M365ReportSender : IM365ReportSender
         {
             // Record the failed attempt so the history shows it, then surface a
             // safe message (Graph error details stay server-side).
-            await _sendLog.InsertAsync(BuildLogEntry(ctx, actor, "failed", null, Truncate(ex.Message, 1000)), ct);
+            await _sendLog.InsertAsync(BuildLogEntry(ctx, actor, "failed", null, TruncateNoEllipsis(ex.Message, 1000)), ct);
             return new ReportSendResult(false, "Sending failed. Check the Microsoft 365 mail configuration and try again.", null, null);
         }
     }
@@ -367,5 +368,4 @@ public sealed class M365ReportSender : IM365ReportSender
         return $"m365-report-{safe}-{DateTime.UtcNow:yyyyMMdd}.pdf";
     }
 
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 }

@@ -28,7 +28,7 @@ public static class PortalPreferencesEndpoints
     private static async Task<Guid?> ActiveViewerIdAsync(HttpContext http, IPortalAccountRepository accounts, ISettingsService settings, CancellationToken ct)
     {
         if (!await PortalRequest.PortalEnabledAsync(settings, ct)) return null;
-        var userId = PortalRequest.UserId(http);
+        var userId = ActorContext.TryGetUserId(http);
         if (userId is null) return null;
         var viewer = await accounts.GetViewerAsync(userId.Value, ct);
         return viewer is { Status: PortalAccountStatus.Active } ? viewer.UserId : null;

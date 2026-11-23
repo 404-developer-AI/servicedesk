@@ -1,5 +1,6 @@
 using System.Globalization;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Health;
 
@@ -30,15 +31,8 @@ internal static class HealthTimeFormat
     /// Same defensive resolver as <see cref="Integrations.Telavox.TelavoxPollingWorker"/>
     /// — keep the two in sync so the health tile and the worker agree about
     /// which timezone is in play.
-    public static TimeZoneInfo ResolveTimeZone(string? id)
-    {
-        if (!string.IsNullOrWhiteSpace(id))
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-            catch { /* Invalid IANA id — fall through. */ }
-        }
-        return TimeZoneInfo.Local;
-    }
+    public static TimeZoneInfo ResolveTimeZone(string? id) =>
+        TimeZoneResolver.Resolve(id, TimeZoneInfo.Local);
 
     public static string Local(DateTime utc, TimeZoneInfo tz) =>
         TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), tz)

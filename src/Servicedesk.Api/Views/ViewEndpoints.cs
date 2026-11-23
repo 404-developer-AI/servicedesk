@@ -26,7 +26,7 @@ public static class ViewEndpoints
         // other agent; the management surface uses /all below.
         group.MapGet("/", async (HttpContext http, IViewAccessService viewAccess, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
             return Results.Ok(await viewAccess.GetAccessibleViewsAsync(userId, role, ct));
         }).WithName("ListViews")
@@ -47,7 +47,7 @@ public static class ViewEndpoints
             var view = await repo.GetAsync(id, ct);
             if (view is null) return Results.NotFound();
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
             if (!await viewAccess.HasViewAccessAsync(userId, role, id, ct))
                 return Results.NotFound();
@@ -66,7 +66,7 @@ public static class ViewEndpoints
                 return Results.BadRequest(new { error = "Name is required." });
             if (req.SortOrder is { } so && (so < 0 || so > 100))
                 return Results.BadRequest(new { error = "SortOrder must be between 0 and 100." });
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var created = await repo.CreateAsync(userId, req.Name.Trim(), req.FiltersJson ?? "{}", req.Columns, req.SortOrder ?? 0, req.IsShared ?? false, req.DisplayConfigJson ?? "{}", req.AllowUserColumns ?? true, req.RewindTracked ?? false, ct);
             viewAccess.InvalidateAllViewCaches();
             if (created.RewindTracked) await AuditRewindAsync(audit, http, created, ct);

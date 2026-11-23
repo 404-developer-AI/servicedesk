@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
@@ -370,7 +369,7 @@ public static class AgentProfileEndpoints
     }
 
     private static Guid CurrentUser(HttpContext http)
-        => Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        => ActorContext.GetUserId(http);
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 

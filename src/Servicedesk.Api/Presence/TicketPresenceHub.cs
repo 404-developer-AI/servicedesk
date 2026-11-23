@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Dashboard;
 using Servicedesk.Infrastructure.Realtime;
@@ -87,11 +88,12 @@ public sealed class TicketPresenceHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        var userIdClaim = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var connUserId = ActorContext.TryGetUserId(Context.User);
+        var userIdClaim = connUserId?.ToString() ?? "";
         var isBackoffice = false;
-        if (Guid.TryParse(userIdClaim, out var connUserId))
+        if (connUserId is { } backofficeUserId)
         {
-            try { isBackoffice = await _users.GetBackofficeFormsEnabledAsync(connUserId, Context.ConnectionAborted); }
+            try { isBackoffice = await _users.GetBackofficeFormsEnabledAsync(backofficeUserId, Context.ConnectionAborted); }
             catch { isBackoffice = false; }
         }
         var state = new ConnectionState
@@ -165,8 +167,7 @@ public sealed class TicketPresenceHub : Hub
         // Register the connection so the broadcaster can mask each agent's
         // tickets for this recipient's queue access. Customers were already
         // refused above.
-        var subIdClaim = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (Guid.TryParse(subIdClaim, out var subUserId))
+        if (ActorContext.TryGetUserId(Context.User) is { } subUserId)
         {
             AgentActivitySubscribers[Context.ConnectionId] =
                 new AgentActivitySubscriber(subUserId, role!);

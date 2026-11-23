@@ -15,7 +15,7 @@ public static class AgentQueueEndpoints
         app.MapGet("/api/queues", async (
             HttpContext http, IQueueAccessService svc, ITaxonomyRepository taxonomy, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             var accessibleIds = await svc.GetAccessibleQueueIdsAsync(userId, role, ct);

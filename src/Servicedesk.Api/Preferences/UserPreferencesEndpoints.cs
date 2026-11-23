@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Dapper;
@@ -28,7 +27,7 @@ public static class UserPreferencesEndpoints
             Guid? viewId,
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, [FromServices] ISettingsService settings, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
 
             string? perView = null;
@@ -66,7 +65,7 @@ public static class UserPreferencesEndpoints
             if (!ColumnPreferenceResolver.IsValidLayout(req.Columns))
                 return Results.BadRequest(new { error = "Columns must be a comma-separated list of column ids." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var key = viewId.HasValue ? $"columns:view:{viewId}" : "columns";
 
             await using var conn = await dataSource.OpenConnectionAsync(ct);
@@ -97,7 +96,7 @@ public static class UserPreferencesEndpoints
             Guid? viewId,
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var key = viewId.HasValue ? $"columns:view:{viewId}" : "columns";
 
             await using var conn = await dataSource.OpenConnectionAsync(ct);
@@ -114,7 +113,7 @@ public static class UserPreferencesEndpoints
         group.MapGet("/workspace", async (
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
 
             var rows = await conn.QueryAsync<(string pref_key, string pref_value)>(
@@ -137,7 +136,7 @@ public static class UserPreferencesEndpoints
             if (req.Entries.Any(e => !e.Key.StartsWith("workspace:")))
                 return Results.BadRequest("All keys must start with 'workspace:'.");
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
 
             // v0.1.25 — one statement for the whole snapshot instead of one
             // upsert per key (up to 154 per save in the Performance monitor).
@@ -169,7 +168,7 @@ public static class UserPreferencesEndpoints
             if (!key.StartsWith("workspace:"))
                 return Results.BadRequest("Key must start with 'workspace:'.");
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
 
             await conn.ExecuteAsync(new CommandDefinition(
@@ -194,7 +193,7 @@ public static class UserPreferencesEndpoints
         group.MapGet("/ui-theme", async (
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, [FromServices] ISettingsService settings, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
 
             var userPref = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
@@ -215,7 +214,7 @@ public static class UserPreferencesEndpoints
             if (normalized is null)
                 return Results.BadRequest(new { error = "Theme must be 'steaan', 'light' or 'dark'." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
             await conn.ExecuteAsync(new CommandDefinition(
                 """
@@ -232,7 +231,7 @@ public static class UserPreferencesEndpoints
         group.MapDelete("/ui-theme", async (
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
             await conn.ExecuteAsync(new CommandDefinition(
                 "DELETE FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
@@ -252,7 +251,7 @@ public static class UserPreferencesEndpoints
         group.MapGet("/pinned-features", async (
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
             var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
                 "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:pinned-features'",
@@ -268,7 +267,7 @@ public static class UserPreferencesEndpoints
             if (clean is null)
                 return Results.BadRequest(new { error = "Invalid pinned-features payload." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var value = JsonSerializer.Serialize(clean);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
             await conn.ExecuteAsync(new CommandDefinition(
@@ -295,7 +294,7 @@ public static class UserPreferencesEndpoints
         group.MapGet("/pinned-views", async (
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
             var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
                 "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:pinned-views'",
@@ -311,7 +310,7 @@ public static class UserPreferencesEndpoints
             if (clean is null)
                 return Results.BadRequest(new { error = "Invalid pinned-views payload." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var value = JsonSerializer.Serialize(clean);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
             await conn.ExecuteAsync(new CommandDefinition(
@@ -342,7 +341,7 @@ public static class UserPreferencesEndpoints
         group.MapGet("/post-close-redirect", async (
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
             var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
                 "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:post-close-redirect'",
@@ -358,7 +357,7 @@ public static class UserPreferencesEndpoints
             if (normalized is null)
                 return Results.BadRequest(new { error = "Target must be 'dashboard', 'timesheet', or 'view:<guid>'." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
             await conn.ExecuteAsync(new CommandDefinition(
                 """
@@ -379,7 +378,7 @@ public static class UserPreferencesEndpoints
         group.MapGet("/notification-mail", async (
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
             var rows = (await conn.QueryAsync<(string Key, string Value)>(new CommandDefinition(
                 "SELECT pref_key, pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = ANY(@keys)",
@@ -398,7 +397,7 @@ public static class UserPreferencesEndpoints
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             if (req is null) return Results.BadRequest(new { error = "Body is required." });
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var changes = new List<(string Key, bool On)>();
             if (req.Tags is { } t) changes.Add((NotificationPreferenceKeys.MentionEmail, t));
             if (req.Replies is { } r) changes.Add((NotificationPreferenceKeys.ReplyEmail, r));

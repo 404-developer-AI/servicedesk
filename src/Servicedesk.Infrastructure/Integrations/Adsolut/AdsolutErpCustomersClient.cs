@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -40,24 +41,11 @@ public sealed class AdsolutErpCustomersClient : IAdsolutErpCustomersClient
                 if (string.IsNullOrWhiteSpace(body)) return null;
                 var root = JsonDocument.Parse(body).RootElement;
                 if (root.ValueKind != JsonValueKind.Object) return null;
-                var id = TryGetGuid(root, "id", out var rid) ? rid : customerId;
-                return new AdsolutErpCustomer(id, TryGetString(root, "code"), TryGetString(root, "name"));
+                var id = root.TryGetGuidProperty("id", out var rid) ? rid : customerId;
+                return new AdsolutErpCustomer(id, root.GetNonBlankString("code"), root.GetNonBlankString("name"));
             },
             auditPayload: new { administrationId, customerId },
             ct: ct);
     }
 
-    private static bool TryGetGuid(JsonElement el, string name, out Guid value)
-    {
-        value = Guid.Empty;
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return false;
-        return Guid.TryParse(prop.GetString(), out value);
-    }
-
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return null;
-        var s = prop.GetString();
-        return string.IsNullOrWhiteSpace(s) ? null : s;
-    }
 }

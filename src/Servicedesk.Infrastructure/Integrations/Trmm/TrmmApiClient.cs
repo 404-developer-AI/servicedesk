@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
+using static Servicedesk.Infrastructure.Integrations.Http.UpstreamHttp;
 
 namespace Servicedesk.Infrastructure.Integrations.Trmm;
 
@@ -241,7 +242,7 @@ public sealed class TrmmApiClient : ITrmmApiClient
                     object? successPayload = includeSuccessBodySnippet
                         ? new
                         {
-                            snippet = Truncate(responseBody, 8192),
+                            snippet = TruncateNoEllipsis(responseBody, 8192),
                             responseLength = responseBody.Length,
                         }
                         : null;
@@ -271,7 +272,7 @@ public sealed class TrmmApiClient : ITrmmApiClient
                 HttpStatus: status,
                 LatencyMs: (int)stopwatch.ElapsedMilliseconds,
                 ErrorCode: upstreamCode,
-                Payload: new { snippet = Truncate(responseBody, 256) }), ct);
+                Payload: new { snippet = TruncateNoEllipsis(responseBody, 256) }), ct);
             throw new TrmmApiException(
                 BuildHttpMessage(status, upstreamCode),
                 httpStatus: status,
@@ -288,15 +289,6 @@ public sealed class TrmmApiClient : ITrmmApiClient
         var raw = (await _settings.GetAsync<string>(SettingKeys.Trmm.BaseUrl, ct) ?? string.Empty).Trim();
         return raw.TrimEnd('/');
     }
-
-    private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
-    {
-        try { return await response.Content.ReadAsStringAsync(ct); }
-        catch { return string.Empty; }
-    }
-
-    private static string Truncate(string s, int max) =>
-        s.Length <= max ? s : s[..max];
 
     private static string BuildHttpMessage(int status, string? upstreamCode)
     {

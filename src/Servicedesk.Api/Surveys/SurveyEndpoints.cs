@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -84,7 +83,7 @@ public static class SurveyEndpoints
             var err = await ValidateAsync(req, settings, ct);
             if (err is not null) return Results.BadRequest(new { error = err });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var metadata = BuildMetadataInput(req, sanitizer, inviteSanitizer);
 
             Guid id;

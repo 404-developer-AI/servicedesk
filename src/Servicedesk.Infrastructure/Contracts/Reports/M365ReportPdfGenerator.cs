@@ -2,6 +2,7 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using Servicedesk.Infrastructure.Integrations.M365;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Contracts.Reports;
 
@@ -41,7 +42,7 @@ public static class M365ReportPdfGenerator
     public static byte[] Generate(M365ReportPdfData data)
     {
         QuestPDF.Settings.License = LicenseType.Community;
-        var tz = ResolveTimezone(data.ServerTimezoneId);
+        var tz = TimeZoneResolver.Resolve(data.ServerTimezoneId, TimeZoneInfo.Utc);
 
         return Document.Create(container =>
         {
@@ -214,13 +215,6 @@ public static class M365ReportPdfGenerator
     };
 
     private static string Or(string? v) => string.IsNullOrWhiteSpace(v) ? "—" : v;
-
-    private static TimeZoneInfo ResolveTimezone(string? id)
-    {
-        if (string.IsNullOrEmpty(id)) return TimeZoneInfo.Utc;
-        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-        catch { return TimeZoneInfo.Utc; }
-    }
 
     private static string FormatLocal(DateTime utc, TimeZoneInfo tz)
     {

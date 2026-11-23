@@ -2,12 +2,14 @@ using System.Security.Claims;
 
 namespace Servicedesk.Api.Auth;
 
-/// Helper for pulling the current actor's identity off <see cref="HttpContext"/>
-/// in a consistent way so every endpoint audits the same shape: an actor
-/// string (email when available, otherwise user id or "anon") and the role
-/// that was on the session at the time of the call.
+/// The one place that reads the signed-in user's identity off a request or a
+/// hub connection. Endpoints, filters and hubs never parse
+/// <see cref="ClaimTypes.NameIdentifier"/> themselves (guarded by
+/// <c>ActorContextUsageTests</c>), so "who is calling" has one definition.
 public static class ActorContext
 {
+    /// Actor string for audit rows (email when available, otherwise name,
+    /// user id or "anon") and the role that was on the session at the time.
     public static (string Actor, string Role) Resolve(HttpContext httpContext)
     {
         var user = httpContext.User;
@@ -18,10 +20,25 @@ public static class ActorContext
         return (email ?? name ?? id ?? "anon", role);
     }
 
-    /// Strict variant: parse the NameIdentifier claim as a Guid. Throws if
-    /// the call is reached without an authenticated user — endpoints behind
-    /// <c>RequireAgent</c>/<c>RequireAdmin</c> never see that case, so the
-    /// throw acts as a defensive contract rather than a user-facing error.
-    public static Guid GetUserId(HttpContext httpContext) =>
-        Guid.Parse(httpContext.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+    /// Strict: the signed-in user's id. Throws when the request carries no
+    /// valid user id — endpoints behind <c>RequireAgent</c>/<c>RequireAdmin</c>/
+    /// <c>RequireCustomer</c> never reach that case, so the throw is a
+    /// defensive contract (a 500), never a silent fallback to another identity.
+    public static Guid GetUserId(HttpContext httpContext) => GetUserId(httpContext.User);
+
+    /// <inheritdoc cref="GetUserId(HttpContext)"/>
+    public static Guid GetUserId(ClaimsPrincipal? user) =>
+        TryGetUserId(user)
+        ?? throw new InvalidOperationException("The request has no authenticated user id.");
+
+    /// Lenient: the signed-in user's id, or null when there is none or the
+    /// claim is not a valid Guid. For code that also runs anonymously
+    /// (filters, middleware, hubs before auth is enforced).
+    public static Guid? TryGetUserId(HttpContext httpContext) => TryGetUserId(httpContext.User);
+
+    /// <inheritdoc cref="TryGetUserId(HttpContext)"/>
+    public static Guid? TryGetUserId(ClaimsPrincipal? user) =>
+        Guid.TryParse(user?.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) && id != Guid.Empty
+            ? id
+            : null;
 }

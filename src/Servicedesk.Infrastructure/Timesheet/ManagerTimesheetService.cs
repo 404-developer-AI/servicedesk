@@ -3,6 +3,7 @@ using Dapper;
 using Npgsql;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Timesheet;
 
@@ -315,7 +316,7 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
         // the configured app timezone so a 23:30 UTC login lands on the
         // right local day.
         var tzId = await _settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
-        var tz = ResolveTimeZone(tzId);
+        var tz = TimeZoneResolver.Resolve(tzId, TimeZoneInfo.Local);
         var fromUtc = TimeZoneInfo.ConvertTimeToUtc(
             DateTime.SpecifyKind(first.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified), tz);
         var toUtc = TimeZoneInfo.ConvertTimeToUtc(
@@ -389,18 +390,6 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
             }
         }
         return result;
-    }
-
-    /// Mirrors the resolver used by statistics/SLA so every surface agrees
-    /// on what "the local day" means: configured IANA id, else server-local.
-    private static TimeZoneInfo ResolveTimeZone(string id)
-    {
-        if (!string.IsNullOrWhiteSpace(id))
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-            catch { /* Invalid IANA id — fall through. */ }
-        }
-        return TimeZoneInfo.Local;
     }
 
     private async Task<List<TimesheetFieldError>> ValidateAsync(

@@ -141,7 +141,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         var result = await admin.AddLocalUserAsync(
@@ -186,7 +186,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         if (string.IsNullOrWhiteSpace(request.Oid))
@@ -233,7 +233,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         if (string.IsNullOrWhiteSpace(request.Oid))
@@ -282,7 +282,7 @@ public static class AdminUserEndpoints
         IQueueAccessService queueAccess,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         var result = await admin.UpdateRoleAsync(id, request.Role, adminId.Value, ct);
@@ -321,7 +321,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         var result = await admin.SetActiveAsync(id, active, adminId.Value, ct);
@@ -352,7 +352,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         var result = await admin.ResetPasswordAsync(id, request.NewPassword ?? string.Empty, adminId.Value, ct);
@@ -384,7 +384,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         var result = await admin.DeleteAsync(id, adminId.Value, ct);
@@ -447,7 +447,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         if (request.CalendarId is { Length: > 1000 })
@@ -534,7 +534,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         var requested = request.TileIds ?? Array.Empty<string>();
@@ -603,7 +603,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         var result = await admin.UpdateKbFlagAsync(
@@ -637,7 +637,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         var result = await admin.UpdateIsoFlagsAsync(
@@ -672,7 +672,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var adminId = RequireUserId(httpContext);
+        var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         var result = await admin.UpdateTimesheetFlagsAsync(
@@ -773,12 +773,6 @@ public static class AdminUserEndpoints
     }
 
     // ---- helpers ----------------------------------------------------------
-
-    private static Guid? RequireUserId(HttpContext httpContext)
-    {
-        var claim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.TryParse(claim, out var id) ? id : null;
-    }
 
     private static async Task<IResult> LogAndReturnAsync(
         HttpContext httpContext,

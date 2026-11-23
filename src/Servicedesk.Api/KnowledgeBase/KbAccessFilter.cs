@@ -1,4 +1,4 @@
-using System.Security.Claims;
+using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Auth;
 
 namespace Servicedesk.Api.KnowledgeBase;
@@ -18,8 +18,7 @@ public static class KbAccessFilter
         builder.AddEndpointFilter(async (context, next) =>
         {
             var http = context.HttpContext;
-            var idClaim = http.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!Guid.TryParse(idClaim, out var userId))
+            if (ActorContext.TryGetUserId(http) is not { } userId)
                 return Results.Unauthorized();
 
             var users = http.RequestServices.GetRequiredService<IUserService>();

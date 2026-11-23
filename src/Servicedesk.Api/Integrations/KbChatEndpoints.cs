@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
@@ -59,7 +58,7 @@ public static class KbChatEndpoints
         if (req is null || string.IsNullOrWhiteSpace(req.Message))
             return Results.BadRequest(new { error = "missing_message", message = "A message is required." });
 
-        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = ActorContext.GetUserId(http);
 
         var history = (req.History ?? Array.Empty<TurnMessage>())
             .TakeLast(MaxHistoryMessages)

@@ -1,3 +1,4 @@
+using static Servicedesk.Infrastructure.Integrations.Http.UpstreamHttp;
 namespace Servicedesk.Infrastructure.Integrations.Telavox;
 
 /// One field Telavox sent (query string, form or JSON body), masked.
@@ -55,10 +56,10 @@ public sealed class TelavoxEventProbeBuffer
         raw.Take(MaxFields)
            .Select(f => new TelavoxProbeField(
                f.Source,
-               Truncate(f.Name, MaxNameLength),
+               TruncateNoEllipsis(f.Name, MaxNameLength),
                IsTimeField(f.Name)
-                   ? Truncate(f.Value ?? string.Empty, MaxValueLength)
-                   : MaskPhone(Truncate(f.Value ?? string.Empty, MaxValueLength))))
+                   ? TruncateNoEllipsis(f.Value ?? string.Empty, MaxValueLength)
+                   : MaskPhone(TruncateNoEllipsis(f.Value ?? string.Empty, MaxValueLength))))
            .ToList();
 
     /// Timestamps are digit runs too, but the probe needs them in full to
@@ -91,5 +92,4 @@ public sealed class TelavoxEventProbeBuffer
         return new string(chars);
     }
 
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 }

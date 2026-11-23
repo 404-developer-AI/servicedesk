@@ -2,6 +2,7 @@ using System.Globalization;
 using Dapper;
 using Npgsql;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Statistics;
 
@@ -24,7 +25,7 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
         // week" line up with the local working day, not UTC. periodOffset
         // shifts the window by whole units for prev/next navigation.
         var tzId = await _settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
-        var tz = ResolveTimeZone(tzId);
+        var tz = TimeZoneResolver.Resolve(tzId, TimeZoneInfo.Local);
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz));
         var (from, to, periodLabel) = ResolvePeriod(tile.Period, today, periodOffset);
         // UTC instants for the same window — used by metrics that filter on a
@@ -625,19 +626,6 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
     private static bool IsSingleScope(string scope) =>
         string.Equals(scope, StatisticScopes.ViewerSelf, StringComparison.Ordinal) ||
         string.Equals(scope, StatisticScopes.User, StringComparison.Ordinal);
-
-    /// Resolves the configured IANA timezone id, falling back to the server's
-    /// local zone when unset/invalid (mirrors the helper used by the SLA +
-    /// integrations code so all surfaces agree on the local day).
-    private static TimeZoneInfo ResolveTimeZone(string id)
-    {
-        if (!string.IsNullOrWhiteSpace(id))
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-            catch { /* Invalid IANA id — fall through. */ }
-        }
-        return TimeZoneInfo.Local;
-    }
 
     private static double ToHours(long minutes) => Math.Round(minutes / 60.0, 2);
 

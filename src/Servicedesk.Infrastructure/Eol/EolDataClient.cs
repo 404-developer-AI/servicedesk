@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Settings;
+using static Servicedesk.Infrastructure.Integrations.Http.UpstreamHttp;
 
 namespace Servicedesk.Infrastructure.Eol;
 
@@ -150,12 +151,6 @@ public sealed class EolDataClient : IEolDataClient
     {
         var raw = (await _settings.GetAsync<string>(SettingKeys.Eol.BaseUrl, ct) ?? string.Empty).Trim();
         return raw.TrimEnd('/');
-    }
-
-    private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
-    {
-        try { return await response.Content.ReadAsStringAsync(ct); }
-        catch { return string.Empty; }
     }
 
     // ---- Parsing -------------------------------------------------------

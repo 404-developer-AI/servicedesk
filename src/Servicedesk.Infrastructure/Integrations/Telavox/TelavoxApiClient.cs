@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Integrations.Http;
+using static Servicedesk.Infrastructure.Integrations.Http.UpstreamHttp;
 
 namespace Servicedesk.Infrastructure.Integrations.Telavox;
 
@@ -331,7 +333,7 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
                 return responseBody;
             }
 
-            var upstreamCode = TryParseErrorCode(responseBody);
+            var upstreamCode = TryParseErrorCode(responseBody, true);
             // 429 and 5xx are transient-warn, 4xx are caller errors. 401 is
             // a real auth problem (bad token) and admin-actionable.
             var outcome = response.StatusCode == HttpStatusCode.TooManyRequests || status >= 500
@@ -356,45 +358,6 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
             response.Dispose();
         }
     }
-
-    private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
-    {
-        try { return await response.Content.ReadAsStringAsync(ct); }
-        catch (Exception) { return string.Empty; }
-    }
-
-    private static string? TryParseErrorCode(string body)
-    {
-        if (string.IsNullOrWhiteSpace(body)) return null;
-        try
-        {
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
-            // Telavox error envelopes seen empirically: { error: "..." } or
-            // { error: { code: "..." } } or { message: "..." }. Try each in
-            // order without assuming one specific shape.
-            if (doc.RootElement.TryGetProperty("error", out var err))
-            {
-                if (err.ValueKind == JsonValueKind.String) return err.GetString();
-                if (err.ValueKind == JsonValueKind.Object &&
-                    err.TryGetProperty("code", out var code) &&
-                    code.ValueKind == JsonValueKind.String)
-                {
-                    return code.GetString();
-                }
-            }
-            if (doc.RootElement.TryGetProperty("code", out var topCode) &&
-                topCode.ValueKind == JsonValueKind.String)
-            {
-                return topCode.GetString();
-            }
-        }
-        catch (JsonException) { }
-        return null;
-    }
-
-    private static string Truncate(string s, int max) =>
-        string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max] + "…";
 
     // ---- parsers (internal for tests via InternalsVisibleTo) -----------
     //
@@ -422,7 +385,7 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
             // empty the dropdown the way v0.0.34 commit B did.
             if (string.IsNullOrEmpty(id)) id = TryGetStringId(el, "id");
             if (string.IsNullOrEmpty(id)) continue;
-            var name = TryGetString(el, "name") ?? string.Empty;
+            var name = el.GetStringOrNumber("name") ?? string.Empty;
             list.Add(new TelavoxCustomer(id, name));
         }
         return list;
@@ -449,17 +412,17 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
 
             var number = TryReadE164(el, "fixedNumber")
                 ?? TryReadE164(el, "mobileNumber")
-                ?? TryGetString(el, "number")
-                ?? TryGetString(el, "extension")
+                ?? el.GetStringOrNumber("number")
+                ?? el.GetStringOrNumber("extension")
                 ?? string.Empty;
-            var name = TryGetString(el, "name");
-            var userEmail = TryGetString(el, "email")
-                ?? TryGetString(el, "userEmail");
+            var name = el.GetStringOrNumber("name");
+            var userEmail = el.GetStringOrNumber("email")
+                ?? el.GetStringOrNumber("userEmail");
             // Legacy nested shape (pre-PAPI swagger update): user.email.
             if (userEmail is null && el.TryGetProperty("user", out var user)
                 && user.ValueKind == JsonValueKind.Object)
             {
-                userEmail = TryGetString(user, "email");
+                userEmail = user.GetStringOrNumber("email");
             }
             list.Add(new TelavoxExtension(id, number, name, userEmail));
         }
@@ -470,7 +433,7 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
     {
         if (!el.TryGetProperty(propName, out var sub)) return null;
         if (sub.ValueKind != JsonValueKind.Object) return null;
-        return TryGetString(sub, "e164Number");
+        return sub.GetStringOrNumber("e164Number");
     }
 
     /// Parses the response of POST /v1/customers/{customer}/api-users —
@@ -485,7 +448,7 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
         {
             using var doc = JsonDocument.Parse(body);
             if (doc.RootElement.ValueKind != JsonValueKind.Object) return string.Empty;
-            return TryGetString(doc.RootElement, "key") ?? string.Empty;
+            return doc.RootElement.GetStringOrNumber("key") ?? string.Empty;
         }
         catch (JsonException) { return string.Empty; }
     }
@@ -501,7 +464,7 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
         {
             using var doc = JsonDocument.Parse(body);
             if (doc.RootElement.ValueKind != JsonValueKind.Object) return string.Empty;
-            return TryGetString(doc.RootElement, "bearerToken") ?? string.Empty;
+            return doc.RootElement.GetStringOrNumber("bearerToken") ?? string.Empty;
         }
         catch (JsonException) { return string.Empty; }
     }
@@ -548,13 +511,13 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
             {
                 if (el.ValueKind != JsonValueKind.Object) continue;
 
-                var callerId = TryGetString(el, "callerId");
+                var callerId = el.GetStringOrNumber("callerId");
                 if (string.IsNullOrEmpty(callerId)) continue;
 
-                var direction = (TryGetString(el, "callDirection") ?? string.Empty)
+                var direction = (el.GetStringOrNumber("callDirection") ?? string.Empty)
                     .ToLowerInvariant();
 
-                var lineStatus = (TryGetString(el, "lineStatus") ?? string.Empty)
+                var lineStatus = (el.GetStringOrNumber("lineStatus") ?? string.Empty)
                     .ToLowerInvariant();
                 // Terminal states clear the baseline — same behaviour as a
                 // null `current` in the state-machine.
@@ -606,18 +569,6 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
         catch (JsonException) { return null; }
     }
 
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind switch
-        {
-            JsonValueKind.String => prop.GetString(),
-            JsonValueKind.Number => prop.ToString(),
-            JsonValueKind.Null => null,
-            _ => null,
-        };
-    }
-
     /// Id-friendly read: accepts both string and integer ids (some Telavox
     /// endpoints return numeric customer-ids). Returns the value as a
     /// trimmed string so callers never juggle two types.
@@ -632,15 +583,4 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
         };
     }
 
-    private static DateTimeOffset? TryGetDateTimeOffset(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String)
-            return null;
-        var raw = prop.GetString();
-        if (string.IsNullOrEmpty(raw)) return null;
-        return DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var v)
-            ? v
-            : (DateTimeOffset?)null;
-    }
 }

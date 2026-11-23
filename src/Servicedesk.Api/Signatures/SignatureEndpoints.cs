@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
@@ -63,7 +62,7 @@ public static class SignatureEndpoints
             var err = Validate(req);
             if (err is not null) return Results.BadRequest(new { error = err });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var design = SignatureDesignSanitizer.Sanitize(req.Design ?? new SignatureDesign(), sanitizer);
 
             var id = await repo.CreateAsync(
@@ -205,7 +204,7 @@ public static class SignatureEndpoints
             var maxBytes = await settings.GetAsync<long>(SettingKeys.Storage.InlineImageMaxBytes, ct);
             if (maxBytes <= 0) maxBytes = 2_097_152;
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var name = bundle.Name!.Trim();
 
             // Create the row first (disabled, non-system) so AddAssetAsync has a

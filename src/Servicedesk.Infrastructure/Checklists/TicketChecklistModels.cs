@@ -10,16 +10,6 @@ public static class ChecklistItemState
     public static bool IsValid(string? s) => s is Open or Done or NotApplicable;
 }
 
-/// Kinds in the per-item log.
-public static class ChecklistItemEventKind
-{
-    public const string StateChange = "state_change";
-    public const string Comment = "comment";
-    public const string ItemAdded = "item_added";
-    public const string ItemEdited = "item_edited";
-    public const string ItemRemoved = "item_removed";
-}
-
 /// One attached checklist (row of <c>ticket_checklists</c>) with its
 /// maintained counters. Plain mutable class so Dapper maps it by name.
 public sealed class TicketChecklistRow

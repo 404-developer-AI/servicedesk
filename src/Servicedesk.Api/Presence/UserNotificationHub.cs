@@ -1,6 +1,6 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Auth;
 
 namespace Servicedesk.Api.Presence;
@@ -28,14 +28,13 @@ public sealed class UserNotificationHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        var userId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!string.IsNullOrWhiteSpace(userId))
+        if (ActorContext.TryGetUserId(Context.User) is { } userId)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, $"user:{userId}");
             // v0.1.54 — Back office forms holders get the payload-less
             // work-list refresh ping. The flag is read at connect time; the
             // ping carries no data, so a later revoke leaks nothing.
-            if (Guid.TryParse(userId, out var uid) && await _users.GetBackofficeFormsEnabledAsync(uid))
+            if (await _users.GetBackofficeFormsEnabledAsync(userId))
                 await Groups.AddToGroupAsync(Context.ConnectionId, SignalRBackofficeFormNotifier.Group);
         }
         await base.OnConnectedAsync();

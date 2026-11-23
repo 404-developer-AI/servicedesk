@@ -57,7 +57,7 @@ public static class TicketClaudeEndpoints
         [FromServices] Npgsql.NpgsqlDataSource dataSource,
         CancellationToken ct)
     {
-        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = ActorContext.GetUserId(http);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
         var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
         if (ticket is null) return Results.NotFound();
@@ -257,7 +257,7 @@ public static class TicketClaudeEndpoints
         Func<ClaudeProposalResult, Task<IResult>> okBody,
         CancellationToken ct)
     {
-        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = ActorContext.GetUserId(http);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
         var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
         if (ticket is null) return Results.NotFound();

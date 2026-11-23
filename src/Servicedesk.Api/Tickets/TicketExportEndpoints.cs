@@ -29,7 +29,7 @@ public static class TicketExportEndpoints
             IAttachmentRepository attachmentRepo, IBlobStore blobStore,
             [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
             var detail = await repo.GetAccessibleDetailAsync(queueAccess, userId, role, id, ct);
             if (detail is null) return Results.NotFound();
@@ -66,7 +66,7 @@ public static class TicketExportEndpoints
             var slaState = await slaRepo.GetStateAsync(id, ct);
 
             var exporterEmail = http.User.FindFirst(ClaimTypes.Email)?.Value
-                ?? http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value;
+                ?? ActorContext.GetUserId(http).ToString();
 
             var exclude = excludeInternal ?? true;
             var pdfEvents = new List<TicketPdfEvent>();

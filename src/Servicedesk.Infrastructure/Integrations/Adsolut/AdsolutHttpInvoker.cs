@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Settings;
+using static Servicedesk.Infrastructure.Integrations.Http.UpstreamHttp;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -299,36 +300,6 @@ public sealed class AdsolutHttpInvoker
             httpStatus: 401);
     }
 
-    private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
-    {
-        try { return await response.Content.ReadAsStringAsync(ct); }
-        catch (Exception) { return string.Empty; }
-    }
-
-    private static string? TryParseErrorCode(string body)
-    {
-        if (string.IsNullOrWhiteSpace(body)) return null;
-        try
-        {
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
-                doc.RootElement.TryGetProperty("error", out var err))
-            {
-                if (err.ValueKind == JsonValueKind.String) return err.GetString();
-                if (err.ValueKind == JsonValueKind.Object &&
-                    err.TryGetProperty("code", out var code) &&
-                    code.ValueKind == JsonValueKind.String)
-                {
-                    return code.GetString();
-                }
-            }
-        }
-        catch (JsonException) { }
-        return null;
-    }
-
-    private static string Truncate(string s, int max) =>
-        string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max] + "…";
 }
 
 /// Wrapper for the diagnostic <see cref="AdsolutHttpInvoker.SendRawAsync"/>

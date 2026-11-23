@@ -15,7 +15,7 @@ internal static class PortalRequest
 
     public static PortalActor Actor(HttpContext http)
     {
-        var id = Guid.TryParse(http.User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var g) ? g : Guid.Empty;
+        var id = ActorContext.TryGetUserId(http) ?? Guid.Empty;
         return new PortalActor(
             id,
             http.User.Identity?.Name ?? id.ToString(),
@@ -23,9 +23,6 @@ internal static class PortalRequest
             http.Connection.RemoteIpAddress?.ToString(),
             Truncate(http.Request.Headers.UserAgent.ToString(), 512));
     }
-
-    public static Guid? UserId(HttpContext http) =>
-        Guid.TryParse(http.User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var g) ? g : null;
 
     public static Guid? SessionId(HttpContext http) =>
         Guid.TryParse(http.User.FindFirst("sid")?.Value, out var g) ? g : null;

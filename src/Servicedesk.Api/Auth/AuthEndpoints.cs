@@ -112,7 +112,7 @@ public static class AuthEndpoints
         ISettingsService settings,
         CancellationToken ct)
     {
-        var userId = RequireUserId(httpContext);
+        var userId = ActorContext.TryGetUserId(httpContext);
         if (userId is null || !TryGetSessionId(httpContext, out var currentSessionId)) return Results.Unauthorized();
 
         var idleMinutes = await settings.GetAsync<int>(SettingKeys.Security.SessionIdleTimeoutMinutes, ct);
@@ -137,7 +137,7 @@ public static class AuthEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var userId = RequireUserId(httpContext);
+        var userId = ActorContext.TryGetUserId(httpContext);
         if (userId is null || !TryGetSessionId(httpContext, out var currentSessionId)) return Results.Unauthorized();
 
         // Ending the session doing the request is a sign-out, which has its
@@ -169,7 +169,7 @@ public static class AuthEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var userId = RequireUserId(httpContext);
+        var userId = ActorContext.TryGetUserId(httpContext);
         if (userId is null || !TryGetSessionId(httpContext, out var currentSessionId)) return Results.Unauthorized();
 
         await sessions.RevokeAllForUserExceptAsync(userId.Value, currentSessionId, ct);
@@ -399,8 +399,7 @@ public static class AuthEndpoints
         CancellationToken ct)
     {
         var sidClaim = httpContext.User.FindFirst("sid")?.Value;
-        var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!Guid.TryParse(sidClaim, out var sessionId) || !Guid.TryParse(userIdClaim, out var userId))
+        if (!Guid.TryParse(sidClaim, out var sessionId) || ActorContext.TryGetUserId(httpContext) is not { } userId)
         {
             return Results.Unauthorized();
         }
@@ -497,8 +496,7 @@ public static class AuthEndpoints
         ISettingsService settings,
         CancellationToken ct)
     {
-        var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!Guid.TryParse(userIdClaim, out var userId))
+        if (ActorContext.TryGetUserId(httpContext) is not { } userId)
         {
             return Results.Ok(new { user = (object?)null, serverTimeUtc = DateTimeOffset.UtcNow });
         }
@@ -559,10 +557,9 @@ public static class AuthEndpoints
         var dataSource = httpContext.RequestServices.GetService<Npgsql.NpgsqlDataSource>();
         var effectiveTheme = await ResolveEffectiveThemeAsync(userId, dataSource, settings, ct);
 
-        // v0.1.25 — global SLA switch (in-memory setting, no query): the SPA
-        // hides the SLA log nav and the Due values when it is off.
-        bool slaEnabled;
-        slaEnabled = await settings.GetOrAsync<bool>(SettingKeys.Sla.Enabled, true, ct);
+        // Global SLA switch for the SPA; read directly on purpose, same key/default
+        // as SlaEngine.IsEnabledAsync (ARCHITECTURE.md → Settings, exceptions).
+        var slaEnabled = await settings.GetOrAsync<bool>(SettingKeys.Sla.Enabled, true, ct);
 
         return Results.Ok(new
         {
@@ -667,7 +664,7 @@ public static class AuthEndpoints
         CancellationToken ct)
     {
         if (!IsStaffPrincipal(httpContext)) return Results.Unauthorized();
-        var userId = RequireUserId(httpContext);
+        var userId = ActorContext.TryGetUserId(httpContext);
         if (userId is null) return Results.Unauthorized();
         // Re-enrollment guard (audit v0.1.1 #7): BeginEnroll upserts a fresh
         // secret with enabled=FALSE, so calling it against a working TOTP
@@ -703,7 +700,7 @@ public static class AuthEndpoints
         CancellationToken ct)
     {
         if (!IsStaffPrincipal(httpContext)) return Results.Unauthorized();
-        var userId = RequireUserId(httpContext);
+        var userId = ActorContext.TryGetUserId(httpContext);
         if (userId is null) return Results.Unauthorized();
         if (await totp.IsEnabledAsync(userId.Value, ct))
         {
@@ -745,7 +742,7 @@ public static class AuthEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var userId = RequireUserId(httpContext);
+        var userId = ActorContext.TryGetUserId(httpContext);
         if (userId is null) return Results.Unauthorized();
 
         // Step-up (audit v0.1.1 #7): removing the second factor demands proof
@@ -803,7 +800,7 @@ public static class AuthEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
-        var userId = RequireUserId(httpContext);
+        var userId = ActorContext.TryGetUserId(httpContext);
         var sidClaim = httpContext.User.FindFirst("sid")?.Value;
         if (userId is null || !Guid.TryParse(sidClaim, out var sessionId)) return Results.Unauthorized();
 
@@ -875,12 +872,6 @@ public static class AuthEndpoints
         var windowSeconds = await settings.GetAsync<int>(SettingKeys.Security.LockoutWindowSeconds, ct);
         var durationSeconds = await settings.GetAsync<int>(SettingKeys.Security.LockoutDurationSeconds, ct);
         return await users.RecordFailedLoginAsync(userId, maxAttempts, windowSeconds, durationSeconds, ct);
-    }
-
-    private static Guid? RequireUserId(HttpContext httpContext)
-    {
-        var claim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.TryParse(claim, out var id) ? id : null;
     }
 
     private static Task EstablishSessionAsync(

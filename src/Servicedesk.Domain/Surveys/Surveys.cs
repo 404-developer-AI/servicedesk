@@ -88,28 +88,6 @@ public sealed record SurveyInvitation(
     JsonDocument SurveySnapshot,
     Guid? CreatedBy);
 
-public sealed record SurveyResponse(
-    Guid Id,
-    Guid InvitationId,
-    DateTime SubmittedUtc,
-    string? Comment,
-    IReadOnlyList<SurveyAnswer> Answers);
-
-public sealed record SurveyAnswer(
-    long Id,
-    Guid ResponseId,
-    long QuestionId,
-    /// When the answer is to an Agent-scoped question, this carries the
-    /// attributed agent's user id; one row per (question, agent) pair.
-    /// NULL for Survey-scoped answers.
-    Guid? AgentUserId,
-    /// One of the three value-shape columns is filled per question type:
-    /// numeric for Rating/Nps, text for free Text, json (string array) for
-    /// MultiChoice; SingleChoice stores the chosen value in <c>ValueText</c>.
-    decimal? ValueNumeric,
-    string? ValueText,
-    JsonDocument? ValueJson);
-
 /// Placeholders the survey-aware token resolver injects on top of the
 /// standard compose-tokens. Reusable across invite subject + body + intro
 /// HTML at send time.

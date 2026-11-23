@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -97,7 +98,7 @@ public sealed class AdsolutArticlesClient : IAdsolutArticlesClient
         var hasNext = false;
         if (root.TryGetProperty("pagingData", out var paging) && paging.ValueKind == JsonValueKind.Object)
         {
-            nextCursor = TryGetString(paging, "nextCursor");
+            nextCursor = paging.GetStringOrNull("nextCursor");
             if (paging.TryGetProperty("hasNext", out var hn) &&
                 (hn.ValueKind == JsonValueKind.True || hn.ValueKind == JsonValueKind.False))
             {
@@ -111,13 +112,13 @@ public sealed class AdsolutArticlesClient : IAdsolutArticlesClient
     private static AdsolutArticle? ParseArticle(JsonElement root)
     {
         if (root.ValueKind != JsonValueKind.Object) return null;
-        if (!TryGetGuid(root, "id", out var id)) return null;
+        if (!root.TryGetGuidProperty("id", out var id)) return null;
 
         // vatCode { code, description: [{language, value}], … }
         string? vatCode = null, vatRate = null;
         if (root.TryGetProperty("vatCode", out var vat) && vat.ValueKind == JsonValueKind.Object)
         {
-            vatCode = TryGetString(vat, "code");
+            vatCode = vat.GetStringOrNull("code");
             vatRate = PickTranslation(vat, "description");
         }
 
@@ -127,14 +128,14 @@ public sealed class AdsolutArticlesClient : IAdsolutArticlesClient
 
         return new AdsolutArticle(
             Id: id,
-            Code: TryGetString(root, "code"),
+            Code: root.GetStringOrNull("code"),
             Name: PickTranslation(root, "name"),
             Description: PickTranslation(root, "description"),
             VatCode: vatCode,
             VatRate: vatRate,
             Active: active,
-            AdsolutCreatedUtc: TryGetDateTimeOffset(root, "created"),
-            AdsolutLastModified: TryGetDateTimeOffset(root, "lastModified"));
+            AdsolutCreatedUtc: root.GetDateTimeOffsetUnsetAsNull("created"),
+            AdsolutLastModified: root.GetDateTimeOffsetUnsetAsNull("lastModified"));
     }
 
     /// Pick the Dutch ("Nl") value from a multi-language `[{language, value}]`
@@ -146,10 +147,10 @@ public sealed class AdsolutArticlesClient : IAdsolutArticlesClient
         foreach (var el in arr.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var value = TryGetString(el, "value");
+            var value = el.GetStringOrNull("value");
             if (value is null) continue;
             first ??= value;
-            if (string.Equals(TryGetString(el, "language"), "Nl", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(el.GetStringOrNull("language"), "Nl", StringComparison.OrdinalIgnoreCase))
             {
                 return value;
             }
@@ -157,30 +158,4 @@ public sealed class AdsolutArticlesClient : IAdsolutArticlesClient
         return first;
     }
 
-    private static bool TryGetGuid(JsonElement el, string name, out Guid value)
-    {
-        value = Guid.Empty;
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return false;
-        return Guid.TryParse(prop.GetString(), out value);
-    }
-
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind == JsonValueKind.String ? prop.GetString() : null;
-    }
-
-    /// Adsolut serialises dates offset-less (no 'Z'), e.g. "2024-02-21T22:24:49".
-    /// Parse as UTC (AssumeUniversal). The sentinel "0001-01-01T00:00:00" means
-    /// "unset" → null, so a default date never lands in the mirror.
-    private static DateTimeOffset? TryGetDateTimeOffset(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return null;
-        var raw = prop.GetString();
-        if (string.IsNullOrEmpty(raw)) return null;
-        if (raw.StartsWith("0001-01-01", StringComparison.Ordinal)) return null;
-        return DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dto)
-            ? dto.ToUniversalTime()
-            : null;
-    }
 }

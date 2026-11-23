@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Servicedesk.Infrastructure.Triggers.Actions;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Triggers;
 
@@ -189,14 +190,12 @@ public static class TriggerValidator
 
         if (!string.IsNullOrWhiteSpace(timezone))
         {
-            try { _ = TimeZoneInfo.FindSystemTimeZoneById(timezone); }
-            catch (TimeZoneNotFoundException)
+            switch (TimeZoneResolver.Lookup(timezone, out _))
             {
-                return ValidationResult.Fail($"Timezone '{timezone}' is not a recognised IANA / Windows id.");
-            }
-            catch (InvalidTimeZoneException)
-            {
-                return ValidationResult.Fail($"Timezone '{timezone}' is malformed.");
+                case TimeZoneLookup.NotFound:
+                    return ValidationResult.Fail($"Timezone '{timezone}' is not a recognised IANA / Windows id.");
+                case TimeZoneLookup.Invalid:
+                    return ValidationResult.Fail($"Timezone '{timezone}' is malformed.");
             }
         }
 

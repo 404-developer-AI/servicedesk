@@ -149,7 +149,7 @@ public sealed class PerfHttpMiddleware
         // count towards the byte total.
         if (!IsFileResponse(context.Response)) agg.RecordSecond(bytes / 1024.0);
 
-        var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userId = ActorContext.TryGetUserId(context)?.ToString();
         if (userId is not null)
         {
             var hash = userId.GetHashCode(StringComparison.Ordinal);

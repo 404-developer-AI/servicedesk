@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -152,9 +153,9 @@ public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
             offsetlessCount = 0;
         }
 
-        var currentPage = TryGetInt(root, "currentPage", 1);
-        var totalItems = TryGetInt(root, "totalItems", items.Count);
-        var totalPages = TryGetInt(root, "totalPages", currentPage);
+        var currentPage = root.GetInt32OrNumericString("currentPage", 1);
+        var totalItems = root.GetInt32OrNumericString("totalItems", items.Count);
+        var totalPages = root.GetInt32OrNumericString("totalPages", currentPage);
         return new PageWithCanary(
             new AdsolutPagedResult<AdsolutCustomer>(currentPage, totalItems, totalPages, items),
             offsetlessCount);
@@ -167,14 +168,14 @@ public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
         foreach (var el in array.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            if (!TryGetGuid(el, "id", out var id)) continue;
+            if (!el.TryGetGuidProperty("id", out var id)) continue;
 
             // Address: streetName + streetNumber + boxNumber → AddressLine1;
             // boxNumber alone occasionally lands on AddressLine2 (matches
             // the Adsolut UI's "Bus" line).
-            var streetName = TryGetString(el, "streetName") ?? string.Empty;
-            var streetNumber = TryGetString(el, "streetNumber") ?? string.Empty;
-            var boxNumber = TryGetString(el, "boxNumber") ?? string.Empty;
+            var streetName = el.GetStringOrNull("streetName") ?? string.Empty;
+            var streetNumber = el.GetStringOrNull("streetNumber") ?? string.Empty;
+            var boxNumber = el.GetStringOrNull("boxNumber") ?? string.Empty;
             var line1 = string.IsNullOrEmpty(streetNumber)
                 ? streetName
                 : $"{streetName} {streetNumber}".Trim();
@@ -185,50 +186,23 @@ public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
 
             list.Add(new AdsolutCustomer(
                 Id: id,
-                Name: TryGetString(el, "name") ?? string.Empty,
-                Code: TryGetString(el, "code"),
-                AlphaCode: TryGetString(el, "alphaCode"),
-                Number: TryGetString(el, "number"),
-                Email: TryGetString(el, "email") ?? string.Empty,
-                Phone: TryGetString(el, "phone") ?? string.Empty,
-                MobilePhone: TryGetString(el, "mobilePhone") ?? string.Empty,
+                Name: el.GetStringOrNull("name") ?? string.Empty,
+                Code: el.GetStringOrNull("code"),
+                AlphaCode: el.GetStringOrNull("alphaCode"),
+                Number: el.GetStringOrNull("number"),
+                Email: el.GetStringOrNull("email") ?? string.Empty,
+                Phone: el.GetStringOrNull("phone") ?? string.Empty,
+                MobilePhone: el.GetStringOrNull("mobilePhone") ?? string.Empty,
                 AddressLine1: line1,
                 AddressLine2: line2,
-                PostalCode: TryGetString(el, "postalCode") ?? string.Empty,
-                City: TryGetString(el, "city") ?? string.Empty,
-                Country: TryGetString(el, "country") ?? string.Empty,
-                VatNumber: TryGetString(el, "vatNumber") ?? string.Empty,
-                CountryPrefixVatNumber: TryGetString(el, "countryPrefixVatNumber") ?? string.Empty,
+                PostalCode: el.GetStringOrNull("postalCode") ?? string.Empty,
+                City: el.GetStringOrNull("city") ?? string.Empty,
+                Country: el.GetStringOrNull("country") ?? string.Empty,
+                VatNumber: el.GetStringOrNull("vatNumber") ?? string.Empty,
+                CountryPrefixVatNumber: el.GetStringOrNull("countryPrefixVatNumber") ?? string.Empty,
                 LastModified: lastModified));
         }
         return (list, offsetlessCount);
-    }
-
-    private static int TryGetInt(JsonElement el, string name, int fallback)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return fallback;
-        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var value)) return value;
-        if (prop.ValueKind == JsonValueKind.String && int.TryParse(prop.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)) return parsed;
-        return fallback;
-    }
-
-    private static bool TryGetGuid(JsonElement el, string name, out Guid value)
-    {
-        value = Guid.Empty;
-        if (!el.TryGetProperty(name, out var prop)) return false;
-        if (prop.ValueKind != JsonValueKind.String) return false;
-        return Guid.TryParse(prop.GetString(), out value);
-    }
-
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind switch
-        {
-            JsonValueKind.String => prop.GetString(),
-            JsonValueKind.Null => null,
-            _ => null,
-        };
     }
 
     private static (DateTimeOffset? Value, bool WasOffsetless) TryGetDateTimeOffset(JsonElement el, string name)

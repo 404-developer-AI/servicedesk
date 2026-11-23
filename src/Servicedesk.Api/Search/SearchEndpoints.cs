@@ -141,7 +141,7 @@ public static class SearchEndpoints
     private static async Task<SearchPrincipal> BuildPrincipalAsync(
         HttpContext http, IQueueAccessService queueAccess, IUserService users, CancellationToken ct)
     {
-        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = ActorContext.GetUserId(http);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
         // Admins bypass both queue scoping and feature gating — no need to

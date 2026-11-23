@@ -70,7 +70,7 @@ public static class ContractReportsEndpoints
     {
         var email = http.User.FindFirst(ClaimTypes.Email)?.Value;
         var name = http.User.Identity?.Name ?? email ?? "Agent";
-        Guid? userId = Guid.TryParse(http.User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var g) ? g : null;
+        var userId = ActorContext.TryGetUserId(http);
         return new ReportActor(userId, name, email);
     }
 

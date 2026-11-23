@@ -77,7 +77,7 @@ public static class IntakeFormEndpoints
             IIntakeTemplateRepository repo, ISettingsService settings,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
 
             var err = await ValidateTemplateRequestAsync(req, settings, ct);
             if (err is not null) return Results.BadRequest(new { error = err });
@@ -273,7 +273,7 @@ public static class IntakeFormEndpoints
             if (template is null || !template.IsActive)
                 return Results.BadRequest(new { error = "Template not found or inactive." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
 
             var resolvedTokens = await tokens.ResolveAsync(ticketId, ct);
             var prefill = BuildInitialPrefill(template, resolvedTokens, req.Prefill);
@@ -354,7 +354,7 @@ public static class IntakeFormEndpoints
             var existing = await forms.GetAgentViewAsync(ticketId, instanceId, ct);
             if (existing is null) return Results.NotFound();
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
 
             // Re-resolve tokens because ticket context may have changed since
             // the original send. Agent overrides from the prefill snapshot
@@ -552,7 +552,7 @@ public static class IntakeFormEndpoints
         HttpContext http, ITicketRepository tickets, IQueueAccessService queueAccess,
         Guid ticketId, CancellationToken ct)
     {
-        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = ActorContext.GetUserId(http);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
         return await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, ticketId, ct) is not null;
     }

@@ -40,7 +40,7 @@ public static class TicketAttachmentEndpoints
             CancellationToken ct) =>
         {
             // Queue-access first — return 404 to avoid leaking ticket existence.
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
             if (ticket is null) return Results.NotFound();
@@ -89,7 +89,7 @@ public static class TicketAttachmentEndpoints
             IAttachmentRepository attachments, IBlobStore blobs,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
             if (ticket is null) return Results.NotFound();

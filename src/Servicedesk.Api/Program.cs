@@ -50,6 +50,7 @@ using Servicedesk.Api.Performance;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Time;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -452,7 +453,7 @@ builder.Services.AddRateLimiter(options =>
     var bulkWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Bulk:WindowSeconds") ?? 60;
     options.AddPolicy("bulk", ctx =>
     {
-        var key = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        var key = ActorContext.TryGetUserId(ctx)?.ToString()
                   ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
         return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
@@ -679,7 +680,7 @@ app.MapGet("/api/system/time", async (ISettingsService settings, CancellationTok
     // Settings store unreachable — an empty value drops through to the host default below.
     var configured = await settings.GetOrAsync<string>(SettingKeys.App.TimeZone, string.Empty, ct);
 
-    var tz = ResolveDisplayTimeZone(configured);
+    var tz = TimeZoneResolver.Resolve(configured, TimeZoneInfo.Local);
     var nowUtc = DateTimeOffset.UtcNow;
     return Results.Ok(new
     {
@@ -687,16 +688,6 @@ app.MapGet("/api/system/time", async (ISettingsService settings, CancellationTok
         timezone = tz.Id,
         offsetMinutes = (int)tz.GetUtcOffset(nowUtc.UtcDateTime).TotalMinutes
     });
-
-    static TimeZoneInfo ResolveDisplayTimeZone(string id)
-    {
-        if (!string.IsNullOrWhiteSpace(id))
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-            catch { /* Invalid IANA id — fall through. */ }
-        }
-        return TimeZoneInfo.Local;
-    }
 })
 .WithName("GetSystemTime");
 

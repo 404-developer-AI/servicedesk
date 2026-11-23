@@ -9,6 +9,7 @@ using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Integrations.Telavox;
 
@@ -180,7 +181,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
         // so an admin in Brussels running a UTC-host server sees their
         // "08:00–18:00" window line up with their local clock.
         var tzId = await settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
-        var tz = ResolveTimeZone(tzId);
+        var tz = TimeZoneResolver.Resolve(tzId, TimeZoneInfo.Local);
         var nowLocal = TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz);
         var windowStart = await settings.GetAsync<string>(SettingKeys.Telavox.PollWindowStart, ct);
         var windowEnd = await settings.GetAsync<string>(SettingKeys.Telavox.PollWindowEnd, ct);
@@ -661,15 +662,5 @@ public sealed class TelavoxPollingWorker : BackgroundService
             _ => 0,
         };
         return Rank(candidate) > Rank(current);
-    }
-
-    private static TimeZoneInfo ResolveTimeZone(string id)
-    {
-        if (!string.IsNullOrWhiteSpace(id))
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-            catch { /* Invalid IANA id — fall through. */ }
-        }
-        return TimeZoneInfo.Local;
     }
 }

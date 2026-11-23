@@ -1,6 +1,6 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Servicedesk.Api.Auth;
 
 namespace Servicedesk.Api.Presence;
 
@@ -20,8 +20,7 @@ public sealed class TelavoxCallHub : Hub
 {
     public override async Task OnConnectedAsync()
     {
-        var userId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!string.IsNullOrWhiteSpace(userId))
+        if (ActorContext.TryGetUserId(Context.User) is { } userId)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, $"telavox-user:{userId}");
         }

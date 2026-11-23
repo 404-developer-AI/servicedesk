@@ -1,7 +1,6 @@
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Health;
-using System.Security.Claims;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Polling;
@@ -322,7 +321,7 @@ public static class HealthEndpoints
             CancellationToken ct) =>
         {
             var (actor, role) = ActorContext.Resolve(http);
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var subsystem = await incidents.AcknowledgeAsync(id, userId, ct);
             IReadOnlyList<string> cleared = Array.Empty<string>();
             if (subsystem is not null)
@@ -350,7 +349,7 @@ public static class HealthEndpoints
             CancellationToken ct) =>
         {
             var (actor, role) = ActorContext.Resolve(http);
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var count = await incidents.AcknowledgeSubsystemAsync(subsystem, userId, ct);
             var cleared = await reset.ResetAsync(subsystem, ct);
             await audit.LogAsync(new AuditEvent(

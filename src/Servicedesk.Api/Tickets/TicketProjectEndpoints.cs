@@ -215,7 +215,7 @@ public static class TicketProjectEndpoints
         Guid ticketId, HttpContext http, ITicketRepository tickets,
         IQueueAccessService queueAccess, CancellationToken ct)
     {
-        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userId = ActorContext.GetUserId(http);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
         var detail = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, ticketId, ct);

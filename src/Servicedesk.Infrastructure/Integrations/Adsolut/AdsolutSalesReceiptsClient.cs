@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -92,13 +93,13 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
             foreach (var el in data.EnumerateArray())
             {
                 if (el.ValueKind != JsonValueKind.Object) continue;
-                if (!TryGetGuid(el, "id", out var id)) continue;
+                if (!el.TryGetGuidProperty("id", out var id)) continue;
                 string? stateCode = null;
                 if (el.TryGetProperty("state", out var state) && state.ValueKind == JsonValueKind.Object)
                 {
-                    stateCode = TryGetString(state, "code");
+                    stateCode = state.GetStringOrNull("code");
                 }
-                var lastModified = TryGetDateTimeOffset(el, "lastModified");
+                var lastModified = el.GetDateTimeOffsetUnsetAsNull("lastModified");
                 items.Add(new AdsolutSalesReceiptListItem(id, stateCode, lastModified));
             }
         }
@@ -107,7 +108,7 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
         var hasNext = false;
         if (root.TryGetProperty("pagingData", out var paging) && paging.ValueKind == JsonValueKind.Object)
         {
-            nextCursor = TryGetString(paging, "nextCursor");
+            nextCursor = paging.GetStringOrNull("nextCursor");
             if (paging.TryGetProperty("hasNext", out var hn) &&
                 (hn.ValueKind == JsonValueKind.True || hn.ValueKind == JsonValueKind.False))
             {
@@ -124,16 +125,16 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object) return null;
-        if (!TryGetGuid(root, "id", out var id)) return null;
+        if (!root.TryGetGuidProperty("id", out var id)) return null;
 
         // customer (rich object with id/code/name)
         Guid? customerId = null;
         string? customerCode = null, customerName = null;
         if (root.TryGetProperty("customer", out var cust) && cust.ValueKind == JsonValueKind.Object)
         {
-            customerId = TryGetGuid(cust, "id", out var cid) ? cid : (Guid?)null;
-            customerCode = TryGetString(cust, "code");
-            customerName = TryGetString(cust, "name");
+            customerId = cust.TryGetGuidProperty("id", out var cid) ? cid : (Guid?)null;
+            customerCode = cust.GetStringOrNull("code");
+            customerName = cust.GetStringOrNull("name");
         }
 
         // state { id, code, description: [{language,value}] }
@@ -141,8 +142,8 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
         string? stateCode = null, stateDescription = null;
         if (root.TryGetProperty("state", out var state) && state.ValueKind == JsonValueKind.Object)
         {
-            stateId = TryGetGuid(state, "id", out var sid) ? sid : (Guid?)null;
-            stateCode = TryGetString(state, "code");
+            stateId = state.TryGetGuidProperty("id", out var sid) ? sid : (Guid?)null;
+            stateCode = state.GetStringOrNull("code");
             stateDescription = PickDescription(state);
         }
 
@@ -150,29 +151,29 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
         string? employeeCode = null, employeeName = null, employeeEmail = null;
         if (root.TryGetProperty("employee", out var emp) && emp.ValueKind == JsonValueKind.Object)
         {
-            employeeCode = TryGetString(emp, "code");
-            employeeName = JoinName(TryGetString(emp, "firstName"), TryGetString(emp, "lastName"));
-            employeeEmail = TryGetString(emp, "email");
+            employeeCode = emp.GetStringOrNull("code");
+            employeeName = JoinName(emp.GetStringOrNull("firstName"), emp.GetStringOrNull("lastName"));
+            employeeEmail = emp.GetStringOrNull("email");
         }
 
         // representative { code, name, email }
         string? representativeCode = null, representativeName = null;
         if (root.TryGetProperty("representative", out var rep) && rep.ValueKind == JsonValueKind.Object)
         {
-            representativeCode = TryGetString(rep, "code");
-            representativeName = TryGetString(rep, "name");
+            representativeCode = rep.GetStringOrNull("code");
+            representativeName = rep.GetStringOrNull("name");
         }
 
         string? bookCode = null;
         if (root.TryGetProperty("book", out var book) && book.ValueKind == JsonValueKind.Object)
         {
-            bookCode = TryGetString(book, "code");
+            bookCode = book.GetStringOrNull("code");
         }
 
         string? currencyIso = null;
         if (root.TryGetProperty("currency", out var cur) && cur.ValueKind == JsonValueKind.Object)
         {
-            currencyIso = TryGetString(cur, "isoCode");
+            currencyIso = cur.GetStringOrNull("isoCode");
         }
 
         var lines = ParseLines(root);
@@ -180,7 +181,7 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
 
         return new AdsolutSalesReceipt(
             Id: id,
-            DocNr: TryGetInt(root, "docNr"),
+            DocNr: root.GetInt32OrNull("docNr"),
             BookCode: bookCode,
             CustomerAdsolutId: customerId,
             CustomerCode: customerCode,
@@ -188,10 +189,10 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
             StateId: stateId,
             StateCode: stateCode,
             StateDescription: stateDescription,
-            SalesReceiptDate: TryGetDateTimeOffset(root, "salesReceiptDate"),
-            Description: TryGetString(root, "description"),
-            InternalMemo: TryGetString(root, "internalMemo"),
-            Memo: TryGetString(root, "memo"),
+            SalesReceiptDate: root.GetDateTimeOffsetUnsetAsNull("salesReceiptDate"),
+            Description: root.GetStringOrNull("description"),
+            InternalMemo: root.GetStringOrNull("internalMemo"),
+            Memo: root.GetStringOrNull("memo"),
             EmployeeCode: employeeCode,
             EmployeeName: employeeName,
             EmployeeEmail: employeeEmail,
@@ -199,8 +200,8 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
             RepresentativeName: representativeName,
             CurrencyIso: currencyIso,
             VatIncluded: root.TryGetProperty("vatIncluded", out var vi) && vi.ValueKind == JsonValueKind.True,
-            AdsolutCreatedUtc: TryGetDateTimeOffset(root, "created"),
-            AdsolutLastModified: TryGetDateTimeOffset(root, "lastModified"),
+            AdsolutCreatedUtc: root.GetDateTimeOffsetUnsetAsNull("created"),
+            AdsolutLastModified: root.GetDateTimeOffsetUnsetAsNull("lastModified"),
             Lines: lines,
             Performances: performances);
     }
@@ -215,19 +216,19 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
         foreach (var el in arr.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            if (!TryGetGuid(el, "id", out var id)) continue;
+            if (!el.TryGetGuidProperty("id", out var id)) continue;
             list.Add(new AdsolutSalesReceiptLine(
                 Id: id,
-                LineNr: TryGetInt(el, "lineNr"),
-                ProductCode: el.TryGetProperty("product", out var p) && p.ValueKind == JsonValueKind.Object ? TryGetString(p, "code") : null,
-                Name: TryGetString(el, "name"),
-                Description: TryGetString(el, "description"),
-                Quantity: TryGetDecimal(el, "quantity"),
-                UnitCode: el.TryGetProperty("unit", out var u) && u.ValueKind == JsonValueKind.Object ? TryGetString(u, "code") : null,
-                UnitPrice: TryGetDecimal(el, "unitPrice"),
-                TotalExclVat: TryGetDecimal(el, "totalPriceExclVat"),
-                TotalInclVat: TryGetDecimal(el, "totalPriceInclVat"),
-                VatCode: el.TryGetProperty("vatCode", out var v) && v.ValueKind == JsonValueKind.Object ? TryGetString(v, "code") : null));
+                LineNr: el.GetInt32OrNull("lineNr"),
+                ProductCode: el.TryGetProperty("product", out var p) && p.ValueKind == JsonValueKind.Object ? p.GetStringOrNull("code") : null,
+                Name: el.GetStringOrNull("name"),
+                Description: el.GetStringOrNull("description"),
+                Quantity: el.GetDecimalOrNull("quantity"),
+                UnitCode: el.TryGetProperty("unit", out var u) && u.ValueKind == JsonValueKind.Object ? u.GetStringOrNull("code") : null,
+                UnitPrice: el.GetDecimalOrNull("unitPrice"),
+                TotalExclVat: el.GetDecimalOrNull("totalPriceExclVat"),
+                TotalInclVat: el.GetDecimalOrNull("totalPriceInclVat"),
+                VatCode: el.TryGetProperty("vatCode", out var v) && v.ValueKind == JsonValueKind.Object ? v.GetStringOrNull("code") : null));
         }
         return list;
     }
@@ -242,19 +243,19 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
         foreach (var el in arr.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            if (!TryGetGuid(el, "id", out var id)) continue;
+            if (!el.TryGetGuidProperty("id", out var id)) continue;
             list.Add(new AdsolutSalesReceiptPerformance(
                 Id: id,
-                EmployeeCode: el.TryGetProperty("employee", out var e) && e.ValueKind == JsonValueKind.Object ? TryGetString(e, "code") : null,
-                PerformanceDate: TryGetDateTimeOffset(el, "date"),
-                FromTime: TryGetString(el, "from"),
-                UntilTime: TryGetString(el, "until"),
-                DurationMinutes: TryGetDecimal(el, "duration"),
-                InvoiceDurationMinutes: TryGetDecimal(el, "invoiceDuration"),
-                InvoiceUnitPrice: TryGetDecimal(el, "invoiceUnitprice"),
-                InvoiceTotal: TryGetDecimal(el, "invoiceTotal"),
-                PerformanceCode: el.TryGetProperty("performanceCode", out var pc) && pc.ValueKind == JsonValueKind.Object ? TryGetString(pc, "code") : null,
-                Description: TryGetString(el, "description")));
+                EmployeeCode: el.TryGetProperty("employee", out var e) && e.ValueKind == JsonValueKind.Object ? e.GetStringOrNull("code") : null,
+                PerformanceDate: el.GetDateTimeOffsetUnsetAsNull("date"),
+                FromTime: el.GetStringOrNull("from"),
+                UntilTime: el.GetStringOrNull("until"),
+                DurationMinutes: el.GetDecimalOrNull("duration"),
+                InvoiceDurationMinutes: el.GetDecimalOrNull("invoiceDuration"),
+                InvoiceUnitPrice: el.GetDecimalOrNull("invoiceUnitprice"),
+                InvoiceTotal: el.GetDecimalOrNull("invoiceTotal"),
+                PerformanceCode: el.TryGetProperty("performanceCode", out var pc) && pc.ValueKind == JsonValueKind.Object ? pc.GetStringOrNull("code") : null,
+                Description: el.GetStringOrNull("description")));
         }
         return list;
     }
@@ -268,10 +269,10 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
         foreach (var el in desc.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var value = TryGetString(el, "value");
+            var value = el.GetStringOrNull("value");
             if (value is null) continue;
             first ??= value;
-            if (string.Equals(TryGetString(el, "language"), "Nl", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(el.GetStringOrNull("language"), "Nl", StringComparison.OrdinalIgnoreCase))
             {
                 return value;
             }
@@ -287,44 +288,4 @@ public sealed class AdsolutSalesReceiptsClient : IAdsolutSalesReceiptsClient
         return joined.Length == 0 ? null : joined;
     }
 
-    private static bool TryGetGuid(JsonElement el, string name, out Guid value)
-    {
-        value = Guid.Empty;
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return false;
-        return Guid.TryParse(prop.GetString(), out value);
-    }
-
-    private static int? TryGetInt(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var v)) return v;
-        return null;
-    }
-
-    private static decimal? TryGetDecimal(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetDecimal(out var v)) return v;
-        return null;
-    }
-
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind == JsonValueKind.String ? prop.GetString() : null;
-    }
-
-    /// Adsolut serialises dates offset-less (no 'Z'), e.g. "2020-01-01T00:00:00".
-    /// Parse as UTC (AssumeUniversal). The sentinel "0001-01-01T00:00:00"
-    /// means "unset" → null, so a default date never lands in the mirror.
-    private static DateTimeOffset? TryGetDateTimeOffset(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return null;
-        var raw = prop.GetString();
-        if (string.IsNullOrEmpty(raw)) return null;
-        if (raw.StartsWith("0001-01-01", StringComparison.Ordinal)) return null;
-        return DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dto)
-            ? dto.ToUniversalTime()
-            : null;
-    }
 }

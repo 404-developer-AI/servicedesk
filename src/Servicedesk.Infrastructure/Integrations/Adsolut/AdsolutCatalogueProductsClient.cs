@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -78,7 +79,7 @@ public sealed class AdsolutCatalogueProductsClient : IAdsolutCatalogueProductsCl
         var hasNext = false;
         if (root.TryGetProperty("pagingData", out var paging) && paging.ValueKind == JsonValueKind.Object)
         {
-            nextCursor = TryGetString(paging, "nextCursor");
+            nextCursor = paging.GetStringOrNull("nextCursor");
             if (paging.TryGetProperty("hasNext", out var hn) &&
                 (hn.ValueKind == JsonValueKind.True || hn.ValueKind == JsonValueKind.False))
             {
@@ -92,18 +93,18 @@ public sealed class AdsolutCatalogueProductsClient : IAdsolutCatalogueProductsCl
     private static AdsolutCatalogueProduct? ParseProduct(JsonElement root)
     {
         if (root.ValueKind != JsonValueKind.Object) return null;
-        if (!TryGetGuid(root, "id", out var id)) return null;
+        if (!root.TryGetGuidProperty("id", out var id)) return null;
 
         return new AdsolutCatalogueProduct(
             Id: id,
-            Code: TryGetString(root, "code"),
+            Code: root.GetStringOrNull("code"),
             Name: PickTranslation(root, "name"),
-            ServiceProduct: TryGetBool(root, "serviceProduct"),
-            IsActive: TryGetBool(root, "isActive"),
-            Blocked: TryGetBool(root, "blocked"),
-            EndOfSeries: TryGetBool(root, "endOfSeries"),
-            AdsolutCreatedUtc: TryGetDateTimeOffset(root, "created"),
-            AdsolutLastModified: TryGetDateTimeOffset(root, "lastModified"));
+            ServiceProduct: root.GetBool("serviceProduct"),
+            IsActive: root.GetBool("isActive"),
+            Blocked: root.GetBool("blocked"),
+            EndOfSeries: root.GetBool("endOfSeries"),
+            AdsolutCreatedUtc: root.GetDateTimeOffsetUnsetAsNull("created"),
+            AdsolutLastModified: root.GetDateTimeOffsetUnsetAsNull("lastModified"));
     }
 
     /// Pick the Dutch ("Nl") value from a multi-language `[{language, value}]`
@@ -115,10 +116,10 @@ public sealed class AdsolutCatalogueProductsClient : IAdsolutCatalogueProductsCl
         foreach (var el in arr.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var value = TryGetString(el, "value");
+            var value = el.GetStringOrNull("value");
             if (value is null) continue;
             first ??= value;
-            if (string.Equals(TryGetString(el, "language"), "Nl", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(el.GetStringOrNull("language"), "Nl", StringComparison.OrdinalIgnoreCase))
             {
                 return value;
             }
@@ -126,35 +127,4 @@ public sealed class AdsolutCatalogueProductsClient : IAdsolutCatalogueProductsCl
         return first;
     }
 
-    private static bool TryGetGuid(JsonElement el, string name, out Guid value)
-    {
-        value = Guid.Empty;
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return false;
-        return Guid.TryParse(prop.GetString(), out value);
-    }
-
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind == JsonValueKind.String ? prop.GetString() : null;
-    }
-
-    private static bool TryGetBool(JsonElement el, string name) =>
-        el.TryGetProperty(name, out var prop) &&
-        (prop.ValueKind == JsonValueKind.True || prop.ValueKind == JsonValueKind.False) &&
-        prop.GetBoolean();
-
-    /// Adsolut serialises dates offset-less (no 'Z'), e.g. "2026-06-02T11:33:36".
-    /// Parse as UTC (AssumeUniversal). The sentinel "0001-01-01T00:00:00" means
-    /// "unset" → null, so a default date never lands in the mirror.
-    private static DateTimeOffset? TryGetDateTimeOffset(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return null;
-        var raw = prop.GetString();
-        if (string.IsNullOrEmpty(raw)) return null;
-        if (raw.StartsWith("0001-01-01", StringComparison.Ordinal)) return null;
-        return DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dto)
-            ? dto.ToUniversalTime()
-            : null;
-    }
 }

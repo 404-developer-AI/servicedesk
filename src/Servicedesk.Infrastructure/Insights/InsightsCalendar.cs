@@ -1,4 +1,5 @@
 using System.Globalization;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Insights;
 
@@ -123,15 +124,8 @@ public static class InsightsCalendar
 
     /// Display-timezone resolution, same order as /api/system/time:
     /// App.TimeZone → container local zone → UTC.
-    public static TimeZoneInfo ResolveTimeZone(string? id)
-    {
-        if (!string.IsNullOrWhiteSpace(id))
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-            catch { /* invalid id — fall through */ }
-        }
-        return TimeZoneInfo.Local;
-    }
+    public static TimeZoneInfo ResolveTimeZone(string? id) =>
+        TimeZoneResolver.Resolve(id, TimeZoneInfo.Local);
 
     public static DateOnly StartOfWeek(DateOnly date)
     {

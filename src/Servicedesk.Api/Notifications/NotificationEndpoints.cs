@@ -22,7 +22,7 @@ public static class NotificationEndpoints
         group.MapGet("/pending", async (
             HttpContext http, INotificationRepository repo, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var rows = await repo.ListPendingForUserAsync(userId, ct);
             return Results.Ok(rows.Select(Map));
         }).WithName("ListPendingNotifications");
@@ -31,7 +31,7 @@ public static class NotificationEndpoints
             HttpContext http, INotificationRepository repo,
             string? cursorUtc, Guid? cursorId, int? limit, CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             NotificationHistoryCursor? cursor = null;
             if (!string.IsNullOrWhiteSpace(cursorUtc) && cursorId is not null
                 && DateTime.TryParse(cursorUtc, null, DateTimeStyles.RoundtripKind, out var parsed))
@@ -59,7 +59,7 @@ public static class NotificationEndpoints
             Guid id, HttpContext http, INotificationRepository repo, IAuditLogger audit,
             CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var row = await repo.GetByIdForUserAsync(id, userId, ct);
             if (row is null) return Results.NotFound();
 
@@ -83,7 +83,7 @@ public static class NotificationEndpoints
             Guid id, HttpContext http, INotificationRepository repo, IAuditLogger audit,
             CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var row = await repo.GetByIdForUserAsync(id, userId, ct);
             if (row is null) return Results.NotFound();
 
@@ -107,7 +107,7 @@ public static class NotificationEndpoints
             HttpContext http, INotificationRepository repo, IAuditLogger audit,
             CancellationToken ct) =>
         {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var count = await repo.MarkAllAckedAsync(userId, ct);
             if (count > 0)
             {

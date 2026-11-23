@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
+using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Statistics;
@@ -33,7 +34,7 @@ public static class StatisticsEndpoints
         group.MapGet("/tiles", async (
             HttpContext http, IUserService users, IStatisticTileService tiles, CancellationToken ct) =>
         {
-            var userId = ResolveUserId(http);
+            var userId = ActorContext.TryGetUserId(http);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetStatisticsReadEnabledAsync(userId.Value, ct)) return Results.Forbid();
 
@@ -45,7 +46,7 @@ public static class StatisticsEndpoints
             Guid id, int? offset, HttpContext http, IUserService users,
             IStatisticTileService tiles, IStatisticMetricEngine engine, CancellationToken ct) =>
         {
-            var userId = ResolveUserId(http);
+            var userId = ActorContext.TryGetUserId(http);
             if (userId is null) return Results.Unauthorized();
 
             var canRead = await users.GetStatisticsReadEnabledAsync(userId.Value, ct);
@@ -73,7 +74,7 @@ public static class StatisticsEndpoints
             [FromBody] SaveLayoutRequest request, HttpContext http,
             IUserService users, IStatisticTileService tiles, CancellationToken ct) =>
         {
-            var userId = ResolveUserId(http);
+            var userId = ActorContext.TryGetUserId(http);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetStatisticsReadEnabledAsync(userId.Value, ct)) return Results.Forbid();
 
@@ -89,7 +90,7 @@ public static class StatisticsEndpoints
         group.MapGet("/catalogue", async (
             HttpContext http, IUserService users, CancellationToken ct) =>
         {
-            var userId = ResolveUserId(http);
+            var userId = ActorContext.TryGetUserId(http);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetStatisticsWriteEnabledAsync(userId.Value, ct)) return Results.Forbid();
 
@@ -107,7 +108,7 @@ public static class StatisticsEndpoints
         group.MapGet("/manage/tiles", async (
             HttpContext http, IUserService users, IStatisticTileService tiles, CancellationToken ct) =>
         {
-            var userId = ResolveUserId(http);
+            var userId = ActorContext.TryGetUserId(http);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetStatisticsWriteEnabledAsync(userId.Value, ct)) return Results.Forbid();
 
@@ -118,7 +119,7 @@ public static class StatisticsEndpoints
         group.MapGet("/manage/tiles/{id:guid}", async (
             Guid id, HttpContext http, IUserService users, IStatisticTileService tiles, CancellationToken ct) =>
         {
-            var userId = ResolveUserId(http);
+            var userId = ActorContext.TryGetUserId(http);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetStatisticsWriteEnabledAsync(userId.Value, ct)) return Results.Forbid();
 
@@ -136,7 +137,7 @@ public static class StatisticsEndpoints
             [FromBody] TileInputRequest request, HttpContext http,
             IUserService users, IStatisticTileService tiles, IAuditLogger audit, CancellationToken ct) =>
         {
-            var userId = ResolveUserId(http);
+            var userId = ActorContext.TryGetUserId(http);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetStatisticsWriteEnabledAsync(userId.Value, ct)) return Results.Forbid();
 
@@ -155,7 +156,7 @@ public static class StatisticsEndpoints
             Guid id, [FromBody] TileInputRequest request, HttpContext http,
             IUserService users, IStatisticTileService tiles, IAuditLogger audit, CancellationToken ct) =>
         {
-            var userId = ResolveUserId(http);
+            var userId = ActorContext.TryGetUserId(http);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetStatisticsWriteEnabledAsync(userId.Value, ct)) return Results.Forbid();
 
@@ -175,7 +176,7 @@ public static class StatisticsEndpoints
             Guid id, HttpContext http, IUserService users,
             IStatisticTileService tiles, IAuditLogger audit, CancellationToken ct) =>
         {
-            var userId = ResolveUserId(http);
+            var userId = ActorContext.TryGetUserId(http);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetStatisticsWriteEnabledAsync(userId.Value, ct)) return Results.Forbid();
 
@@ -195,7 +196,7 @@ public static class StatisticsEndpoints
             Guid id, [FromBody] AssignmentsRequest request, HttpContext http,
             IUserService users, IStatisticTileService tiles, IAuditLogger audit, CancellationToken ct) =>
         {
-            var userId = ResolveUserId(http);
+            var userId = ActorContext.TryGetUserId(http);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetStatisticsWriteEnabledAsync(userId.Value, ct)) return Results.Forbid();
 
@@ -292,12 +293,6 @@ public static class StatisticsEndpoints
             UserAgent: http.Request.Headers.UserAgent.ToString(),
             Payload: new { title = tile.Title, metric = tile.MetricKey, scope = tile.Scope }), ct);
         return body;
-    }
-
-    private static Guid? ResolveUserId(HttpContext http)
-    {
-        var raw = http.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        return Guid.TryParse(raw, out var id) ? id : null;
     }
 
     // ---- request DTOs -----------------------------------------------------

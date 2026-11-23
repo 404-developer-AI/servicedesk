@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.Extensions.DependencyInjection;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Activity;
@@ -28,8 +27,7 @@ internal static class KbAudit
         var recorder = http.RequestServices.GetService<IActivityRecorder>();
         if (recorder is null) return;
 
-        var idClaim = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!Guid.TryParse(idClaim, out var agentId)) return;
+        if (ActorContext.TryGetUserId(http) is not { } agentId) return;
 
         await recorder.RecordAsync(new ActivityRecord(
             AgentId: agentId,

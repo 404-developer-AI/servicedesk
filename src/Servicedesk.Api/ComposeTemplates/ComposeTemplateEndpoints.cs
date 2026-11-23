@@ -73,7 +73,7 @@ public static class ComposeTemplateEndpoints
             var err = Validate(req);
             if (err is not null) return Results.BadRequest(new { error = err });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var sanitized = sanitizer.Sanitize(req.BodyHtml);
 
             Guid id;
@@ -295,7 +295,7 @@ public static class ComposeTemplateEndpoints
             IReadOnlyDictionary<string, string> tokens;
             if (ticketId is Guid ticketGuid)
             {
-                var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+                var userId = ActorContext.GetUserId(http);
                 var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
                 var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, ticketGuid, ct);
                 if (ticket is null) return Results.NotFound();

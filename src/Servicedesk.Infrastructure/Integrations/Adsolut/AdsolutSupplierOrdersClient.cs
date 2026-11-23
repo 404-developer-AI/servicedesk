@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -84,7 +85,7 @@ public sealed class AdsolutSupplierOrdersClient : IAdsolutSupplierOrdersClient
         var hasNext = false;
         if (root.TryGetProperty("pagingData", out var paging) && paging.ValueKind == JsonValueKind.Object)
         {
-            nextCursor = TryGetString(paging, "nextCursor");
+            nextCursor = paging.GetStringOrNull("nextCursor");
             if (paging.TryGetProperty("hasNext", out var hn) &&
                 (hn.ValueKind == JsonValueKind.True || hn.ValueKind == JsonValueKind.False))
             {
@@ -98,39 +99,39 @@ public sealed class AdsolutSupplierOrdersClient : IAdsolutSupplierOrdersClient
     private static AdsolutSupplierOrder? ParseSupplierOrder(JsonElement root)
     {
         if (root.ValueKind != JsonValueKind.Object) return null;
-        if (!TryGetGuid(root, "id", out var id)) return null;
+        if (!root.TryGetGuidProperty("id", out var id)) return null;
 
         Guid? supplierId = null;
         string? supplierCode = null, supplierName = null;
         if (root.TryGetProperty("supplier", out var sup) && sup.ValueKind == JsonValueKind.Object)
         {
-            supplierId = TryGetGuid(sup, "id", out var sid) ? sid : (Guid?)null;
-            supplierCode = TryGetString(sup, "code");
-            supplierName = TryGetString(sup, "name");
+            supplierId = sup.TryGetGuidProperty("id", out var sid) ? sid : (Guid?)null;
+            supplierCode = sup.GetStringOrNull("code");
+            supplierName = sup.GetStringOrNull("name");
         }
 
         string? bookCode = null;
         if (root.TryGetProperty("book", out var book) && book.ValueKind == JsonValueKind.Object)
         {
-            bookCode = TryGetString(book, "code");
+            bookCode = book.GetStringOrNull("code");
         }
 
         string? headerStateCode = null;
         if (root.TryGetProperty("supplierOrderState", out var st) && st.ValueKind == JsonValueKind.Object)
         {
-            headerStateCode = TryGetString(st, "code");
+            headerStateCode = st.GetStringOrNull("code");
         }
 
         return new AdsolutSupplierOrder(
             Id: id,
-            DocNr: TryGetInt(root, "docNr"),
+            DocNr: root.GetInt32OrNull("docNr"),
             BookCode: bookCode,
             SupplierId: supplierId,
             SupplierCode: supplierCode,
             SupplierName: supplierName,
             StateCode: headerStateCode,
-            SupplierOrderDate: TryGetDateTimeOffset(root, "supplierOrderDate"),
-            AdsolutLastModified: TryGetDateTimeOffset(root, "lastModified"),
+            SupplierOrderDate: root.GetDateTimeOffsetUnsetAsNull("supplierOrderDate"),
+            AdsolutLastModified: root.GetDateTimeOffsetUnsetAsNull("lastModified"),
             Lines: ParseLines(root));
     }
 
@@ -144,26 +145,26 @@ public sealed class AdsolutSupplierOrdersClient : IAdsolutSupplierOrdersClient
         foreach (var el in arr.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            if (!TryGetGuid(el, "supplierOrderInfoDetailId", out var id)) continue;
+            if (!el.TryGetGuidProperty("supplierOrderInfoDetailId", out var id)) continue;
 
             Guid? productId = null;
             string? productCode = null;
             if (el.TryGetProperty("product", out var prod) && prod.ValueKind == JsonValueKind.Object)
             {
-                productId = TryGetGuid(prod, "id", out var pid) ? pid : (Guid?)null;
-                productCode = TryGetString(prod, "code");
+                productId = prod.TryGetGuidProperty("id", out var pid) ? pid : (Guid?)null;
+                productCode = prod.GetStringOrNull("code");
             }
 
             string? unitCode = null;
             if (el.TryGetProperty("unit", out var u) && u.ValueKind == JsonValueKind.Object)
             {
-                unitCode = TryGetString(u, "code");
+                unitCode = u.GetStringOrNull("code");
             }
 
             string? statusCode = null;
             if (el.TryGetProperty("supplierOrderDetailState", out var ds) && ds.ValueKind == JsonValueKind.Object)
             {
-                statusCode = TryGetString(ds, "code");
+                statusCode = ds.GetStringOrNull("code");
             }
 
             // warehouse {id, code} = "Stock"; warehouseLocation {id, code} =
@@ -173,16 +174,16 @@ public sealed class AdsolutSupplierOrdersClient : IAdsolutSupplierOrdersClient
             string? warehouseCode = null;
             if (el.TryGetProperty("warehouse", out var wh) && wh.ValueKind == JsonValueKind.Object)
             {
-                warehouseId = TryGetGuid(wh, "id", out var whid) ? whid : (Guid?)null;
-                warehouseCode = TryGetString(wh, "code");
+                warehouseId = wh.TryGetGuidProperty("id", out var whid) ? whid : (Guid?)null;
+                warehouseCode = wh.GetStringOrNull("code");
             }
 
             Guid? warehouseLocationId = null;
             string? warehouseLocationCode = null;
             if (el.TryGetProperty("warehouseLocation", out var wl) && wl.ValueKind == JsonValueKind.Object)
             {
-                warehouseLocationId = TryGetGuid(wl, "id", out var wlid) ? wlid : (Guid?)null;
-                warehouseLocationCode = TryGetString(wl, "code");
+                warehouseLocationId = wl.TryGetGuidProperty("id", out var wlid) ? wlid : (Guid?)null;
+                warehouseLocationCode = wl.GetStringOrNull("code");
             }
 
             // Link back to the sales order (header). The nested object is named
@@ -192,23 +193,23 @@ public sealed class AdsolutSupplierOrdersClient : IAdsolutSupplierOrdersClient
             int? linkedOrderDocNr = null;
             if (el.TryGetProperty("orderInfoDetail", out var od) && od.ValueKind == JsonValueKind.Object)
             {
-                linkedOrderId = TryGetGuid(od, "orderInfoId", out var oid) ? oid : (Guid?)null;
-                linkedOrderDocNr = TryGetInt(od, "docNr");
+                linkedOrderId = od.TryGetGuidProperty("orderInfoId", out var oid) ? oid : (Guid?)null;
+                linkedOrderDocNr = od.GetInt32OrNull("docNr");
             }
 
             list.Add(new AdsolutSupplierOrderLine(
                 Id: id,
-                LineNr: TryGetInt(el, "lineNr"),
+                LineNr: el.GetInt32OrNull("lineNr"),
                 ProductId: productId,
                 ProductCode: productCode,
-                Name: TryGetString(el, "name"),
-                Description: TryGetString(el, "description"),
-                Quantity: TryGetDecimal(el, "quantity"),
-                Delivered: TryGetDecimal(el, "delivered"),
+                Name: el.GetStringOrNull("name"),
+                Description: el.GetStringOrNull("description"),
+                Quantity: el.GetDecimalOrNull("quantity"),
+                Delivered: el.GetDecimalOrNull("delivered"),
                 UnitCode: unitCode,
-                GrossUnitPrice: TryGetDecimal(el, "grossUnitPrice"),
-                UnitPrice: TryGetDecimal(el, "unitPrice"),
-                Discount1: TryGetDecimal(el, "discount1"),
+                GrossUnitPrice: el.GetDecimalOrNull("grossUnitPrice"),
+                UnitPrice: el.GetDecimalOrNull("unitPrice"),
+                Discount1: el.GetDecimalOrNull("discount1"),
                 StatusCode: statusCode,
                 WarehouseId: warehouseId,
                 WarehouseCode: warehouseCode,
@@ -220,41 +221,4 @@ public sealed class AdsolutSupplierOrdersClient : IAdsolutSupplierOrdersClient
         return list;
     }
 
-    private static bool TryGetGuid(JsonElement el, string name, out Guid value)
-    {
-        value = Guid.Empty;
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return false;
-        return Guid.TryParse(prop.GetString(), out value);
-    }
-
-    private static int? TryGetInt(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var v)) return v;
-        return null;
-    }
-
-    private static decimal? TryGetDecimal(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetDecimal(out var v)) return v;
-        return null;
-    }
-
-    private static string? TryGetString(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop)) return null;
-        return prop.ValueKind == JsonValueKind.String ? prop.GetString() : null;
-    }
-
-    private static DateTimeOffset? TryGetDateTimeOffset(JsonElement el, string name)
-    {
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return null;
-        var raw = prop.GetString();
-        if (string.IsNullOrEmpty(raw)) return null;
-        if (raw.StartsWith("0001-01-01", StringComparison.Ordinal)) return null;
-        return DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dto)
-            ? dto.ToUniversalTime()
-            : null;
-    }
 }

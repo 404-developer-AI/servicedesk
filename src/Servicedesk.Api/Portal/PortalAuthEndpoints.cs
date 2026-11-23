@@ -195,7 +195,7 @@ public static class PortalAuthEndpoints
         if (!await PortalRequest.PortalEnabledAsync(settings, ct)) return PortalRequest.Disabled();
         if (!PortalRequest.IsCustomerPrincipal(http)) return Results.Unauthorized();
         if (PortalRequest.IsImpersonated(http)) return PortalRequest.ReadOnly();
-        var userId = PortalRequest.UserId(http);
+        var userId = ActorContext.TryGetUserId(http);
         var sessionId = PortalRequest.SessionId(http);
         if (userId is null || sessionId is null) return Results.Unauthorized();
 
@@ -240,7 +240,7 @@ public static class PortalAuthEndpoints
         if (!await PortalRequest.PortalEnabledAsync(settings, ct)) return PortalRequest.Disabled();
         if (!PortalRequest.IsCustomerPrincipal(http)) return Results.Unauthorized();
         if (PortalRequest.IsImpersonated(http)) return PortalRequest.ReadOnly();
-        var userId = PortalRequest.UserId(http);
+        var userId = ActorContext.TryGetUserId(http);
         if (userId is null) return Results.Unauthorized();
         // Re-enrollment of an already enrolled account is an agent action
         // (TOTP reset), never self-service — a stolen pending session must
@@ -259,7 +259,7 @@ public static class PortalAuthEndpoints
         if (!await PortalRequest.PortalEnabledAsync(settings, ct)) return PortalRequest.Disabled();
         if (!PortalRequest.IsCustomerPrincipal(http)) return Results.Unauthorized();
         if (PortalRequest.IsImpersonated(http)) return PortalRequest.ReadOnly();
-        var userId = PortalRequest.UserId(http);
+        var userId = ActorContext.TryGetUserId(http);
         var sessionId = PortalRequest.SessionId(http);
         if (userId is null || sessionId is null) return Results.Unauthorized();
         if (await totp.IsEnabledAsync(userId.Value, ct))
@@ -295,7 +295,7 @@ public static class PortalAuthEndpoints
                 var impersonator = impersonatorId is { } iid ? await users.FindByIdAsync(iid, ct) : null;
                 await audit.LogAsync(new AuditEvent(PortalEventTypes.ImpersonationEnded,
                     impersonator?.Email ?? impersonatorId?.ToString() ?? "unknown", "Admin",
-                    Target: PortalRequest.UserId(http)?.ToString(),
+                    Target: ActorContext.TryGetUserId(http)?.ToString(),
                     ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                     UserAgent: http.Request.Headers.UserAgent.ToString(),
                     Payload: new { sessionId, customerEmail = http.User.Identity?.Name }), ct);
@@ -319,7 +319,7 @@ public static class PortalAuthEndpoints
         var enabled = await PortalRequest.PortalEnabledAsync(settings, ct);
         if (!enabled || !PortalRequest.IsCustomerPrincipal(http))
             return Results.Ok(new { enabled, user = (object?)null, serverTimeUtc = DateTimeOffset.UtcNow });
-        var userId = PortalRequest.UserId(http);
+        var userId = ActorContext.TryGetUserId(http);
         if (userId is null) return Results.Ok(new { enabled, user = (object?)null, serverTimeUtc = DateTimeOffset.UtcNow });
 
         var viewer = await accounts.GetViewerAsync(userId.Value, ct);

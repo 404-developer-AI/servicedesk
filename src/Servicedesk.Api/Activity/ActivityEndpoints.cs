@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Activity;
 using Servicedesk.Infrastructure.Auth;
@@ -27,7 +28,7 @@ public static class ActivityEndpoints
             [FromQuery] int? limit,
             CancellationToken ct) =>
         {
-            var userId = ResolveUserId(httpContext);
+            var userId = ActorContext.TryGetUserId(httpContext);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetActivityFeedEnabledAsync(userId.Value, ct))
             {
@@ -54,7 +55,7 @@ public static class ActivityEndpoints
             [FromQuery] int? limit,
             CancellationToken ct) =>
         {
-            var userId = ResolveUserId(httpContext);
+            var userId = ActorContext.TryGetUserId(httpContext);
             if (userId is null) return Results.Unauthorized();
             if (!await users.GetActivityFeedEnabledAsync(userId.Value, ct))
             {
@@ -80,12 +81,6 @@ public static class ActivityEndpoints
         }).WithName("ActivityList");
 
         return app;
-    }
-
-    private static Guid? ResolveUserId(HttpContext httpContext)
-    {
-        var raw = httpContext.User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        return Guid.TryParse(raw, out var id) ? id : null;
     }
 
     private static string ResolveRole(HttpContext httpContext)

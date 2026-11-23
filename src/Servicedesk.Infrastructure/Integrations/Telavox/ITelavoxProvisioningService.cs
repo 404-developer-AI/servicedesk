@@ -49,14 +49,6 @@ public interface ITelavoxProvisioningService
 public sealed record TelavoxTestConnectionResult(
     IReadOnlyList<TelavoxCustomer> Customers);
 
-/// Inputs to <see cref="ITelavoxProvisioningService.ProvisionAgentAsync"/>.
-/// The agent's SD <c>users.email</c> is read inside the service so the
-/// caller doesn't have to pass it (avoids a stale-email bug if the admin
-/// pasted the wrong address into a form).
-public sealed record TelavoxProvisioningInput(
-    Guid UserId,
-    string TelavoxExtension);
-
 /// Wrapper carrying both the user-supplied request body fields and the
 /// resolved actor/role for audit logging.
 public sealed record TelavoxProvisionAgentRequest(

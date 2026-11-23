@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
@@ -39,7 +38,7 @@ public static class ChecklistTemplateEndpoints
             var (input, err) = await NormalizeAsync(req, settings, ct);
             if (err is not null || input is null) return Results.BadRequest(new { error = err ?? "Invalid template." });
 
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             var id = await repo.CreateAsync(input, userId, ct);
             await Audit(audit, http, "checklist_template.created", id,
                 new { input.Name, itemCount = input.Definition.ItemCount, input.BlockClose, queueCount = input.QueueIds.Count });
@@ -69,7 +68,7 @@ public static class ChecklistTemplateEndpoints
             var src = await repo.GetAsync(id, ct);
             if (src is null) return Results.NotFound();
             var name = src.Name.Length + 7 > ChecklistLimits.NameMax ? src.Name[..(ChecklistLimits.NameMax - 7)] + " (copy)" : src.Name + " (copy)";
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userId = ActorContext.GetUserId(http);
             // Copies start inactive so a half-edited duplicate never shows up
             // in the agents' picker by accident.
             var copyId = await repo.CreateAsync(

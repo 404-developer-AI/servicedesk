@@ -50,12 +50,6 @@ public sealed record IntakeFormInstance(
     /// resolved at send time. Never mutated after the mail leaves the server.
     JsonDocument Prefill);
 
-public sealed record IntakeFormAnswer(
-    long Id,
-    Guid InstanceId,
-    long QuestionId,
-    JsonDocument Answer);
-
 /// Supported default-value tokens a template designer can bind to a question.
 /// Resolved server-side at send time against ticket / requester-contact /
 /// company metadata. Unknown tokens resolve to empty string.

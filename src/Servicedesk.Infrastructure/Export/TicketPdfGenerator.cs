@@ -3,6 +3,8 @@ using System.Text.RegularExpressions;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using Servicedesk.Infrastructure.Integrations.Http;
+using Servicedesk.Infrastructure.Time;
 
 namespace Servicedesk.Infrastructure.Export;
 
@@ -94,13 +96,6 @@ public static partial class TicketPdfGenerator
 
     // ── Timezone conversion ──────────────────────────────────────────────────
 
-    private static TimeZoneInfo ResolveTimezone(string? id)
-    {
-        if (string.IsNullOrEmpty(id)) return TimeZoneInfo.Utc;
-        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-        catch { return TimeZoneInfo.Utc; }
-    }
-
     private static string FormatLocal(DateTime utc, TimeZoneInfo tz)
     {
         var local = TimeZoneInfo.ConvertTimeFromUtc(
@@ -130,7 +125,7 @@ public static partial class TicketPdfGenerator
     public static byte[] Generate(TicketPdfData data)
     {
         QuestPDF.Settings.License = LicenseType.Community;
-        var tz = ResolveTimezone(data.ServerTimezoneId);
+        var tz = TimeZoneResolver.Resolve(data.ServerTimezoneId, TimeZoneInfo.Utc);
 
         return Document.Create(container =>
         {
@@ -797,22 +792,14 @@ public static partial class TicketPdfGenerator
             using var doc = JsonDocument.Parse(metadataJson);
             var root = doc.RootElement;
 
-            var from = TryGetString(root, "fromName") ?? TryGetString(root, "from") ?? "?";
-            var to   = TryGetString(root, "toName")   ?? TryGetString(root, "to")   ?? "?";
+            var from = root.GetStringOrNull("fromName") ?? root.GetStringOrNull("from") ?? "?";
+            var to   = root.GetStringOrNull("toName")   ?? root.GetStringOrNull("to")   ?? "?";
             return $"{from} → {to}";
         }
         catch
         {
             return null;
         }
-    }
-
-    private static string? TryGetString(JsonElement el, string propertyName)
-    {
-        if (el.TryGetProperty(propertyName, out var prop) &&
-            prop.ValueKind == JsonValueKind.String)
-            return prop.GetString();
-        return null;
     }
 
     private static string StripHtml(string html)
@@ -849,7 +836,7 @@ public static partial class TicketPdfGenerator
             var list = new List<AttachmentInfo>();
             foreach (var item in arr.EnumerateArray())
             {
-                var name = TryGetString(item, "name") ?? "unnamed";
+                var name = item.GetStringOrNull("name") ?? "unnamed";
                 long size = 0;
                 if (item.TryGetProperty("size", out var sizeProp) && sizeProp.ValueKind == JsonValueKind.Number)
                     size = sizeProp.GetInt64();

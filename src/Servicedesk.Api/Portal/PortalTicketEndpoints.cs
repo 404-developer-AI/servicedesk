@@ -52,7 +52,7 @@ public static class PortalTicketEndpoints
     private static async Task<PortalViewer?> ViewerAsync(HttpContext http, IPortalAccountRepository accounts, ISettingsService settings, CancellationToken ct)
     {
         if (!await PortalRequest.PortalEnabledAsync(settings, ct)) return null;
-        var userId = PortalRequest.UserId(http);
+        var userId = ActorContext.TryGetUserId(http);
         if (userId is null) return null;
         var viewer = await accounts.GetViewerAsync(userId.Value, ct);
         if (viewer is null || viewer.Status != PortalAccountStatus.Active || viewer.ContactId is null) return null;

@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
@@ -99,7 +98,7 @@ public static class FormTemplateEndpoints
     }
 
     private static Guid CurrentUserId(HttpContext http)
-        => Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        => ActorContext.GetUserId(http);
 
     private static async Task<(FormTemplateInput? Input, string? Error)> NormalizeAsync(
         FormTemplateRequest req, IFormSettingsReader settings, IFormTemplateRepository templates, CancellationToken ct)
