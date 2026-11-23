@@ -4,7 +4,6 @@
 # back under the limit. Never add an entry by hand — split the file instead. After a
 # split, run the test with SD_FILE_SIZE_BASELINE=tighten to update this list.
 # Format: <lines> <path relative to the repository root>
-2806 src/Servicedesk.Api/Tickets/TicketEndpoints.cs
 2182 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadApiClient.cs
 2068 src/Servicedesk.Infrastructure/Persistence/Tickets/TicketRepository.cs
 2024 src/Servicedesk.Api/Integrations/AdsolutEndpoints.cs
@@ -21,6 +20,7 @@
 1218 src/Servicedesk.Web/src/pages/timesheet/TimesheetTab2.tsx
 1214 src/Servicedesk.Web/src/pages/settings/UsersSettingsPage.tsx
 1207 src/Servicedesk.Web/src/pages/settings/signatures/SignatureEditor.tsx
+1174 src/Servicedesk.Api/Tickets/TicketEndpoints.cs
 1170 src/Servicedesk.Web/src/pages/settings/GeneralSettingsPage.tsx
 1161 src/Servicedesk.Web/src/pages/tickets/components/AddNoteForm.tsx
 1161 src/Servicedesk.Web/src/pages/views/ViewsPage.tsx

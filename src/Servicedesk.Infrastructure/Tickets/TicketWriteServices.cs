@@ -19,6 +19,8 @@ internal static class TicketWriteServices
         // Agent-supplied ticket HTML is sanitised at the API boundary
         // (defence in depth on top of DOMPurify at render).
         services.AddSingleton<ITicketHtmlSanitizer, TicketHtmlSanitizer>();
+        // v0.0.42 / ROADMAP §2 C4 — the PATCH status-gate negotiation.
+        services.AddSingleton<Triggers.StatusGate.IStatusGateConfirmationService, Triggers.StatusGate.StatusGateConfirmationService>();
 
         // v0.1.65 (ROADMAP §2 C3) — one rule set and one field write for
         // agents and triggers. Singletons: the trigger handlers are too.
