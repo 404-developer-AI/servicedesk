@@ -34,7 +34,7 @@ import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { useViewingTicket } from "@/hooks/usePresence";
 import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { SlaPill } from "@/components/sla/SlaPill";
-import { TicketSidePanel, TicketPresence } from "./components/TicketSidePanel";
+import { TicketSidePanel } from "./components/TicketSidePanel"; import { TicketPresence } from "./components/sidePanel/TicketPresence";
 import { TicketTimeline } from "./components/TicketTimeline";
 import { isSystemEvent, isSystemEventType } from "./components/timeline/eventConfig";
 import { TimelineOlderBar } from "./components/TimelineOlderBar";
