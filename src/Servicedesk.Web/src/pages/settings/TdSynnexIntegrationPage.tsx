@@ -13,7 +13,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { ApiError, apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api";
 import { tdSynnexAdminApi, type TdSynnexState } from "@/lib/order-management-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { formatTimeAgo } from "@/lib/format";
 import { formatDate } from "@/lib/dateFormat";
 import { useServerTimeZone } from "@/hooks/useServerTime";
+import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "tdsynnex", "status"] as const;
 
@@ -92,7 +93,7 @@ export function TdSynnexIntegrationPage() {
 
   const onErr = (err: unknown) => {
     const upstream = apiErrorMessage(err);
-    toast.error(upstream ?? (err instanceof ApiError ? `Failed (${err.status})` : "Failed"));
+    toast.error(upstream ?? (errorMessage(err, "Failed")));
   };
   const refresh = () => qc.invalidateQueries({ queryKey: STATUS_QK });
 

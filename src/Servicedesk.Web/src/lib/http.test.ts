@@ -75,6 +75,15 @@ describe("http", () => {
     expect(await request("GET", "/api/x")).toBeUndefined();
   });
 
+  it("throws a readable ApiError for a non-JSON 2xx body instead of a SyntaxError", async () => {
+    mockFetch(() => new Response("<html>proxy page</html>", { status: 200 }));
+    await expect(request("GET", "/api/x")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 200,
+      message: expect.stringContaining("unexpected response"),
+    });
+  });
+
   it("throws ApiError with the parsed body; helpers read message and field errors", async () => {
     mockFetch(() => new Response(
       JSON.stringify({ error: "invalid", message: "Some fields are invalid.", errors: [{ field: "start", message: "Required" }] }),

@@ -50,6 +50,8 @@ import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditL
 import { TelavoxContactLookupSection } from "./TelavoxContactLookupSection";
 import { TelavoxEventProbeSection } from "./TelavoxEventProbeSection";
 import { cn } from "@/lib/utils";
+import { findEntry } from "@/components/settings/settingEntries";
+import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "telavox", "status"] as const;
 const SECRET_QK = ["integrations", "telavox", "secret"] as const;
@@ -88,10 +90,6 @@ const STATE_LABEL: Record<
     dot: "bg-emerald-400",
   },
 };
-
-function findEntry(entries: SettingEntry[] | undefined, key: string) {
-  return entries?.find((e) => e.key === key);
-}
 
 export function TelavoxIntegrationPage() {
   const qc = useQueryClient();
@@ -142,7 +140,7 @@ export function TelavoxIntegrationPage() {
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? `Save failed (${err.status})` : "Save failed",
+        errorMessage(err, "Save failed"),
       ),
   });
 

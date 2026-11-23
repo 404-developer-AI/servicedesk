@@ -11,6 +11,7 @@ import { useAuth } from "@/auth/authStore";
 import { useServerOffsetMinutes, toServerLocalDate } from "@/hooks/useServerTime";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 import { ContactHoverCard } from "@/components/ContactHoverCard";
+import { useDebounced } from "@/hooks/useDebounced";
 
 // Fallback until the first response carries the server-configured value
 // (Search.DebounceMs). Clamped so a bad setting can't freeze the box.
@@ -36,17 +37,12 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
 
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
-  const [debounced, setDebounced] = useState("");
   const [debounceMs, setDebounceMs] = useState(DEBOUNCE_FALLBACK_MS);
-  const [anchorRect, setAnchorRect] = useState<{ left: number; top: number; width: number } | null>(null);
-
   // Debounce the query so we don't flood the backend on every keystroke.
   // The interval comes from the Search.DebounceMs setting (carried on every
   // dropdown response); the first keystrokes use the fallback until it lands.
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), debounceMs);
-    return () => clearTimeout(t);
-  }, [value, debounceMs]);
+  const debounced = useDebounced(value, debounceMs);
+  const [anchorRect, setAnchorRect] = useState<{ left: number; top: number; width: number } | null>(null);
 
   // The dropdown lives in a portal so it can extend past the sidebar's
   // `overflow-hidden`, which would otherwise clip it to the sidebar width.

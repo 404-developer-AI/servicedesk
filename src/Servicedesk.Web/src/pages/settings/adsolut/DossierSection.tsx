@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ApiError, adsolutApi, type AdsolutStatus } from "@/lib/api";
+import { adsolutApi, type AdsolutStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ADSOLUT_STATUS_QUERY_KEY, ADSOLUT_ADMIN_QUERY_KEY, ADSOLUT_SYNC_QUERY_KEY } from "@/pages/settings/adsolut/shared";
+import { errorMessage } from "@/lib/http";
 
 export function DossierSection({ status: s }: { status: AdsolutStatus }) {
   const qc = useQueryClient();
@@ -34,7 +35,7 @@ export function DossierSection({ status: s }: { status: AdsolutStatus }) {
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? `Activate failed (${err.status})` : "Activate failed",
+        errorMessage(err, "Activate failed"),
       ),
   });
 

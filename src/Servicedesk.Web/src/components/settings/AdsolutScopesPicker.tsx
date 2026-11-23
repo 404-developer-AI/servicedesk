@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, Code2, Lock } from "lucide-react";
-import { ApiError, settingsApi, type SettingEntry } from "@/lib/api";
+import { settingsApi, type SettingEntry } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 /// One Adsolut scope with the metadata the picker renders. `required` scopes
 /// are always present in the saved string and rendered checked + disabled
@@ -146,7 +147,7 @@ export function AdsolutScopesPicker({ entry, queryKey, needsReconnect }: Props) 
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? `Save failed (${err.status})` : "Save failed",
+        errorMessage(err, "Save failed"),
       ),
   });
 

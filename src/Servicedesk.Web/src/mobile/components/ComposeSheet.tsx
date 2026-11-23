@@ -16,6 +16,7 @@ import {
   type ComposeKind,
   type ComposeMention,
 } from "../compose";
+import { useDebounced } from "@/hooks/useDebounced";
 
 /// One-thumb composer for an internal note or a logged call. Both go through
 /// the same endpoint and rules as the desktop composer (POST
@@ -248,11 +249,7 @@ function MentionPicker({
   onPick: (m: ComposeMention) => void;
   onClose: () => void;
 }) {
-  const [debounced, setDebounced] = React.useState(query);
-  React.useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(query), 200);
-    return () => window.clearTimeout(id);
-  }, [query]);
+  const debounced = useDebounced(query, 200);
   const results = useQuery({
     queryKey: ["mention-search", debounced],
     queryFn: () => mentionApi.search(debounced),

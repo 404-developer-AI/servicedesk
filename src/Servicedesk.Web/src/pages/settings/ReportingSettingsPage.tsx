@@ -8,17 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { SettingField } from "@/components/settings/SettingField";
-import { reportingAdminApi, settingsApi, type SettingEntry } from "@/lib/api";
+import { reportingAdminApi, settingsApi } from "@/lib/api";
+import { findEntry } from "@/components/settings/settingEntries";
 
 const SETTINGS_QUERY_KEY = ["settings", "list", "Reporting"] as const;
 const STATUS_QUERY_KEY = ["settings", "reporting", "status"] as const;
 
 const KEY_IP_ALLOW_LIST = "Reporting.IpAllowList";
 const KEY_MAX_LIST_ITEMS = "Reporting.MaxListItems";
-
-function findEntry(entries: SettingEntry[] | undefined, key: string) {
-  return entries?.find((e) => e.key === key);
-}
 
 export function ReportingSettingsPage() {
   const query = useQuery({

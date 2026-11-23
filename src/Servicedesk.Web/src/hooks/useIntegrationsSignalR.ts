@@ -93,6 +93,3 @@ export function useIntegrationsSignalR() {
   }, [queryClient]);
 }
 
-export function getIntegrationsConnection(): HubConnection | null {
-  return connection;
-}

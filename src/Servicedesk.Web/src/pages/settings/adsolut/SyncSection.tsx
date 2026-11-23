@@ -2,16 +2,17 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 import {
-  ApiError,
   adsolutApi,
   type SettingEntry,
   type AdsolutSyncState,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { SettingField } from "@/components/settings/SettingField";
-import { ADSOLUT_SETTINGS_QUERY_KEY, ADSOLUT_COVERAGE_QUERY_KEY, findEntry } from "@/pages/settings/adsolut/shared";
+import { ADSOLUT_SETTINGS_QUERY_KEY, ADSOLUT_COVERAGE_QUERY_KEY } from "@/pages/settings/adsolut/shared";
 import { CoverageTile } from "@/pages/settings/adsolut/CoverageTile";
 import { formatDateTimeMedium } from "@/lib/dateFormat";
+import { findEntry } from "@/components/settings/settingEntries";
+import { errorMessage } from "@/lib/http";
 
 export function SyncSection({
   syncState,
@@ -37,7 +38,7 @@ export function SyncSection({
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? `Sync request failed (${err.status})` : "Sync request failed",
+        errorMessage(err, "Sync request failed"),
       ),
   });
 

@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   highlightRanges,
   normalizeLayout,
-  pickerOrder,
   rowMatchesColumns,
   searchTokens,
-  TICKET_COLUMNS,
 } from "./ticketColumns";
 import type { TicketListItem } from "./ticket-api";
 
@@ -23,16 +21,9 @@ const row = {
   assigneeEmail: null,
 } as unknown as TicketListItem;
 
-describe("normalizeLayout / pickerOrder", () => {
+describe("normalizeLayout", () => {
   it("keeps the saved order and drops unknown or duplicate ids", () => {
     expect(normalizeLayout(["statusName", "bogus", "number", "statusName"])).toEqual(["statusName", "number"]);
-  });
-
-  it("lists shown columns first, then every other column in registry order", () => {
-    const order = pickerOrder(["timeLogged", "subject"]);
-    expect(order.slice(0, 2)).toEqual(["timeLogged", "subject"]);
-    expect(order).toHaveLength(TICKET_COLUMNS.length);
-    expect(order[2]).toBe("number");
   });
 });
 

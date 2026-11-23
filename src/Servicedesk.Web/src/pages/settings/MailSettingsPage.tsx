@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
 import { GraphSection } from "./GraphSection";
 import { InboundMailboxesSection } from "./InboundMailboxesSection";
+import { findEntry } from "@/components/settings/settingEntries";
 
 const MAIL_QUERY_KEY = ["settings", "list", "Mail"] as const;
 const STORAGE_QUERY_KEY = ["settings", "list", "Storage"] as const;
@@ -107,10 +108,6 @@ const QUERY_KEYS: Record<string, readonly unknown[]> = {
   Storage: STORAGE_QUERY_KEY,
   Jobs: JOBS_QUERY_KEY,
 };
-
-function findEntry(entries: SettingEntry[] | undefined, key: string) {
-  return entries?.find((e) => e.key === key);
-}
 
 export function MailSettingsPage() {
   const mail = useQuery({

@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, Search } from "lucide-react";
-import { ApiError, adsolutApi, type AdsolutErpProbeResponse } from "@/lib/api";
+import { adsolutApi, type AdsolutErpProbeResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { copyDebugBody } from "@/pages/settings/adsolut/shared";
+import { errorMessage } from "@/lib/http";
 
 export function ErpSalesReceiptsPreviewSection() {
   // ERP sales-receipts preview card — fans out a fixed set of read-only
@@ -18,7 +19,7 @@ export function ErpSalesReceiptsPreviewSection() {
     onError: (err) => {
       setErpResult(null);
       toast.error(
-        err instanceof ApiError ? `Preview failed (${err.status})` : "Preview failed",
+        errorMessage(err, "Preview failed"),
       );
     },
   });

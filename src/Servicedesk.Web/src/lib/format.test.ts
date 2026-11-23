@@ -53,6 +53,8 @@ describe("format", () => {
     expect(formatDuration(150)).toBe("2h 30m");
     expect(formatDuration(0)).toBe("0m");
     expect(formatDuration(null, "—")).toBe("—");
+    expect(formatDuration(0, "0h")).toBe("0h");
+    expect(formatDuration(90, "0h")).toBe("1h 30m");
     expect(formatApproxMinutes(45)).toBe("45m");
     expect(formatApproxMinutes(90)).toBe("1.5h");
     expect(formatApproxMinutes(2880)).toBe("2.0d");

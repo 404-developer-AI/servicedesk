@@ -5,6 +5,7 @@ import { companyApi } from "@/lib/ticket-api"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { useDebounced } from "@/hooks/useDebounced"
 
 type CompanyPickerProps = {
   value: string | null
@@ -21,13 +22,8 @@ export function CompanyPicker({
 }: CompanyPickerProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
-  const [debouncedSearch, setDebouncedSearch] = React.useState("")
+  const debouncedSearch = useDebounced(search, 300)
   const searchRef = React.useRef<HTMLInputElement>(null)
-
-  React.useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => clearTimeout(timer)
-  }, [search])
 
   React.useEffect(() => {
     if (open && searchRef.current) {

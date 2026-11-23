@@ -6,6 +6,7 @@ import { searchApi, type SearchHit } from "@/lib/api";
 import { hitHref, labelForKind, KIND_ORDER } from "@/components/search/searchMeta";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { useMobileHeader } from "../mobileHeader";
+import { useDebounced } from "@/hooks/useDebounced";
 
 /// `/m/search` — the global search (same endpoints, same row-level
 /// authorization as desktop: every source filters to what this agent may
@@ -17,15 +18,11 @@ export function MobileSearchPage({ initialQuery }: { initialQuery?: string }) {
   const navigate = useNavigate();
   const [term, setTerm] = React.useState(initialQuery ?? "");
   const [kind, setKind] = React.useState<string | null>(null);
-  const [debounced, setDebounced] = React.useState(term.trim());
 
   // Probe once for the server's min length + debounce (same knobs as the
   // desktop search bar).
   const [knobs, setKnobs] = React.useState({ min: 2, debounceMs: 250 });
-  React.useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(term.trim()), knobs.debounceMs);
-    return () => window.clearTimeout(id);
-  }, [term, knobs.debounceMs]);
+  const debounced = useDebounced(term.trim(), knobs.debounceMs);
 
   // Keep the query in the URL so back/forward and a reload keep the search.
   React.useEffect(() => {

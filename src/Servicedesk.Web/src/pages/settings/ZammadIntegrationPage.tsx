@@ -50,6 +50,7 @@ import { SettingField } from "@/components/settings/SettingField";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 import { cn } from "@/lib/utils";
 import { serverNowMs } from "@/hooks/useServerTime";
+import { findEntry } from "@/components/settings/settingEntries";
 
 const STATUS_QK = ["integrations", "zammad", "status"] as const;
 const SECRET_QK = ["integrations", "zammad", "secret"] as const;
@@ -77,10 +78,6 @@ const STATE_LABEL: Record<
     dot: "bg-sky-400",
   },
 };
-
-function findEntry(entries: SettingEntry[] | undefined, key: string) {
-  return entries?.find((e) => e.key === key);
-}
 
 export function ZammadIntegrationPage() {
   const qc = useQueryClient();

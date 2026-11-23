@@ -1,6 +1,6 @@
 import { request } from "@/lib/http";
 
-export { ApiError, apiErrorMessage, apiFieldErrors } from "@/lib/http";
+export { ApiError, apiErrorMessage, apiFieldErrors, errorMessage } from "@/lib/http";
 import type { UiTheme } from "@/lib/theme";
 import type { Role } from "@/lib/roles";
 
@@ -3622,13 +3622,6 @@ export const viewGroupApi = {
 };
 
 // ---- View Access Admin (direct assignment) ----
-
-export const viewAccessApi = {
-  getForUser: (userId: string) =>
-    request<{ viewIds: string[] }>("GET", `/api/admin/view-access/${userId}`),
-  setForUser: (userId: string, viewIds: string[]) =>
-    request<void>("PUT", `/api/admin/view-access/${userId}`, { viewIds }),
-};
 
 // ---- User Preferences ----
 

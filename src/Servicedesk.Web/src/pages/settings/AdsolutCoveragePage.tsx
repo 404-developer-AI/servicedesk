@@ -17,7 +17,7 @@ import {
   type AdsolutCoverageCompaniesBucket,
   type AdsolutCoverageCompanyRow,
   type AdsolutCoverageContactRow,
-  type AdsolutCoverageContactsBucket,
+  type AdsolutCoverageContactsBucket, errorMessage,
 } from "@/lib/api";
 import { companyApi, contactApi, type Company, type Contact } from "@/lib/ticket-api";
 import { Badge } from "@/components/ui/badge";
@@ -294,7 +294,7 @@ function CompaniesTable({ bucket, search, page, onPageChange }: CompaniesTablePr
       invalidateAll();
     },
     onError: (err) => {
-      toast.error(err instanceof ApiError ? `Force-push failed (${err.status})` : "Force-push failed");
+      toast.error(errorMessage(err, "Force-push failed"));
     },
   });
 
@@ -579,7 +579,7 @@ function ContactsTable({ bucket, search, page, onPageChange }: ContactsTableProp
       invalidateAll();
     },
     onError: (err) => {
-      toast.error(err instanceof ApiError ? `Force-push failed (${err.status})` : "Force-push failed");
+      toast.error(errorMessage(err, "Force-push failed"));
     },
   });
 
@@ -848,7 +848,7 @@ function LinkCompanyDialog({ open, row, onClose, onLinked }: LinkCompanyDialogPr
       onLinked();
     },
     onError: (err) => {
-      toast.error(err instanceof ApiError ? `Link failed (${err.status})` : "Link failed");
+      toast.error(errorMessage(err, "Link failed"));
     },
   });
 
@@ -929,7 +929,7 @@ function LinkContactDialog({ open, row, onClose, onLinked }: LinkContactDialogPr
       onLinked();
     },
     onError: (err) => {
-      toast.error(err instanceof ApiError ? `Link failed (${err.status})` : "Link failed");
+      toast.error(errorMessage(err, "Link failed"));
     },
   });
 

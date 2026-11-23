@@ -15,7 +15,6 @@ import {
   Trash2,
 } from "lucide-react";
 import {
-  ApiError,
   apiErrorMessage,
   trmmAdminApi,
   type TrmmConnectionState,
@@ -28,6 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 import { TrmmClientMappingsSection } from "./trmm/TrmmClientMappingsSection";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "trmm", "status"] as const;
 const SECRET_QK = ["integrations", "trmm", "secret"] as const;
@@ -109,7 +109,7 @@ export function TrmmIntegrationPage() {
     },
     onError: (err) => {
       const upstream = apiErrorMessage(err);
-      toast.error(upstream ?? (err instanceof ApiError ? `Save failed (${err.status})` : "Save failed"));
+      toast.error(upstream ?? (errorMessage(err, "Save failed")));
     },
   });
 
@@ -122,7 +122,7 @@ export function TrmmIntegrationPage() {
     },
     onError: (err) => {
       const upstream = apiErrorMessage(err);
-      toast.error(upstream ?? (err instanceof ApiError ? `Clear failed (${err.status})` : "Clear failed"));
+      toast.error(upstream ?? (errorMessage(err, "Clear failed")));
     },
   });
 

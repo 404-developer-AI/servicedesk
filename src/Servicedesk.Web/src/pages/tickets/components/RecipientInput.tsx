@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { contactApi, ticketApi, type MailRecipientInput } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
+import { useDebounced } from "@/hooks/useDebounced";
 
 // Loose email shape check — matches the server's "single @, dotted domain"
 // level of strictness without dragging in a full RFC 5322 parser. Pills that
@@ -64,16 +65,11 @@ export function RecipientInput({
   ticketId,
 }: Props) {
   const [input, setInput] = React.useState("");
-  const [debounced, setDebounced] = React.useState("");
+  const debounced = useDebounced(input.trim(), 200);
   const [open, setOpen] = React.useState(false);
   const [activeIndex, setActiveIndex] = React.useState(-1);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const blurTimer = React.useRef<number | null>(null);
-
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(input.trim()), 200);
-    return () => clearTimeout(t);
-  }, [input]);
 
   // Ranked, ticket-scoped suggestions — fires as soon as the field opens,
   // also with an empty input (that's the "click → company contacts" list).

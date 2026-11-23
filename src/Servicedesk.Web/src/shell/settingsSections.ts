@@ -225,8 +225,3 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   },
 ];
 
-export const DEFAULT_SETTINGS_SECTION = SETTINGS_SECTIONS[0]!.slug;
-
-export function findSettingsSection(slug: string): SettingsSection | undefined {
-  return SETTINGS_SECTIONS.find((s) => s.slug === slug);
-}

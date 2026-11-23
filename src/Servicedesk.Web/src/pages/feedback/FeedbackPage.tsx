@@ -61,6 +61,7 @@ import { useAuth } from "@/auth/authStore";
 import type { TicketAttachmentMeta } from "@/lib/ticket-api";
 import { ApiError, apiErrorMessage } from "@/lib/http";
 import { htmlToText } from "@/lib/sanitize";
+import { formatDateTime } from "@/lib/dateFormat";
 
 // ---- Column definitions ---------------------------------------------------
 
@@ -124,16 +125,11 @@ const PAGE_SIZE = 20;
 
 // ---- Helpers --------------------------------------------------------------
 
-// Format a server-set UTC timestamp for a hover tooltip (local display only —
-// the value itself is server-authored). Falls back to the raw string.
+// Format a server-set UTC timestamp for a hover tooltip in the server zone.
+// Falls back to the raw string.
 function formatStamp(utc: string | null | undefined): string {
   if (!utc) return "";
-  const d = new Date(utc);
-  if (Number.isNaN(d.getTime())) return utc;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
-    d.getHours(),
-  )}:${pad(d.getMinutes())}`;
+  return formatDateTime(utc, undefined, false, utc);
 }
 
 // "<Action> by <who> · <when>" tooltip for a status checkbox; falls back to
@@ -579,7 +575,7 @@ export function FeedbackPage() {
   );
 }
 
-// ---- Shared select class (glass style matching TicketFilters) -------------
+// ---- Shared select class (glass style) -------------
 
 const SELECT_CLASS =
   "h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-ring min-w-40";

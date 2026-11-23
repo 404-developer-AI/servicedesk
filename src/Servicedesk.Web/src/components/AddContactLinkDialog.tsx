@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useDebounced } from "@/hooks/useDebounced";
 
 type Props = {
   contactId: string;
@@ -42,17 +43,12 @@ export function AddContactLinkDialog({
 }: Props) {
   const qc = useQueryClient();
   const [search, setSearch] = React.useState("");
-  const [debouncedSearch, setDebouncedSearch] = React.useState("");
+  const debouncedSearch = useDebounced(search, 200);
   const [target, setTarget] = React.useState<CompanyPickerItem | null>(null);
   // Default to 'secondary' — the link flow never silently promotes to
   // primary, because primary-moves are intentional and deserve the
   // explicit-warning path.
   const [role, setRole] = React.useState<ContactCompanyRole>("secondary");
-
-  React.useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 200);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   const { data: matches } = useQuery({
     queryKey: ["companies", "picker", debouncedSearch],

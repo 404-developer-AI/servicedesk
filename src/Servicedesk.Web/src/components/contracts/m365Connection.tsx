@@ -57,11 +57,6 @@ export function M365StatusBadge({
   );
 }
 
-/// A connection is "live" (no Connect button) only when fully connected.
-export function isM365Connected(status: M365LinkStatus | null | undefined): boolean {
-  return status === "connected";
-}
-
 /// Open the consent URL without tripping the popup blocker: a window is opened
 /// synchronously inside the user gesture, then navigated once the server has
 /// minted the state + URL. The customer's global admin signs in there; when the

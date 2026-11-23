@@ -4,7 +4,7 @@
 # back under the limit. Never add an entry by hand — split the file instead. After a
 # split, run the test with SD_FILE_SIZE_BASELINE=tighten to update this list.
 # Format: <lines> <path relative to the repository root>
-4387 src/Servicedesk.Web/src/lib/api.ts
+4380 src/Servicedesk.Web/src/lib/api.ts
 2806 src/Servicedesk.Api/Tickets/TicketEndpoints.cs
 2348 src/Servicedesk.Infrastructure/Persistence/Tickets/TicketRepository.cs
 2262 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadApiClient.cs
@@ -14,21 +14,21 @@
 1963 src/Servicedesk.Web/src/lib/ticket-api.ts
 1852 src/Servicedesk.Web/src/pages/settings/triggers/ActionsEditor.tsx
 1838 src/Servicedesk.Web/src/pages/tickets/TicketDetailPage.tsx
-1545 src/Servicedesk.Web/src/pages/settings/TimesheetSettingsPage.tsx
+1534 src/Servicedesk.Web/src/pages/settings/TimesheetSettingsPage.tsx
 1378 src/Servicedesk.Web/src/components/RichTextEditor.tsx
 1345 src/Servicedesk.Infrastructure/Forms/FormModels.cs
-1319 src/Servicedesk.Web/src/pages/feedback/FeedbackPage.tsx
+1315 src/Servicedesk.Web/src/pages/feedback/FeedbackPage.tsx
 1222 src/Servicedesk.Web/src/pages/timesheet/TimesheetTabAdsolut.tsx
-1221 src/Servicedesk.Web/src/pages/settings/GeneralSettingsPage.tsx
 1218 src/Servicedesk.Web/src/pages/timesheet/TimesheetTab2.tsx
 1214 src/Servicedesk.Web/src/pages/settings/UsersSettingsPage.tsx
 1207 src/Servicedesk.Web/src/pages/settings/signatures/SignatureEditor.tsx
+1185 src/Servicedesk.Web/src/pages/settings/GeneralSettingsPage.tsx
 1167 src/Servicedesk.Web/src/pages/tickets/components/AddNoteForm.tsx
 1161 src/Servicedesk.Web/src/pages/views/ViewsPage.tsx
 1159 src/Servicedesk.Infrastructure/Performance/PerfFindings.cs
 1151 src/Servicedesk.Infrastructure/Health/IntegrationsHealthAggregator.cs
 1146 src/Servicedesk.Web/src/pages/settings/SignaturesSettingsPage.tsx
-1140 src/Servicedesk.Web/src/pages/settings/ZammadIntegrationPage.tsx
+1137 src/Servicedesk.Web/src/pages/settings/ZammadIntegrationPage.tsx
 1119 src/Servicedesk.Web/src/pages/settings/TicketsSettingsPage.tsx
 1101 src/Servicedesk.Web/src/shell/NewTicketDrawer.tsx
 1063 src/Servicedesk.Web/src/shell/Sidebar.tsx
@@ -45,10 +45,10 @@
 977 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadDryRunWorker.cs
 955 src/Servicedesk.Web/src/pages/settings/TriggersSettingsPage.tsx
 923 src/Servicedesk.Api/Program.cs
-920 src/Servicedesk.Web/src/pages/settings/ClaudeIntegrationPage.tsx
+917 src/Servicedesk.Web/src/pages/settings/ClaudeIntegrationPage.tsx
 909 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadKbImportWorker.cs
 901 src/Servicedesk.Web/src/pages/settings/surveys/SurveyResultsPage.tsx
-890 src/Servicedesk.Web/src/pages/settings/TelavoxIntegrationPage.tsx
+888 src/Servicedesk.Web/src/pages/settings/TelavoxIntegrationPage.tsx
 881 src/Servicedesk.Api/Surveys/SurveyEndpoints.cs
 881 src/Servicedesk.Infrastructure/Export/TicketPdfGenerator.cs
 878 src/Servicedesk.Infrastructure/Portal/PortalAccountService.cs
@@ -57,7 +57,7 @@
 865 src/Servicedesk.Web/src/pages/timesheet/TimesheetTab1.tsx
 857 src/Servicedesk.Api/Performance/PerformanceEndpoints.cs
 855 src/Servicedesk.Web/src/pages/tickets/components/SendMailForm.tsx
-849 src/Servicedesk.Web/src/pages/contacts/ContactDetailPage.tsx
+846 src/Servicedesk.Web/src/pages/contacts/ContactDetailPage.tsx
 842 src/Servicedesk.Infrastructure/Auth/UserService.cs
 838 src/Servicedesk.Infrastructure/Integrations/Adsolut/AdsolutOrderRepository.cs
 822 src/Servicedesk.Web/src/pages/settings/triggers/ConditionsEditor.tsx
@@ -76,14 +76,14 @@
 733 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadKbImportService.cs
 729 src/Servicedesk.Infrastructure/Integrations/Adsolut/AdsolutSalesReceiptRepository.cs
 726 src/Servicedesk.Web/src/pages/settings/zammad/ZammadImportRunDetailPage.tsx
-708 src/Servicedesk.Web/src/pages/settings/PortalSettingsPage.tsx
+705 src/Servicedesk.Web/src/pages/settings/PortalSettingsPage.tsx
 696 src/Servicedesk.Web/src/components/dashboard/IntegrationsHealthTile.tsx
 693 src/Servicedesk.Web/src/pages/settings/VeeamIntegrationPage.tsx
 690 src/Servicedesk.Web/src/components/integrations/IncomingCallPopup.tsx
 683 src/Servicedesk.Infrastructure/Health/HealthAggregator.cs
 675 src/Servicedesk.Infrastructure/Integrations/Telavox/TelavoxPollingWorker.cs
 673 src/Servicedesk.Web/src/pages/settings/KnowledgeBaseSettingsPage.tsx
-671 src/Servicedesk.Web/src/pages/assets/RemoteDesktopTab.tsx
+667 src/Servicedesk.Web/src/pages/assets/RemoteDesktopTab.tsx
 659 src/Servicedesk.Infrastructure/Performance/PerfReportBuilder.cs
 657 src/Servicedesk.Api/Taxonomy/TaxonomyEndpoints.cs
 655 src/Servicedesk.Web/src/pages/settings/zammad/ZammadKbImportSection.tsx
@@ -97,6 +97,6 @@
 628 src/Servicedesk.Infrastructure/Integrations/TdSynnex/TdSynnexOrderRepository.cs
 626 src/Servicedesk.Infrastructure/Integrations/Claude/ClaudeAssistService.cs
 617 src/Servicedesk.Web/src/pages/settings/TemplatesSettingsPage.tsx
-614 src/Servicedesk.Web/src/components/forms/FormFieldInput.tsx
+611 src/Servicedesk.Web/src/components/forms/FormFieldInput.tsx
 610 src/Servicedesk.Infrastructure/Performance/PgInspector.cs
 606 src/Servicedesk.Web/src/pages/tickets/TicketListPage.tsx

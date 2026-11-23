@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useDebounced } from "@/hooks/useDebounced";
 
 type Props = {
   companyId: string;
@@ -38,14 +39,9 @@ export function AddCompanyContactDialog({
 }: Props) {
   const qc = useQueryClient();
   const [search, setSearch] = React.useState("");
-  const [debouncedSearch, setDebouncedSearch] = React.useState("");
+  const debouncedSearch = useDebounced(search, 200);
   const [target, setTarget] = React.useState<Contact | null>(null);
   const [role, setRole] = React.useState<ContactCompanyRole>("secondary");
-
-  React.useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 200);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   const { data: matches } = useQuery({
     queryKey: ["contacts", "picker", debouncedSearch],

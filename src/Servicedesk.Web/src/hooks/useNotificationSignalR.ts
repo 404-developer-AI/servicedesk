@@ -246,12 +246,6 @@ export function useNotificationSignalR(toastDurationMs: number) {
   }, [queryClient]);
 }
 
-/// Accessor for modules outside the hook (e.g. on logout) to tear down
-/// the connection cleanly.
-export function getNotificationConnection(): HubConnection | null {
-  return connection;
-}
-
 /// Get-or-create the shared /hubs/notifications connection. Other hooks
 /// (e.g. the Timesheet comments stream) reuse this singleton so the app keeps
 /// a single per-user hub connection rather than opening a second one.
@@ -262,17 +256,6 @@ export function ensureNotificationConnection(): HubConnection {
 /// Expose the payload type so consumers (toast handlers, tests) can
 /// import the shape without duplicating it.
 export type { NotificationPush };
-
-/// Narrow helper: after a successful mark-viewed call, other components
-/// can call this to refresh the widget without a full re-fetch.
-export function prefetchPendingNotifications(
-  queryClient: ReturnType<typeof useQueryClient>,
-) {
-  void queryClient.prefetchQuery({
-    queryKey: ["notifications", "pending"],
-    queryFn: () => notificationApi.listPending(),
-  });
-}
 
 /// Allow tests / type-only consumers to see the export.
 export type { UserNotification };

@@ -30,6 +30,7 @@ import { toServerLocal, useServerOffsetMinutes } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 import { ClientNotesSheet, type NotesTarget } from "./ClientNotesSheet";
 import { formatTimeAgo } from "@/lib/format";
+import { useDebounced } from "@/hooks/useDebounced";
 
 const OVERVIEW_QK = ["assets", "remote-desktop", "overview"] as const;
 
@@ -77,12 +78,7 @@ export function RemoteDesktopTab({
   const offsetMinutes = serverOffsetMinutes ?? 0;
 
   const [search, setSearch] = React.useState("");
-  const [debounced, setDebounced] = React.useState("");
-  React.useEffect(() => {
-    const handle = window.setTimeout(() => setDebounced(search), 250);
-    return () => window.clearTimeout(handle);
-  }, [search]);
-
+  const debounced = useDebounced(search, 250);
   const [notesTarget, setNotesTarget] = React.useState<NotesTarget | null>(null);
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
   const toggleExpanded = (id: string) =>

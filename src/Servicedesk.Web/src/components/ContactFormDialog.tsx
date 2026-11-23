@@ -21,6 +21,7 @@ import type {
   ContactCompanyRole,
   ContactInput,
 } from "@/lib/ticket-api";
+import { useDebounced } from "@/hooks/useDebounced";
 
 type Props = {
   open: boolean;
@@ -321,12 +322,7 @@ function CompanyLinkPicker({
   onClear: () => void;
 }) {
   const [search, setSearch] = React.useState("");
-  const [debounced, setDebounced] = React.useState("");
-
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(search), 200);
-    return () => clearTimeout(t);
-  }, [search]);
+  const debounced = useDebounced(search, 200);
 
   const { data: matches } = useQuery({
     queryKey: ["companies", "picker", debounced],

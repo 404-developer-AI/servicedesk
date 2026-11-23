@@ -35,14 +35,11 @@ import {
   PortalStatusChip,
   usePortalAdminInvalidate,
 } from "@/components/portal/PortalAccountDialogs";
+import { findEntry } from "@/components/settings/settingEntries";
 
 const PORTAL_QK = ["settings", "list", "Portal"] as const;
 const TICKETS_QK = ["settings", "list", "Tickets"] as const;
 const STATUS_QK = [...PORTAL_ADMIN_QK, "status"] as const;
-
-function findEntry(entries: SettingEntry[] | undefined, key: string) {
-  return entries?.find((e) => e.key === key);
-}
 
 export function PortalSettingsPage() {
   const portal = useQuery({ queryKey: PORTAL_QK, queryFn: () => settingsApi.list("Portal") });

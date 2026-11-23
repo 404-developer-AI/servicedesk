@@ -1,5 +1,5 @@
 import { formatDayMonthTime, formatTime } from "@/lib/dateFormat";
-import type { CategoryScore, Severity } from "@/lib/perf-api";
+import type { Severity } from "@/lib/perf-api";
 
 const nf0 = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 });
@@ -98,10 +98,6 @@ export type Tone = keyof typeof TONE;
 
 export function severityTone(s: Severity): Tone {
   return s === "critical" ? "critical" : s === "warning" ? "warning" : "info";
-}
-
-export function categoryTone(c: CategoryScore["status"]): Tone {
-  return c;
 }
 
 /// Google's Core Web Vitals bands (good / needs improvement / poor).

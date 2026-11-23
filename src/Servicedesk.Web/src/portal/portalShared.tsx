@@ -1,5 +1,5 @@
 import { formatDate, formatDateTime } from "@/lib/dateFormat";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useSyncExternalStore } from "react";
 import { useServerTimeZone } from "@/hooks/useServerTime";
 import { useTheme } from "@/app/ThemeProvider";
@@ -18,11 +18,6 @@ export function usePortalMe() {
     staleTime: 60_000,
   });
   return { ...q, user: (q.data?.user ?? null) as PortalMeUser | null };
-}
-
-export function useInvalidatePortalMe() {
-  const qc = useQueryClient();
-  return useCallback(() => qc.invalidateQueries({ queryKey: PORTAL_ME_QK }), [qc]);
 }
 
 // ---- active company --------------------------------------------------------

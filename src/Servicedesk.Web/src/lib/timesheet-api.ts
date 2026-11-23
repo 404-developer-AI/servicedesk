@@ -1,4 +1,6 @@
 import { request } from "@/lib/http";
+import { serverWallClockParts } from "@/lib/dateFormat";
+import { serverNowMs } from "@/hooks/useServerTime";
 export { formatDuration } from "@/lib/format";
 
 /// v0.0.35 — Timesheet feature API surface.
@@ -148,13 +150,13 @@ export function formatHHMM(minutes: number): string {
   return `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
 }
 
-/// Current local time as minutes since midnight (0..1439). Used as the
+/// Current server-zone time as minutes since midnight (0..1439). Used as the
 /// default for the End field of a fresh draft row — and re-read on a
 /// ~30s tick so the field stays current while the agent fills in the
 /// other columns, until they manually overwrite it.
 export function currentLocalMinutes(): number {
-  const d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
+  const p = serverWallClockParts(serverNowMs());
+  return p ? p.hh * 60 + p.mi : 0;
 }
 
 // ---- Shared entry-draft rules (Tab 1 + ticket "Log time") -------------

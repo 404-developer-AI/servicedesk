@@ -7,6 +7,7 @@ import { ContactFormDialog } from "@/components/ContactFormDialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { useDebounced } from "@/hooks/useDebounced"
 
 type ContactPickerProps = {
   value: string | null
@@ -24,14 +25,9 @@ export function ContactPicker({
   const [open, setOpen] = React.useState(false)
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
-  const [debouncedSearch, setDebouncedSearch] = React.useState("")
+  const debouncedSearch = useDebounced(search, 300)
   const [selectedContact, setSelectedContact] = React.useState<Contact | null>(null)
   const searchRef = React.useRef<HTMLInputElement>(null)
-
-  React.useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => clearTimeout(timer)
-  }, [search])
 
   React.useEffect(() => {
     if (open && searchRef.current) {

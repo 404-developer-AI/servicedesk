@@ -4,6 +4,7 @@ import { slaApi, type TicketSlaState } from "@/lib/api";
 import { useServerTime } from "@/hooks/useServerTime";
 import { useAuth } from "@/auth/authStore";
 import { cn } from "@/lib/utils";
+import { formatApproxMinutes } from "@/lib/format";
 
 type Props = {
   ticketId: string;
@@ -65,13 +66,6 @@ export function SlaPill({ ticketId, className }: Props) {
   );
 }
 
-function formatBusinessMinutes(m: number): string {
-  if (m < 60) return `${m}m`;
-  const h = m / 60;
-  if (h < 24) return `${h.toFixed(1)}h`;
-  return `${(h / 24).toFixed(1)}d`;
-}
-
 function Row({
   label,
   nowMs,
@@ -92,7 +86,7 @@ function Row({
   const remainingMs = deadlineMs - nowMs;
   const isMet = met !== null;
   const metLate = isMet && new Date(met).getTime() > deadlineMs;
-  const durationLabel = businessMinutes !== null ? formatBusinessMinutes(businessMinutes) : null;
+  const durationLabel = businessMinutes !== null ? formatApproxMinutes(businessMinutes) : null;
   return (
     <span
       className={cn(

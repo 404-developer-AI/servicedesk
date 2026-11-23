@@ -46,6 +46,8 @@ import { useServerTime } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 import { ThemePicker } from "@/components/ThemePicker";
 import { FACTORY_THEME, isUiTheme, type UiTheme } from "@/lib/theme";
+import { findEntry } from "@/components/settings/settingEntries";
+import { ToggleSwitch } from "@/components/settings/ToggleSwitch";
 
 const APP_QUERY_KEY = ["settings", "list", "App"] as const;
 const UI_QUERY_KEY = ["settings", "list", "Ui"] as const;
@@ -62,10 +64,6 @@ const LOGIN_BANNER_TYPES: ReadonlyArray<{ value: LoginBannerType; label: string 
   { value: "warning", label: "Warning" },
   { value: "error", label: "Error" },
 ];
-
-function findEntry(entries: SettingEntry[] | undefined, key: string) {
-  return entries?.find((e) => e.key === key);
-}
 
 function formatOffset(minutes: number): string {
   const sign = minutes >= 0 ? "+" : "-";
@@ -1185,37 +1183,3 @@ function FieldShell({ label, children }: { label: string; children: React.ReactN
   );
 }
 
-function ToggleSwitch({
-  checked,
-  disabled,
-  onChange,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
-        "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        "disabled:cursor-not-allowed disabled:opacity-50",
-        checked
-          ? "bg-linear-to-r from-violet-600 to-indigo-600"
-          : "bg-glass-strong",
-      )}
-    >
-      <span
-        className={cn(
-          "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ease-in-out",
-          checked ? "translate-x-5" : "translate-x-0",
-        )}
-      />
-    </button>
-  );
-}

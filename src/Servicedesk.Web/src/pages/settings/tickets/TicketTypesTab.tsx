@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ApiError,
   taxonomyApi,
   type TicketType,
   type TicketTypeInput,
@@ -20,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { TableShell, ColorSwatch, useDeleteHandler, Field, LoadingSkeleton } from "@/pages/settings/tickets/shared";
+import { errorMessage } from "@/lib/http";
 
 export function TicketTypesTab() {
   const confirm = useConfirm();
@@ -176,7 +176,7 @@ function TicketTypeDialog({
       onSaved();
     },
     onError: (err) => {
-      toast.error(err instanceof ApiError ? `Save failed (${err.status})` : "Save failed");
+      toast.error(errorMessage(err, "Save failed"));
     },
   });
 

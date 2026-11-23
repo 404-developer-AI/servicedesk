@@ -18,7 +18,6 @@ export type UiTheme = "steaan" | "light" | "dark";
 export type ThemeFamily = "steaan" | "nebula";
 export type ThemeMode = "light" | "dark";
 
-export const UI_THEMES: readonly UiTheme[] = ["steaan", "light", "dark"];
 export const FACTORY_THEME: UiTheme = "steaan";
 
 /** localStorage key read by the inline bootstrap script in index.html. */
@@ -36,8 +35,3 @@ export function themeMode(theme: UiTheme): ThemeMode {
   return theme === "dark" ? "dark" : "light";
 }
 
-export const THEME_LABELS: Record<UiTheme, string> = {
-  steaan: "Steaan",
-  light: "Nebula · Light",
-  dark: "Nebula · Dark",
-};

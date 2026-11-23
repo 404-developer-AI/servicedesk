@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/app/ThemeProvider";
 import { colorPillStyle } from "@/lib/colorPill";
+import { useDebounced } from "@/hooks/useDebounced";
 
 const PAGE_SIZE = 25;
 const DEBOUNCE_MS = 200;
@@ -32,12 +33,7 @@ export function EntityTicketsList(props: Props) {
     props.searchScope === "global" ? "search" : props.companyId ? "company" : "contact";
 
   const [search, setSearch] = React.useState(props.initialSearch ?? "");
-  const [debounced, setDebounced] = React.useState((props.initialSearch ?? "").trim());
-
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(search.trim()), DEBOUNCE_MS);
-    return () => clearTimeout(t);
-  }, [search]);
+  const debounced = useDebounced(search.trim(), DEBOUNCE_MS);
 
   useTicketListRealtime();
 

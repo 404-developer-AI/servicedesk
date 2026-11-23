@@ -18,7 +18,6 @@ import {
   Search,
 } from "lucide-react";
 import {
-  ApiError,
   adsolutTimesheetApi,
   backofficeTimesheetApi,
   preferencesApi,
@@ -48,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { TableColumnPicker, mergeColumnConfig } from "@/components/TableColumnPicker";
 import { TablePager } from "@/components/TablePager";
 import { formatDuration, formatMoney } from "@/lib/format";
+import { errorMessage } from "@/lib/http";
 
 const PAGE_SIZE = 50;
 const RECEIPTS_KEY = ["timesheet", "adsolut", "receipts"] as const;
@@ -644,7 +644,7 @@ function ReceiptRow({
       qc.invalidateQueries({ queryKey: RECEIPTS_KEY });
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? `Resync failed (${err.status})` : "Resync failed"),
+      toast.error(errorMessage(err, "Resync failed")),
   });
 
   return (

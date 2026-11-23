@@ -27,6 +27,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useDebounced } from "@/hooks/useDebounced";
 
 type Props = {
   open: boolean;
@@ -297,12 +298,7 @@ function CompanyPicker({
   onClear: () => void;
 }) {
   // Debounce search so each keystroke doesn't fire a roundtrip.
-  const [debouncedSearch, setDebouncedSearch] = useState(search);
-  useEffect(() => {
-    const h = setTimeout(() => setDebouncedSearch(search), 200);
-    return () => clearTimeout(h);
-  }, [search]);
-
+  const debouncedSearch = useDebounced(search, 200);
   const pickerQuery = useQuery({
     queryKey: ["companies", "picker", debouncedSearch] as const,
     queryFn: () => companyApi.picker(debouncedSearch),

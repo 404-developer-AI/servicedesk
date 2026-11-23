@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
-import { ApiError, adsolutApi, type SettingEntry } from "@/lib/api";
+import { adsolutApi, type SettingEntry } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { SettingField } from "@/components/settings/SettingField";
-import { findEntry } from "@/pages/settings/adsolut/shared";
+import { findEntry } from "@/components/settings/settingEntries";
 import { formatDateTimeMedium } from "@/lib/dateFormat";
+import { errorMessage } from "@/lib/http";
 
 const ERP_ORDERS_QUERY_KEY = ["integrations", "adsolut", "erp-orders"] as const;
 
@@ -46,7 +47,7 @@ export function ErpOrdersPanel({
       qc.invalidateQueries({ queryKey: ERP_ORDERS_QUERY_KEY });
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? `Save failed (${err.status})` : "Save failed"),
+      toast.error(errorMessage(err, "Save failed")),
   });
 
   const triggerSync = useMutation({
@@ -57,7 +58,7 @@ export function ErpOrdersPanel({
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? `Sync request failed (${err.status})` : "Sync request failed",
+        errorMessage(err, "Sync request failed"),
       ),
   });
 
@@ -86,7 +87,7 @@ export function ErpOrdersPanel({
       qc.invalidateQueries({ queryKey: ERP_ORDERS_QUERY_KEY });
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? `Save failed (${err.status})` : "Save failed"),
+      toast.error(errorMessage(err, "Save failed")),
   });
 
   const setColor = (code: string, hex: string) => {

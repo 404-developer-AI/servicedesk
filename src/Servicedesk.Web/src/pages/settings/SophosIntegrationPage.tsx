@@ -14,7 +14,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  ApiError,
   apiErrorMessage,
   sophosAdminApi,
   type SophosConnectionState,
@@ -29,6 +28,7 @@ import { CompanyLinkPicker } from "@/components/integrations/CompanyLinkPicker";
 import sophosLogo from "@/assets/integrations/sophos.svg";
 import { cn } from "@/lib/utils";
 import { formatTimeAgo } from "@/lib/format";
+import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "sophos", "status"] as const;
 const TENANTS_QK = ["integrations", "sophos", "tenants"] as const;
@@ -90,7 +90,7 @@ export function SophosIntegrationPage() {
 
   const onErr = (err: unknown) => {
     const upstream = apiErrorMessage(err);
-    toast.error(upstream ?? (err instanceof ApiError ? `Failed (${err.status})` : "Failed"));
+    toast.error(upstream ?? (errorMessage(err, "Failed")));
   };
 
   const saveCredentials = useMutation({

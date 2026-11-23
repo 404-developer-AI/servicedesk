@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
 import { cn } from "@/lib/utils";
+import { findEntry } from "@/components/settings/settingEntries";
 
 const STATUS_QK = ["integrations", "claude", "status"] as const;
 const SECRET_QK = ["integrations", "claude", "secret"] as const;
@@ -59,10 +60,6 @@ const STATE_LABEL: Record<
     dot: "bg-emerald-400",
   },
 };
-
-function findEntry(entries: SettingEntry[] | undefined, key: string) {
-  return entries?.find((e) => e.key === key);
-}
 
 function FieldOrSkeleton({
   entry,

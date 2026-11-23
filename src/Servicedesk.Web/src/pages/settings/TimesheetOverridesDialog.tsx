@@ -21,6 +21,7 @@ import {
 } from "@/lib/timesheet-api";
 import { errorMessage } from "@/lib/http";
 import { cn } from "@/lib/utils";
+import { formatDuration } from "@/lib/format";
 
 /// Per-user Timesheet preference dialog. Each field is independently
 /// overridable: leave blank → fall back to the global default; type a
@@ -231,7 +232,7 @@ function Body({ target, onClose }: { target: UserAdminRow; onClose: () => void }
         <OverrideRow
           label="Target per work day"
           hint="Minutes per work-day. 480 = 8h."
-          fallback={`Global default · ${effective.targetMinutesPerDay} min (${formatMinutesAsHours(effective.targetMinutesPerDay)})`}
+          fallback={`Global default · ${effective.targetMinutesPerDay} min (${formatDuration(effective.targetMinutesPerDay, "0h")})`}
           onClear={() => setDayTargetText("")}
           cleared={dayTargetText.trim() === ""}
         >
@@ -249,7 +250,7 @@ function Body({ target, onClose }: { target: UserAdminRow; onClose: () => void }
         <OverrideRow
           label="Target per ISO week"
           hint="Minutes per week. 2400 = 40h."
-          fallback={`Global default · ${effective.targetMinutesPerWeek} min (${formatMinutesAsHours(effective.targetMinutesPerWeek)})`}
+          fallback={`Global default · ${effective.targetMinutesPerWeek} min (${formatDuration(effective.targetMinutesPerWeek, "0h")})`}
           onClear={() => setWeekTargetText("")}
           cleared={weekTargetText.trim() === ""}
         >
@@ -267,7 +268,7 @@ function Body({ target, onClose }: { target: UserAdminRow; onClose: () => void }
         <OverrideRow
           label="Max absence per day"
           hint="Minutes. If absence-task time on any day exceeds this, the entire ISO-week is flagged 'target not met' on Tab 3. 0 disables the check."
-          fallback={`Global default · ${effective.maxAbsenceMinutesPerDay} min (${formatMinutesAsHours(effective.maxAbsenceMinutesPerDay)})`}
+          fallback={`Global default · ${effective.maxAbsenceMinutesPerDay} min (${formatDuration(effective.maxAbsenceMinutesPerDay, "0h")})`}
           onClear={() => setMaxAbsenceText("")}
           cleared={maxAbsenceText.trim() === ""}
         >
@@ -405,15 +406,6 @@ function OverrideRow({
       </div>
     </div>
   );
-}
-
-function formatMinutesAsHours(minutes: number): string {
-  if (minutes <= 0) return "0h";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
 }
 
 function formatWorkDays(days: number[]): string {

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { serverNowMs } from "@/hooks/useServerTime";
 import { ADSOLUT_STATUS_QUERY_KEY } from "@/pages/settings/adsolut/shared";
 import { formatDateTimeMedium } from "@/lib/dateFormat";
+import { errorMessage } from "@/lib/http";
 
 const STATE_LABEL: Record<AdsolutState, { tone: string; text: string; dot: string }> = {
   not_configured: {
@@ -86,7 +87,7 @@ export function ConnectionSection({
       qc.invalidateQueries({ queryKey: ADSOLUT_STATUS_QUERY_KEY });
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? `Disconnect failed (${err.status})` : "Disconnect failed"),
+      toast.error(errorMessage(err, "Disconnect failed")),
   });
 
   const testRefresh = useMutation({

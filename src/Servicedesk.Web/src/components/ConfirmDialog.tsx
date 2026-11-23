@@ -59,7 +59,11 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         <DialogContent className="max-w-sm sd-confirm-dialog">
           <DialogHeader>
             <DialogTitle>{pending?.title}</DialogTitle>
-            {pending?.description ? <DialogDescription>{pending.description}</DialogDescription> : null}
+            {pending?.description ? (
+              <DialogDescription asChild>
+                <div>{pending.description}</div>
+              </DialogDescription>
+            ) : null}
           </DialogHeader>
           <DialogFooter>
             <Button variant="ghost" onClick={() => settle(false)}>

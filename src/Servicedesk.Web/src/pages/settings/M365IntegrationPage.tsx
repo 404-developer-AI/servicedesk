@@ -16,7 +16,6 @@ import {
   Trash2,
 } from "lucide-react";
 import {
-  ApiError,
   apiErrorMessage,
   m365AdminApi,
   type M365ConnectionState,
@@ -29,6 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 import microsoftLogo from "@/assets/integrations/microsoft.svg";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "m365", "status"] as const;
 const SECRET_QK = ["integrations", "m365", "secret"] as const;
@@ -108,7 +108,7 @@ export function M365IntegrationPage() {
   const onErr = (err: unknown) => {
     const upstream = apiErrorMessage(err);
     toast.error(
-      upstream ?? (err instanceof ApiError ? `Failed (${err.status})` : "Failed"),
+      upstream ?? (errorMessage(err, "Failed")),
     );
   };
 

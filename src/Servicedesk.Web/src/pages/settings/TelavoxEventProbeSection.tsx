@@ -2,11 +2,12 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertCircle, CheckCircle2, Copy, FlaskConical, KeyRound, RefreshCw, Trash2 } from "lucide-react";
-import { ApiError, telavoxAdminApi, type SettingEntry, type TelavoxProbeEvent } from "@/lib/api";
+import { telavoxAdminApi, type SettingEntry, type TelavoxProbeEvent } from "@/lib/api";
 import { formatDateTime } from "@/lib/dateFormat";
 import { Button } from "@/components/ui/button";
 import { SettingField } from "@/components/settings/SettingField";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 const PROBE_QK = ["integrations", "telavox", "event-probe"] as const;
 
@@ -46,7 +47,7 @@ export function TelavoxEventProbeSection({
       qc.invalidateQueries({ queryKey: PROBE_QK });
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? `Could not generate the token (${err.status})` : "Could not generate the token"),
+      toast.error(errorMessage(err, "Could not generate the token")),
   });
   const remove = useMutation({
     mutationFn: () => telavoxAdminApi.deleteEventProbeToken(),

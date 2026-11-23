@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { apiErrorMessage } from "@/lib/api";
+import { serverNowMs } from "@/hooks/useServerTime";
 import { perfApi, type PerfStatus, type PeriodQuery } from "@/lib/perf-api";
 import { cn } from "@/lib/utils";
 import { Segmented } from "@/pages/insights/InsightsControls";
@@ -98,19 +99,18 @@ export function PerformancePage() {
   const [preset, setPreset] = React.useState<PresetKey>(() => readStored(PRESET_STORAGE, PRESETS.map((p) => p.value), "24h"));
   const [autoRefresh, setAutoRefresh] = React.useState(true);
   const [tick, setTick] = React.useState(0);
-  const [customFrom, setCustomFrom] = React.useState(() => toLocalInput(Date.now() - 86_400_000));
-  const [customTo, setCustomTo] = React.useState(() => toLocalInput(Date.now()));
+  const [customFrom, setCustomFrom] = React.useState(() => toLocalInput(serverNowMs() - 86_400_000));
+  const [customTo, setCustomTo] = React.useState(() => toLocalInput(serverNowMs()));
 
   const status = useQuery({
     queryKey: STATUS_KEY,
-    queryFn: async () => ({ status: await perfApi.status(), fetchedAt: Date.now() }),
+    queryFn: () => perfApi.status(),
     refetchInterval: 30_000,
   });
 
   // The server clock is the source of truth: periods are anchored on the
   // server's "now", never on the browser clock.
-  const clockOffset = status.data ? new Date(status.data.status.serverUtc).getTime() - status.data.fetchedAt : 0;
-  const serverNow = React.useCallback(() => Date.now() + clockOffset, [clockOffset]);
+  const serverNow = serverNowMs;
 
   React.useEffect(() => {
     if (!autoRefresh || preset === "custom") return;
@@ -140,7 +140,7 @@ export function PerformancePage() {
     store(TAB_STORAGE, k);
   };
 
-  const s = status.data?.status;
+  const s = status.data;
 
   return (
     <div className="flex flex-col gap-5">

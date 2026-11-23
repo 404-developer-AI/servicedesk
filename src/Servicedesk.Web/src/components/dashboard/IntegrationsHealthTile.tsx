@@ -22,7 +22,7 @@ import {
   type IntegrationHealth,
   type SubsystemHealth,
   type AdsolutErpSalesReceiptsState,
-  type AdsolutErpOrdersState,
+  type AdsolutErpOrdersState, errorMessage,
 } from "@/lib/api";
 import { pollIntervalMs } from "@/lib/healthPolling";
 import { Badge } from "@/components/ui/badge";
@@ -624,7 +624,7 @@ function AdsolutErpSyncCard() {
       qc.invalidateQueries({ queryKey: key });
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? `ERP sync failed (${err.status})` : "ERP sync failed"),
+      toast.error(errorMessage(err, "ERP sync failed")),
   });
 
   const s: AdsolutErpSalesReceiptsState | undefined = query.data;
@@ -667,7 +667,7 @@ function AdsolutOrdersSyncCard() {
       qc.invalidateQueries({ queryKey: key });
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? `Order sync failed (${err.status})` : "Order sync failed"),
+      toast.error(errorMessage(err, "Order sync failed")),
   });
 
   const s: AdsolutErpOrdersState | undefined = query.data;

@@ -50,6 +50,8 @@ import {
   type TimesheetTaskUpsert,
 } from "@/lib/timesheet-api";
 import { cn } from "@/lib/utils";
+import { findEntry } from "@/components/settings/settingEntries";
+import { formatDuration } from "@/lib/format";
 
 const QUERY_KEY = ["settings", "list", "Timesheet"] as const;
 
@@ -84,10 +86,6 @@ const WEEKDAYS: { iso: number; label: string }[] = [
   { iso: 6, label: "Sat" },
   { iso: 7, label: "Sun" },
 ];
-
-function findEntry(entries: SettingEntry[] | undefined, key: string) {
-  return entries?.find((e) => e.key === key);
-}
 
 export function TimesheetSettingsPage() {
   const query = useQuery({
@@ -842,7 +840,7 @@ function MinutesField({
   const minutes = Number.parseInt(draft, 10);
   const hourSummary =
     Number.isFinite(minutes) && minutes >= 0
-      ? formatMinutesAsHours(minutes)
+      ? formatDuration(minutes, "0h")
       : "—";
 
   const commit = () => {
@@ -1258,15 +1256,6 @@ function parseCsv(csv: string): Set<number> {
 
 function csvFromSet(set: Set<number>): string {
   return [...set].sort((a, b) => a - b).join(",");
-}
-
-function formatMinutesAsHours(minutes: number): string {
-  if (minutes === 0) return "0h";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
 }
 
 // ---- Field-row layout helper -----------------------------------------

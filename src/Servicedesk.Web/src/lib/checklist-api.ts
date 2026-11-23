@@ -216,10 +216,6 @@ export const checklistTemplateApi = {
 
 // ---- helpers shared by bar / header / panel / list chip ----
 
-export function checklistIsComplete(c: Pick<TicketChecklist, "completedUtc">): boolean {
-  return c.completedUtc !== null;
-}
-
 /** First open required item (falls back to any open item) — "where I left off". */
 export function nextOpenItem(c: TicketChecklist): TicketChecklistItem | null {
   const sorted = [...c.items].sort((a, b) => a.sortOrder - b.sortOrder);

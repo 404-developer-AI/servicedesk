@@ -3,7 +3,6 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, Search } from "lucide-react";
 import {
-  ApiError,
   adsolutApi,
   type AdsolutDebugKind,
   type AdsolutDebugLookupResponse,
@@ -12,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { copyDebugBody } from "@/pages/settings/adsolut/shared";
+import { errorMessage } from "@/lib/http";
 
 export function ApiDebugSection() {
   const [debugKind, setDebugKind] = useState<AdsolutDebugKind>("customer");
@@ -24,7 +24,7 @@ export function ApiDebugSection() {
     onError: (err) => {
       setDebugResult(null);
       toast.error(
-        err instanceof ApiError ? `Lookup failed (${err.status})` : "Lookup failed",
+        errorMessage(err, "Lookup failed"),
       );
     },
   });

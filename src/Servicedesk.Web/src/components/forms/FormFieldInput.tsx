@@ -15,6 +15,7 @@ import { PlainTextPicker } from "./PlainTextPicker";
 import { pickerItemAsText } from "./formFieldPicker";
 import { cn } from "@/lib/utils";
 import { AgentsControl, AttachmentsControl, InviteesControl } from "./FormFieldInputsV61";
+import { useDebounced } from "@/hooks/useDebounced";
 
 /// v0.1.52 — one input per form field type. Shared by the fill dialog and the
 /// admin editor's live preview (pass `ticketId = null` there: lookups that
@@ -338,11 +339,7 @@ export function SearchPicker<T extends { id: string }>({
 }) {
   const [open, setOpen] = React.useState(false);
   const [term, setTerm] = React.useState("");
-  const [debounced, setDebounced] = React.useState("");
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(term.trim()), 250);
-    return () => clearTimeout(t);
-  }, [term]);
+  const debounced = useDebounced(term.trim(), 250);
   const q = useQuery({
     queryKey: [...queryKey, debounced],
     queryFn: () => load(debounced),

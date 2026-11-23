@@ -20,7 +20,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  ApiError,
   apiErrorMessage,
   veeamAdminApi,
   type VeeamConnectionState,
@@ -34,6 +33,7 @@ import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditL
 import { CompanyLinkPicker } from "@/components/integrations/CompanyLinkPicker";
 import veeamLogo from "@/assets/integrations/veeam.svg";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "veeam", "status"] as const;
 const SECRET_QK = ["integrations", "veeam", "secret"] as const;
@@ -99,7 +99,7 @@ export function VeeamIntegrationPage() {
   const onErr = (err: unknown) => {
     const upstream = apiErrorMessage(err);
     toast.error(
-      upstream ?? (err instanceof ApiError ? `Failed (${err.status})` : "Failed"),
+      upstream ?? (errorMessage(err, "Failed")),
     );
   };
 

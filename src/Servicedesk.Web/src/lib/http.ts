@@ -123,7 +123,8 @@ export async function requestResponse(
 }
 
 /// JSON request: parsed response body, or `undefined` for 204 / an empty
-/// body. `body` may be a plain value (sent as JSON) or `FormData`.
+/// body. A 2xx body that is not JSON (a proxy or SPA fallback page) is never
+/// taken for success: it throws an `ApiError` with a readable message. `body` may be a plain value (sent as JSON) or `FormData`.
 export async function request<T>(
   method: string,
   url: string,
@@ -133,7 +134,12 @@ export async function request<T>(
   const res = await requestResponse(method, url, body, opts);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError(res.status, url, "The server sent an unexpected response. Reload the page and try again.");
+  }
 }
 
 /// Text to show for any failed action: the server's message for an

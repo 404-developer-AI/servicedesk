@@ -3,7 +3,6 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, Send, Wand2 } from "lucide-react";
 import {
-  ApiError,
   adsolutApi,
   type AdsolutDebugPutPreview,
   type AdsolutDebugPutResponse,
@@ -12,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { copyDebugBody } from "@/pages/settings/adsolut/shared";
+import { errorMessage } from "@/lib/http";
 
 export function PutDebugSection() {
   // PUT-debug card — separate from the lookup card so an in-progress edit
@@ -35,7 +35,7 @@ export function PutDebugSection() {
     },
     onError: (err) => {
       toast.error(
-        err instanceof ApiError ? `Preview failed (${err.status})` : "Preview failed",
+        errorMessage(err, "Preview failed"),
       );
     },
   });
@@ -55,7 +55,7 @@ export function PutDebugSection() {
     onError: (err) => {
       setPutResult(null);
       toast.error(
-        err instanceof ApiError ? `PUT failed (${err.status})` : "PUT failed",
+        errorMessage(err, "PUT failed"),
       );
     },
   });

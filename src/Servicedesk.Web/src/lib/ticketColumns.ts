@@ -48,15 +48,6 @@ export function normalizeLayout(ids: readonly string[]): string[] {
   return out;
 }
 
-/// Picker order: the visible columns in layout order, then every hidden
-/// column in registry order (so a column added in a later release simply
-/// shows up at the end, unchecked).
-export function pickerOrder(visible: readonly string[]): string[] {
-  const shown = normalizeLayout(visible);
-  const rest = TICKET_COLUMNS.map((c) => c.id).filter((id) => !shown.includes(id));
-  return [...shown, ...rest];
-}
-
 // ---- Per-view "Columns" search ----
 
 /// Text a column contributes to the Columns search — exactly what the cell

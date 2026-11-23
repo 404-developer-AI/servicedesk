@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy } from "lucide-react";
 import {
-  ApiError,
   adsolutApi,
   type SettingEntry,
   type AdsolutStatus,
@@ -12,7 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingField } from "@/components/settings/SettingField";
 import { AdsolutScopesPicker } from "@/components/settings/AdsolutScopesPicker";
-import { ADSOLUT_SETTINGS_QUERY_KEY, ADSOLUT_STATUS_QUERY_KEY, ADSOLUT_SECRET_QUERY_KEY, findEntry } from "@/pages/settings/adsolut/shared";
+import { ADSOLUT_SETTINGS_QUERY_KEY, ADSOLUT_STATUS_QUERY_KEY, ADSOLUT_SECRET_QUERY_KEY } from "@/pages/settings/adsolut/shared";
+import { findEntry } from "@/components/settings/settingEntries";
+import { errorMessage } from "@/lib/http";
 
 export function ConfigurationSection({
   status: s,
@@ -36,7 +37,7 @@ export function ConfigurationSection({
       qc.invalidateQueries({ queryKey: ADSOLUT_STATUS_QUERY_KEY });
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? `Save failed (${err.status})` : "Save failed"),
+      toast.error(errorMessage(err, "Save failed")),
   });
 
   const deleteSecret = useMutation({

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
+import { errorMessage } from "@/lib/http";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function TableShell({ children }: { children: React.ReactNode }) {
@@ -37,13 +38,11 @@ export function useDeleteHandler(
       toast.success(`${label} deleted`);
     },
     onError: (err) => {
-      if (err instanceof ApiError && err.status === 409) {
-        toast.error(
-          "Still in use or system-protected. Reassign tickets or rename instead.",
-        );
-      } else {
-        toast.error(`Failed to delete ${label.toLowerCase()}`);
-      }
+      const fallback =
+        err instanceof ApiError && err.status === 409
+          ? "Still in use or system-protected. Reassign tickets or rename instead."
+          : `Failed to delete ${label.toLowerCase()}`;
+      toast.error(errorMessage(err, fallback));
     },
   });
 }

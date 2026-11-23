@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertCircle, CheckCircle2, Copy, KeyRound, Search, Trash2 } from "lucide-react";
-import { ApiError, telavoxAdminApi, type SettingEntry } from "@/lib/api";
+import { telavoxAdminApi, type SettingEntry } from "@/lib/api";
 import { formatDateTimeMedium } from "@/lib/dateFormat";
 import { Button } from "@/components/ui/button";
 import { SettingField } from "@/components/settings/SettingField";
+import { errorMessage } from "@/lib/http";
 
 const LOOKUP_QK = ["integrations", "telavox", "contact-lookup"] as const;
 
@@ -36,7 +37,7 @@ export function TelavoxContactLookupSection({
       qc.invalidateQueries({ queryKey: LOOKUP_QK });
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? `Could not generate the token (${err.status})` : "Could not generate the token"),
+      toast.error(errorMessage(err, "Could not generate the token")),
   });
 
   const remove = useMutation({

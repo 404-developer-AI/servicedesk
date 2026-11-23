@@ -211,12 +211,6 @@ export function visibleNavItems(role: Role, section: NavSection = "main"): reado
   return NAV_ITEMS.filter((item) => item.section === section && item.roles.includes(role));
 }
 
-/// All sections combined, for surfaces like the command palette that want
-/// every jump target regardless of where it's pinned in the sidebar.
-export function allVisibleNavItems(role: Role): readonly NavItem[] {
-  return NAV_ITEMS.filter((item) => item.roles.includes(role));
-}
-
 export function findNavItem(path: string): NavItem | undefined {
   return NAV_ITEMS.find((item) => item.to === path);
 }

@@ -47,6 +47,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { useDebounced } from "@/hooks/useDebounced";
+import { errorMessage } from "@/lib/http";
 
 const ROLE_BADGE: Record<ContactCompanyRole, { label: string; className: string }> = {
   primary: {
@@ -470,7 +472,7 @@ function PortalRoleToggle({ contactId, option }: { contactId: string; option: Co
       qc.invalidateQueries({ queryKey: ["portal-admin"] });
       toast.success(`Portal role for ${option.companyShortName || option.companyName}: ${role === "TicketManager" ? "Ticket manager" : "Member"}`);
     },
-    onError: (err) => toast.error(err instanceof ApiError ? "Could not change the portal role" : "Could not change the portal role"),
+    onError: (err) => toast.error(errorMessage(err, "Could not change the portal role")),
   });
   return (
     <div className="mt-1 flex items-center gap-2 pl-1 text-[11px] text-muted-foreground">
@@ -514,13 +516,8 @@ function MovePrimaryDialog({
 }) {
   const qc = useQueryClient();
   const [search, setSearch] = React.useState("");
-  const [debouncedSearch, setDebouncedSearch] = React.useState("");
+  const debouncedSearch = useDebounced(search, 200);
   const [target, setTarget] = React.useState<CompanyPickerItem | null>(null);
-
-  React.useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 200);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   const { data: matches } = useQuery({
     queryKey: ["companies", "picker", debouncedSearch],

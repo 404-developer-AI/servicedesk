@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
 import { cn } from "@/lib/utils";
+import { useDebounced } from "@/hooks/useDebounced";
 
 type SortKey = NonNullable<ContactBrowseQuery["sort"]>;
 type RoleFilter = NonNullable<ContactBrowseQuery["role"]>;
@@ -55,7 +56,7 @@ const ROLE_LABELS: Record<RoleFilter, string> = {
 export function ContactsPage() {
   const navigate = useNavigate();
   const [search, setSearch] = React.useState("");
-  const [debouncedSearch, setDebouncedSearch] = React.useState("");
+  const debouncedSearch = useDebounced(search, 250);
   const [companyFilter, setCompanyFilter] = React.useState<CompanyPickerItem | null>(null);
   const [roleFilter, setRoleFilter] = React.useState<RoleFilter | "any">("any");
   const [includeInactive, setIncludeInactive] = React.useState(false);
@@ -63,20 +64,11 @@ export function ContactsPage() {
   const [page, setPage] = React.useState(1);
   const [creating, setCreating] = React.useState(false);
 
-  // Debounce the search input so we don't re-query on every keystroke.
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [search]);
-
   // Filter changes reset pagination — otherwise a user on page 4 suddenly
   // sees an empty screen when they narrow the filter.
   React.useEffect(() => {
     setPage(1);
-  }, [companyFilter?.id, roleFilter, includeInactive, sort]);
+  }, [debouncedSearch, companyFilter?.id, roleFilter, includeInactive, sort]);
 
   const query: ContactBrowseQuery = {
     search: debouncedSearch || undefined,
@@ -328,12 +320,7 @@ function CompanyFilterPicker({
 }) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
-  const [debouncedSearch, setDebouncedSearch] = React.useState("");
-
-  React.useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 200);
-    return () => clearTimeout(timer);
-  }, [search]);
+  const debouncedSearch = useDebounced(search, 200);
 
   const { data } = useQuery({
     queryKey: ["companies", "picker", debouncedSearch],

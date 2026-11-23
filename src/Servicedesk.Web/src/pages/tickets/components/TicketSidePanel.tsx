@@ -2,7 +2,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { agentQueueApi, ordersApi, settingsApi, taxonomyApi } from "@/lib/api";
+import { agentQueueApi, errorMessage, ordersApi, settingsApi, taxonomyApi } from "@/lib/api";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { AgentPicker } from "@/components/AgentPicker";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
@@ -15,7 +15,7 @@ import { useProjectSettings } from "@/pages/tickets/components/projects/ProjectP
 import { LinkedTicketTypeDialog } from "@/components/LinkedTicketTypeDialog";
 import { SyncOrdersButton } from "@/pages/orders/SyncOrdersButton";
 import { NewTicketDrawer } from "@/shell/NewTicketDrawer";
-import { ApiError, ticketApi as ticketApiClient, type LinkedTicketPrefill } from "@/lib/ticket-api";
+import { ticketApi as ticketApiClient, type LinkedTicketPrefill } from "@/lib/ticket-api";
 import { AddCompanyContactDialog } from "@/components/AddCompanyContactDialog";
 import { CompanyEditDialog } from "@/components/CompanyEditDialog";
 import { TaxonomySelect } from "@/components/TaxonomySelect";
@@ -217,7 +217,7 @@ export function TicketSidePanel({
         toast.success(successMessage);
         queryClient.invalidateQueries({ queryKey: ["ticket", ticket.id] });
       } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : "Action failed");
+        toast.error(errorMessage(err, "Action failed"));
       }
     },
     [queryClient, ticket.id],
