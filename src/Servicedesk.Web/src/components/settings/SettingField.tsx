@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Info, RotateCcw } from "lucide-react";
-import { settingsApi, type SettingEntry } from "@/lib/api";
+import { settingsApi, type SettingEntry } from "@/lib/settings-api";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,

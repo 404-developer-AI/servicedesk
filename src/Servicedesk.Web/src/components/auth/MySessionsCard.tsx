@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Laptop, Loader2, LogOut, MonitorSmartphone, Smartphone, Tablet } from "lucide-react";
-import { authApi, type MySession } from "@/lib/api";
+import { authApi, type MySession } from "@/lib/auth-api";
 import { formatDateTimeMedium } from "@/lib/dateFormat";
 import { useServerTimeZone } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";

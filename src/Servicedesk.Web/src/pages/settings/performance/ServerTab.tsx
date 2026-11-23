@@ -5,7 +5,7 @@ import { CheckCircle2, Cpu, Info, Loader2, Play, ShieldCheck, TriangleAlert } fr
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { perfApi, type EdgeCheckItem, type PerfStatus, type PeriodQuery, type RuntimePoint } from "@/lib/perf-api";
 import { cn } from "@/lib/utils";
 import { useTabQuery } from "./usePerfQuery";

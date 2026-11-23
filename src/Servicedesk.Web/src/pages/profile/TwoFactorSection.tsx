@@ -4,7 +4,8 @@ import { ShieldCheck, Copy, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { authApi, ApiError } from "@/lib/api";
+import { authApi } from "@/lib/auth-api";
+import { ApiError } from "@/lib/http";
 import { refreshAuth } from "@/auth/bootstrap";
 import { useAuth } from "@/auth/authStore";
 

@@ -4,18 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { ArrowLeft, Bell, Building2, Pencil, Plus, RefreshCw, Star, Trash2, UserPlus } from "lucide-react";
-import { adsolutApi, ApiError } from "@/lib/api";
+import { adsolutApi } from "@/lib/adsolut-api";
+import { ApiError } from "@/lib/http";
 import { contractReportsApi } from "@/lib/contractReports-api";
 import { authStore } from "@/auth/authStore";
-import {
-  companyApi,
-  contactApi,
-  type Company,
-  type CompanyDomain,
-  type CompanyInput,
-  type Contact,
-  type ContactCompanyRole,
-} from "@/lib/ticket-api";
+import { companyApi, contactApi, type Company, type CompanyDomain, type CompanyInput, type Contact, type ContactCompanyRole } from "@/lib/ticket-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {

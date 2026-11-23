@@ -4,7 +4,7 @@ import { Command } from "cmdk";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { searchApi, type SearchHit } from "@/lib/api";
+import { searchApi, type SearchHit } from "@/lib/search-api";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/authStore";

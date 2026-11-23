@@ -13,7 +13,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage, errorMessage } from "@/lib/http";
 import { tdSynnexAdminApi, type TdSynnexState } from "@/lib/order-management-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,6 @@ import { cn } from "@/lib/utils";
 import { formatTimeAgo } from "@/lib/format";
 import { formatDate } from "@/lib/dateFormat";
 import { useServerTimeZone } from "@/hooks/useServerTime";
-import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "tdsynnex", "status"] as const;
 

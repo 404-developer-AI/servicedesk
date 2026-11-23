@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { systemApi } from "@/lib/api";
+import { systemApi } from "@/lib/system-api";
 
 export function useSystemVersion() {
   return useQuery({

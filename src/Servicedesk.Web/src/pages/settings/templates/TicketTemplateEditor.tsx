@@ -14,7 +14,7 @@ import {
   type TicketTemplate,
 } from "@/lib/ticketTemplates-api";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
-import { taxonomyApi } from "@/lib/api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import {
   Select,
   SelectContent,

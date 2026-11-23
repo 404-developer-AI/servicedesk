@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { authApi } from "@/lib/api";
+import { authApi } from "@/lib/auth-api";
 import { authStore, type AuthUser } from "@/auth/authStore";
 import { refreshPortalAuth } from "@/auth/portalAuth";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";

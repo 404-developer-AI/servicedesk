@@ -18,15 +18,8 @@ import {
   type PromptQuestion,
   type TriggerAction,
 } from "./types";
-import {
-  triggerApi,
-  type Category,
-  type Queue,
-  type Status,
-  type Priority,
-  type TriggerListItem,
-  type TriggerTemplateVariable,
-} from "@/lib/api";
+import { triggerApi, type TriggerListItem, type TriggerTemplateVariable } from "@/lib/triggers-api";
+import type { Category, Queue, Status, Priority } from "@/lib/taxonomy-api";
 import { surveysAgentApi } from "@/lib/surveys-api";
 import { formTemplatesApi } from "@/lib/forms-api";
 import { userApi } from "@/lib/ticket-api";

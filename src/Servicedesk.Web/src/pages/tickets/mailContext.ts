@@ -1,5 +1,8 @@
-import type { Queue } from "@/lib/api";
+import type { Ticket, TicketEvent } from "@/lib/ticket-api";
+import type { Queue } from "@/lib/taxonomy-api";
 import type { MailContext } from "./components/SendMailForm";
+
+type RawRecipient = { address?: unknown; name?: string | null };
 
 /// Build the MailContext record that feeds SendMailForm's Reply / Reply-all /
 /// Forward / New pre-fill logic. Pulls the most-recent MailReceived event's
@@ -7,8 +10,8 @@ import type { MailContext } from "./components/SendMailForm";
 /// compose-new, and accepts the caller's flattened queue-mailbox list so
 /// reply-all can strip them (plus any `+suffix` variants) back out.
 export function buildMailContext(
-  ticket: any,
-  events: any[],
+  ticket: Ticket,
+  events: TicketEvent[],
   requesterEmail: string | null,
   ownMailboxAddresses: string[],
 ): MailContext {
@@ -34,11 +37,11 @@ export function buildMailContext(
       latestInbound = {
         from: fromAddr ? { address: fromAddr, name: fromName } : null,
         to: toArr
-          .filter((r: any) => typeof r?.address === "string" && r.address.length > 0)
-          .map((r: any) => ({ address: r.address, name: r.name ?? r.address })),
+          .filter((r: RawRecipient) => typeof r?.address === "string" && r.address.length > 0)
+          .map((r: RawRecipient) => ({ address: r.address as string, name: r.name ?? r.address })),
         cc: ccArr
-          .filter((r: any) => typeof r?.address === "string" && r.address.length > 0)
-          .map((r: any) => ({ address: r.address, name: r.name ?? r.address })),
+          .filter((r: RawRecipient) => typeof r?.address === "string" && r.address.length > 0)
+          .map((r: RawRecipient) => ({ address: r.address as string, name: r.name ?? r.address })),
         subject,
         bodyHtml: latestMailReceived.bodyHtml ?? null,
         receivedUtc: latestMailReceived.createdUtc ?? null,

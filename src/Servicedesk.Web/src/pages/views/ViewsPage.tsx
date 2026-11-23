@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { ArrowDown, ArrowUp, ChevronDown, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { viewApi, type View, type ViewInput, type DisplayConfig, type ViewSearchMode } from "@/lib/ticket-api";
-import { taxonomyApi, type Queue, type Priority, type Status, type Category } from "@/lib/api";
+import { taxonomyApi, type Queue, type Priority, type Status, type Category } from "@/lib/taxonomy-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";

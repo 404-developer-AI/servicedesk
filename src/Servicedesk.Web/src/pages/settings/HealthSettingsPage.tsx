@@ -4,13 +4,13 @@ import { Link } from "@tanstack/react-router";
 import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, Gauge, RadioTower, ShieldAlert, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ApiError } from "@/lib/http";
 import {
-  ApiError,
   healthApi,
   type HealthStatus,
   type IncidentRow,
   type SubsystemHealth,
-} from "@/lib/api";
+} from "@/lib/system-api";
 import { pollIntervalMs } from "@/lib/healthPolling";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

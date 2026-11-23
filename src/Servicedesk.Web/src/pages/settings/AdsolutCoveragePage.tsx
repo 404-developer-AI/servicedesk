@@ -11,14 +11,14 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
+import { ApiError, errorMessage } from "@/lib/http";
 import {
-  ApiError,
   adsolutApi,
   type AdsolutCoverageCompaniesBucket,
   type AdsolutCoverageCompanyRow,
   type AdsolutCoverageContactRow,
-  type AdsolutCoverageContactsBucket, errorMessage,
-} from "@/lib/api";
+  type AdsolutCoverageContactsBucket,
+} from "@/lib/adsolut-api";
 import { companyApi, contactApi, type Company, type Contact } from "@/lib/ticket-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

@@ -18,7 +18,7 @@ import { Flag, Gauge, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { perfApi, type CategoryScore, type Overview, type PeriodQuery } from "@/lib/perf-api";
 import { cn } from "@/lib/utils";
 import { useTabQuery } from "./usePerfQuery";

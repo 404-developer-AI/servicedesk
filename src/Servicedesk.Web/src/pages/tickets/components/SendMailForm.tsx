@@ -3,12 +3,7 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Paperclip } from "lucide-react";
-import {
-  ticketApi,
-  mentionApi,
-  type MailRecipientInput,
-  type OutboundMailKind,
-} from "@/lib/ticket-api";
+import { ticketApi, mentionApi, type MailRecipientInput, type OutboundMailKind } from "@/lib/ticket-api";
 import { RichTextEditor, splitMentionIds } from "@/components/RichTextEditor";
 import {
   signatureMarkerHtml,
@@ -16,7 +11,8 @@ import {
 } from "@/components/SignatureBlockNode";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore, type PendingMailAction, type MailDraft } from "@/stores/useWorkspaceStore";
-import { preferencesApi, settingsApi } from "@/lib/api";
+import { preferencesApi } from "@/lib/preferences-api";
+import { settingsApi } from "@/lib/settings-api";
 import {
   Dialog,
   DialogContent,

@@ -13,11 +13,8 @@ import {
   Search,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import {
-  contractsApi,
-  preferencesApi,
-  type AdsolutContractHeader,
-} from "@/lib/api";
+import { contractsApi, type AdsolutContractHeader } from "@/lib/adsolut-erp-api";
+import { preferencesApi } from "@/lib/preferences-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";

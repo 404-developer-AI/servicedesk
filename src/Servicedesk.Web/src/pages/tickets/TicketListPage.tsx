@@ -15,7 +15,10 @@ import { useServerNowMs } from "@/hooks/useServerTime";
 import { toast } from "sonner";
 import { BulkActionDialog } from "./components/BulkActionDialog";
 import { ticketApi, viewApi } from "@/lib/ticket-api";
-import { agentQueueApi, preferencesApi, settingsApi, taxonomyApi } from "@/lib/api";
+import { agentQueueApi } from "@/lib/queue-access-api";
+import { preferencesApi } from "@/lib/preferences-api";
+import { settingsApi } from "@/lib/settings-api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { cn } from "@/lib/utils";
 import { useTicketListRealtime } from "@/hooks/useTicketRealtime";
@@ -51,10 +54,7 @@ export function TicketListPage() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const searchStr = useRouterState({ select: (s) => s.location.searchStr });
-  const viewId = React.useMemo(
-    () => new URLSearchParams(searchStr).get("viewId"),
-    [searchStr],
-  );
+  const viewId = React.useMemo(() => new URLSearchParams(searchStr).get("viewId"), [searchStr]);
   const setActiveView = useColumnPrefsStore((s) => s.setActiveView);
 
   React.useEffect(() => {

@@ -25,7 +25,7 @@ import {
   type ReportRecipient,
   type ReportTemplate,
 } from "@/lib/contractReports-api";
-import { ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/http";
 
 type Props = {
   companyId: string;

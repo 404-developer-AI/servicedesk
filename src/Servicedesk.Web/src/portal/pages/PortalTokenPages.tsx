@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ApiError, apiErrorMessage } from "@/lib/api";
+import { ApiError, apiErrorMessage } from "@/lib/http";
 import { portalAuthApi } from "@/lib/portal-api";
 import { FieldError, FieldLabel, FormError, FormNotice, PortalAuthLayout, usePortalConfig } from "@/portal/PortalAuthLayout";
 

@@ -6,7 +6,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import type { TriggerTemplateVariable } from "@/lib/api";
+import type { TriggerTemplateVariable } from "@/lib/triggers-api";
 import { cn } from "@/lib/utils";
 
 type Props = {

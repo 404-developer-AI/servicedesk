@@ -9,9 +9,13 @@ const preferencesApi = vi.hoisted(() => ({
   setUiTheme: vi.fn(),
 }));
 
-vi.mock("@/lib/api", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
-  return { ...actual, systemApi, preferencesApi };
+vi.mock("@/lib/system-api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/system-api")>("@/lib/system-api");
+  return { ...actual, systemApi };
+});
+vi.mock("@/lib/preferences-api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/preferences-api")>("@/lib/preferences-api");
+  return { ...actual, preferencesApi };
 });
 
 import { ThemeProvider, useTheme } from "./ThemeProvider";

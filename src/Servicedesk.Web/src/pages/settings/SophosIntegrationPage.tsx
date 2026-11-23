@@ -13,11 +13,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import {
-  apiErrorMessage,
-  sophosAdminApi,
-  type SophosConnectionState,
-} from "@/lib/api";
+import { apiErrorMessage, errorMessage } from "@/lib/http";
+import { sophosAdminApi, type SophosConnectionState } from "@/lib/sophos-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +25,6 @@ import { CompanyLinkPicker } from "@/components/integrations/CompanyLinkPicker";
 import sophosLogo from "@/assets/integrations/sophos.svg";
 import { cn } from "@/lib/utils";
 import { formatTimeAgo } from "@/lib/format";
-import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "sophos", "status"] as const;
 const TENANTS_QK = ["integrations", "sophos", "tenants"] as const;

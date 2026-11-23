@@ -11,7 +11,7 @@ import { useUpdateCheck } from "@/hooks/useUpdateCheck";
 import { useNotificationSignalR } from "@/hooks/useNotificationSignalR";
 import { useSystemVersion } from "@/hooks/useSystemVersion";
 import { useServerTime, formatServerLocalClock } from "@/hooks/useServerTime";
-import { settingsApi } from "@/lib/api";
+import { settingsApi } from "@/lib/settings-api";
 import { notificationApi } from "@/lib/notification-api";
 import { startRum } from "@/lib/rum";
 import { cn } from "@/lib/utils";

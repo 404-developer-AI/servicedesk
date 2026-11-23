@@ -15,7 +15,8 @@ import {
   User,
 } from "lucide-react";
 import { ticketApi, contactApi, companyApi, userApi, type TicketEvent } from "@/lib/ticket-api";
-import { agentQueueApi, taxonomyApi } from "@/lib/api";
+import { agentQueueApi } from "@/lib/queue-access-api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import { colorPillStyle } from "@/lib/colorPill";
 import { flagColors as resolveFlagColors, useTicketFlagSettings } from "@/lib/ticketFlags";
 import { formatDateTimeMedium } from "@/lib/dateFormat";

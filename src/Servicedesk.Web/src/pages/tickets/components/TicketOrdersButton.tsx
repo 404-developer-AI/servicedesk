@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ChevronDown, Link2, Package, Plus, Search, Unlink } from "lucide-react";
 import { useAuth } from "@/auth/authStore";
 import { useDebounced } from "@/hooks/useDebounced";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import {
   orderManagementApi,

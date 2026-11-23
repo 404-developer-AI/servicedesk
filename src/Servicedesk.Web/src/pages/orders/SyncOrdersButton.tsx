@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
-import { ordersApi } from "@/lib/api";
+import { ordersApi } from "@/lib/adsolut-catalogue-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 

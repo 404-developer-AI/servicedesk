@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Inbox } from "lucide-react";
-import { settingsApi } from "@/lib/api";
+import { settingsApi } from "@/lib/settings-api";
 import { ViewsPage } from "@/pages/views/ViewsPage";
 import { ToggleSwitch } from "@/components/settings/ToggleSwitch";
 

@@ -8,7 +8,8 @@ import { Sparkles, ShieldCheck, ArrowRight, LockKeyhole, Mail, CheckCircle2 } fr
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { authApi, ApiError } from "@/lib/api";
+import { authApi } from "@/lib/auth-api";
+import { ApiError } from "@/lib/http";
 import { authStore } from "@/auth/authStore";
 import { refreshAuth } from "@/auth/bootstrap";
 

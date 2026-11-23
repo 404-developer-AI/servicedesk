@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
-import { taxonomyApi } from "@/lib/api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import {
   checklistTemplateApi,
   checklistErrorMessage,

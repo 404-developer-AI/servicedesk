@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { taxonomyApi } from "@/lib/api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import { contractReportsApi, type ReportTemplate, type ReportColumn } from "@/lib/contractReports-api";
 
 type EditorHandle = {

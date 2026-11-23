@@ -2,12 +2,12 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Boxes, Loader2, Trash2 } from "lucide-react";
+import { apiErrorMessage } from "@/lib/http";
 import {
-  apiErrorMessage,
   zammadMappingApi,
   type ZammadMappingRow,
   type ZammadMappingTarget,
-} from "@/lib/api";
+} from "@/lib/zammad-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";

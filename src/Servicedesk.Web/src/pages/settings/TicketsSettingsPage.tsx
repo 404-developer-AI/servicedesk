@@ -1,10 +1,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  settingsApi,
-  taxonomyApi,
-} from "@/lib/api";
+import { settingsApi } from "@/lib/settings-api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

@@ -10,11 +10,8 @@ import {
   Search,
   ShoppingCart,
 } from "lucide-react";
-import {
-  ordersApi,
-  preferencesApi,
-  type AdsolutOrderHeader,
-} from "@/lib/api";
+import { ordersApi, type AdsolutOrderHeader } from "@/lib/adsolut-catalogue-api";
+import { preferencesApi } from "@/lib/preferences-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";

@@ -320,3 +320,31 @@ export const publicKbApi = {
     request<KbPublicArticle>("GET", `/api/public/kb/articles/${encodeURIComponent(id)}`, undefined,
       { credentials: "omit" }),
 };
+
+// ---- Knowledge-base chat assistant (v0.0.86) ----------------------------
+
+export type KbChatStatus = { enabled: boolean; ready: boolean };
+export type KbChatCitation = {
+  articleId: string;
+  title: string;
+  slug: string;
+  sectionId: string;
+  /** The reply names this article (suggested answer); listed first by the server. */
+  referenced: boolean;
+};
+export type KbChatReply = {
+  reply: string;
+  replyHtml: string;
+  citations: KbChatCitation[];
+  monthSpendMicroEur: number;
+  monthBudgetMicroEur: number;
+};
+export type KbChatHistoryMessage = { role: "user" | "assistant"; text: string };
+/// The agent-facing KB chat assistant. `status` decides whether the floating
+/// button is shown; `send` carries the prior visible transcript so the server
+/// can re-run authorized retrieval each turn (it never trusts client tool data).
+export const kbChatApi = {
+  status: () => request<KbChatStatus>("GET", "/api/ai/kb-chat/status"),
+  send: (history: KbChatHistoryMessage[], message: string) =>
+    request<KbChatReply>("POST", "/api/ai/kb-chat", { history, message }),
+};

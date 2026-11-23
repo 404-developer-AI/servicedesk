@@ -13,14 +13,14 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
+import { apiErrorMessage } from "@/lib/http";
 import {
-  apiErrorMessage,
   remoteDesktopApi,
-  trmmAdminApi,
   type RdsStatus,
   type RemoteDesktopClient,
   type RemoteDesktopServer,
-} from "@/lib/api";
+} from "@/lib/assets-api";
+import { trmmAdminApi } from "@/lib/trmm-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

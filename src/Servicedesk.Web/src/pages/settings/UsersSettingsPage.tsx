@@ -25,7 +25,7 @@ import { TimesheetOverridesDialog } from "@/pages/settings/TimesheetOverridesDia
 import { FeatureFlagsDropdown } from "@/pages/settings/FeatureFlagsDropdown";
 import { TaggingMailboxesCard } from "@/pages/settings/TaggingMailboxesCard";
 import { TagGroupsCard } from "@/pages/settings/TagGroupsCard";
-import { authApi } from "@/lib/api";
+import { authApi } from "@/lib/auth-api";
 import { useAuth } from "@/auth/authStore";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

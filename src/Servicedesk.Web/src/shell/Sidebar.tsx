@@ -1,20 +1,7 @@
 import * as React from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  LayoutGrid,
-  LogOut,
-  Pin,
-  PinOff,
-  Plus,
-  Settings as SettingsIcon,
-  Smartphone,
-  Sparkles,
-  UserCircle2,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, LayoutGrid, LogOut, Pin, PinOff, Plus, Settings as SettingsIcon, Smartphone, Sparkles, UserCircle2 } from "lucide-react";
 import { isTouchDevice, mobilePathFor, setMobilePreference } from "@/mobile/mobileMode";
 import { clearAllDrafts } from "@/mobile/compose";
 import { BrandMark } from "@/components/BrandMark";
@@ -32,7 +19,10 @@ import {
   formatServerLocalDate,
 } from "@/hooks/useServerTime";
 import { viewApi, type View } from "@/lib/ticket-api";
-import { settingsApi, preferencesApi, timesheetCommentsApi } from "@/lib/api";
+import { settingsApi } from "@/lib/settings-api";
+import { preferencesApi } from "@/lib/preferences-api";
+import { timesheetCommentsApi } from "@/lib/timesheet-api";
+import { authApi } from "@/lib/auth-api";
 import { backofficeFormKeys, backofficeFormsApi } from "@/lib/backoffice-forms-api";
 import { openCopilotWindow } from "@/lib/copilotWindow";
 import { RecentTickets } from "@/shell/RecentTickets";
@@ -41,7 +31,6 @@ import { GroupTagsWidget } from "@/shell/GroupTagsWidget";
 import { FollowingWidget } from "@/shell/FollowingWidget";
 import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
 import { useAuth, authStore } from "@/auth/authStore";
-import { authApi } from "@/lib/api";
 import {
   DropdownMenu,
   DropdownMenuContent,

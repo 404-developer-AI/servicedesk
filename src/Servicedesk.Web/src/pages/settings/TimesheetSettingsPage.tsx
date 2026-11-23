@@ -32,13 +32,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import {
-  settingsApi,
-  taxonomyApi,
-  timesheetImportAdminApi,
-  type SettingEntry,
-  type Status,
-} from "@/lib/api";
+import { settingsApi, type SettingEntry } from "@/lib/settings-api";
+import { taxonomyApi, type Status } from "@/lib/taxonomy-api";
+import { timesheetImportAdminApi } from "@/lib/reporting-admin-api";
 import { AdsolutWorkHoursDialog } from "./AdsolutWorkHoursDialog";
 import { ApiError, apiErrorMessage, errorMessage } from "@/lib/http";
 import {

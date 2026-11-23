@@ -22,19 +22,17 @@ import {
   X,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { ApiError, apiErrorMessage } from "@/lib/http";
+import { settingsApi, type SettingEntry } from "@/lib/settings-api";
 import {
-  ApiError,
-  apiErrorMessage,
-  settingsApi,
   zammadAdminApi,
   zammadDryRunApi,
   zammadMappingApi,
-  type SettingEntry,
   type ZammadConnectionState,
   type ZammadDryRunStartRequest,
   type ZammadTestResult,
   type ZammadTicketSearchPage,
-} from "@/lib/api";
+} from "@/lib/zammad-api";
 import { ZammadMappingSection, MAPPING_QK } from "./zammad/ZammadMappingSection";
 import { ZammadKbImportSection } from "./zammad/ZammadKbImportSection";
 import { Badge } from "@/components/ui/badge";

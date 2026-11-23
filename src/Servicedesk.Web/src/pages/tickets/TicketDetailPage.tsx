@@ -1,6 +1,6 @@
 import { formatDate } from "@/lib/dateFormat";
 import * as React from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, type QueryClient, type UseMutationResult } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { noteThreadApi, noteThreadKey } from "@/lib/note-threads-api";
 import { toast } from "sonner";
@@ -8,7 +8,7 @@ import { Check, Copy, Download, FileDown, FolderKanban, GitBranch, ListChecks, M
 import { cn } from "@/lib/utils";
 import { formatTicketRef } from "@/lib/ticketRef";
 import { useTicketReferencePrefix } from "@/hooks/useTicketReferencePrefix";
-import { ticketApi, contactApi, ApiError, mergeTicketMutation, type ContactCompanyRole, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketDetail, type TicketEvent, type TicketFieldUpdate } from "@/lib/ticket-api";
+import { ticketApi, contactApi, ApiError, mergeTicketMutation, type ContactCompanyRole, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketBody, type TicketDetail, type TicketEvent, type TicketEventPin, type TicketFieldUpdate, type TicketMutationResult } from "@/lib/ticket-api";
 import { checklistErrorCode, type ChecklistSettings, type TicketChecklist } from "@/lib/checklist-api";
 import { useChecklistSettings, useTicketChecklists, summarizeChecklists } from "./components/checklists/useTicketChecklists";
 import { TicketChecklistBar } from "./components/checklists/TicketChecklistBar";
@@ -20,12 +20,9 @@ import { notificationApi } from "@/lib/notification-api";
 import { StatusGateDialog } from "@/components/StatusGateDialog";
 import { TitleReviewGateDialog } from "@/components/TitleReviewGateDialog";
 import { ContactCompanyGateDialog } from "@/components/ContactCompanyGateDialog";
-import { agentQueueApi, taxonomyApi } from "@/lib/api";
-import {
-  CompanyAlertDialog,
-  hasSeenAlertThisSession,
-  markAlertSeen,
-} from "@/components/CompanyAlertDialog";
+import { agentQueueApi } from "@/lib/queue-access-api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
+import { CompanyAlertDialog, hasSeenAlertThisSession, markAlertSeen } from "@/components/CompanyAlertDialog";
 import { TicketCompanyAssignmentDialog } from "@/components/TicketCompanyAssignmentDialog";
 import { TicketTypeBadge } from "@/components/TicketTypeBadge";
 import { IsoClassificationActions } from "@/components/IsoClassificationActions";
@@ -1174,19 +1171,19 @@ function TicketDetailBody({
 }: {
   ticketId: string;
   embedded: boolean;
-  ticket: any;
-  body: any;
-  events: any[];
+  ticket: Ticket;
+  body: TicketBody;
+  events: TicketEvent[];
   timeline: TicketTimelineState;
   eventTypeCounts?: Record<string, number>;
   latestMailReceived: TicketEvent | null;
   pinnedEventsOutsidePage: TicketEvent[];
   serverTaggedOrders: { id: string; label: string }[];
   ticketForms: TicketFormSummary[];
-  pinnedEvents: any[];
+  pinnedEvents: TicketEventPin[];
   pinnedEventIds: Set<number>;
-  updateMutation: any;
-  queryClient: any;
+  updateMutation: UseMutationResult<TicketMutationResult, Error, TicketFieldUpdate>;
+  queryClient: QueryClient;
   /// v0.0.42 — gate-aware wrapper around the side-panel PATCH path.
   /// Intercepts status changes to surface the StatusGateDialog before
   /// the actual mutation fires. Falls through to updateMutation for

@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import type { M365LinkStatus } from "@/lib/api";
+import type { M365LinkStatus } from "@/lib/contract-m365-api";
 import { formatTimeAgo } from "@/lib/format";
 
 /// Visual treatment per connection status. Mirrors the glass status pills used

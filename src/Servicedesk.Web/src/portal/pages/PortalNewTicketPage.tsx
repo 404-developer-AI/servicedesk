@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { portalTicketApi } from "@/lib/portal-api";
 import { PortalComposer, htmlHasText, type PendingFile } from "@/portal/PortalComposer";
 import { usePortalConfig } from "@/portal/PortalAuthLayout";

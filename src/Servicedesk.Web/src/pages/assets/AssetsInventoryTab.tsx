@@ -13,11 +13,11 @@ import {
 } from "lucide-react";
 import {
   assetsApi,
-  trmmAdminApi,
   type AssetEolStatus,
   type AssetListItem,
   type AssetSort,
-} from "@/lib/api";
+} from "@/lib/assets-api";
+import { trmmAdminApi } from "@/lib/trmm-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

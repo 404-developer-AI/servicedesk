@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ticketApi, type Ticket } from "@/lib/ticket-api";
-import { taxonomyApi, type Status } from "@/lib/api";
+import { taxonomyApi, type Status } from "@/lib/taxonomy-api";
 import { useAuth } from "@/auth/authStore";
 import { cn } from "@/lib/utils";
 

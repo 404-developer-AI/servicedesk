@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, Search } from "lucide-react";
-import { adsolutApi, type AdsolutErpProbeResponse } from "@/lib/api";
+import { adsolutApi, type AdsolutErpProbeResponse } from "@/lib/adsolut-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { copyDebugBody } from "@/pages/settings/adsolut/shared";

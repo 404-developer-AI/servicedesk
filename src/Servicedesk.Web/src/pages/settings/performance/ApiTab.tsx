@@ -3,7 +3,7 @@ import * as React from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { perfApi, type PeriodQuery, type RouteRow, type SlowRequest } from "@/lib/perf-api";
 import { cn } from "@/lib/utils";
 import { useTabQuery } from "./usePerfQuery";

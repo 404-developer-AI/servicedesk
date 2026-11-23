@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Clock, ExternalLink, FileText, ListChecks, Mail, Phone, Sparkles, StickyNote } from "lucide-react";
 import { ticketApi, mentionApi } from "@/lib/ticket-api";
-import { preferencesApi, agentQueueApi } from "@/lib/api";
+import { preferencesApi } from "@/lib/preferences-api";
+import { agentQueueApi } from "@/lib/queue-access-api";
 import { useAuth } from "@/auth/authStore";
 import { orderMentionItems } from "@/pages/orders/orderMention";
 import { kbLinkMentionItems } from "@/pages/kb/kbLinkMention";
@@ -14,14 +15,7 @@ import { RichTextEditor, splitMentionIds } from "@/components/RichTextEditor";
 import { substituteComposeTokens } from "@/lib/composeTokens";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {

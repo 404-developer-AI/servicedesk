@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownWideNarrow, ArrowLeft, ArrowUpWideNarrow, Building2, ChevronsUp, Clock, FileText, Lock, MessageSquare, Paperclip, User } from "lucide-react";
 import { toast } from "sonner";
 import { SafeHtml } from "@/components/SafeHtml";
-import { ApiError, apiErrorMessage } from "@/lib/api";
+import { ApiError, apiErrorMessage } from "@/lib/http";
 import { portalPreferencesApi, portalTicketApi, type PortalConversationOrder, type PortalMessage } from "@/lib/portal-api";
 import { cn } from "@/lib/utils";
 import { Eye } from "lucide-react";

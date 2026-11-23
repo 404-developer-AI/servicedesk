@@ -6,22 +6,13 @@ import {
   IntegrationTile,
   type IntegrationStatus,
 } from "@/components/integrations/IntegrationTile";
-import {
-  adsolutApi,
-  m365AdminApi,
-  sophosAdminApi,
-  telavoxAdminApi,
-  trmmAdminApi,
-  veeamAdminApi,
-  zammadAdminApi,
-  type AdsolutState,
-  type M365ConnectionState,
-  type SophosConnectionState,
-  type TelavoxConnectionState,
-  type TrmmConnectionState,
-  type VeeamConnectionState,
-  type ZammadConnectionState,
-} from "@/lib/api";
+import { adsolutApi, type AdsolutState } from "@/lib/adsolut-api";
+import { m365AdminApi, type M365ConnectionState } from "@/lib/m365-api";
+import { sophosAdminApi, type SophosConnectionState } from "@/lib/sophos-api";
+import { telavoxAdminApi, type TelavoxConnectionState } from "@/lib/telavox-api";
+import { trmmAdminApi, type TrmmConnectionState } from "@/lib/trmm-api";
+import { veeamAdminApi, type VeeamConnectionState } from "@/lib/veeam-api";
+import { zammadAdminApi, type ZammadConnectionState } from "@/lib/zammad-api";
 import {
   claudeAdminApi,
   type ClaudeConnectionState,

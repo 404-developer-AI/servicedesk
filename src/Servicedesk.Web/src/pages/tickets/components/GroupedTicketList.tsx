@@ -8,7 +8,8 @@ import {
 import { ChevronDown } from "lucide-react";
 import { columnsForLayout } from "./TicketTable";
 import { alignClass } from "@/lib/ticketColumns";
-import { taxonomyApi, settingsApi, type TicketGroupingSettings } from "@/lib/api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
+import { settingsApi, type TicketGroupingSettings } from "@/lib/settings-api";
 import { cn } from "@/lib/utils";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useTheme } from "@/app/ThemeProvider";

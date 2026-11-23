@@ -23,7 +23,7 @@ import {
 import {
   adsolutCatalogueProductsApi,
   type AdsolutCatalogueProduct,
-} from "@/lib/api";
+} from "@/lib/adsolut-catalogue-api";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;

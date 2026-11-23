@@ -17,14 +17,14 @@ import {
   XCircle,
 } from "lucide-react";
 import { CreateContactFromZammadDialog } from "./CreateContactFromZammadDialog";
+import { apiErrorMessage } from "@/lib/http";
 import {
-  apiErrorMessage,
   zammadDryRunApi,
   type ZammadImportRecordItem,
   type ZammadImportRecordResult,
   type ZammadImportRunKind,
   type ZammadImportRunStatus,
-} from "@/lib/api";
+} from "@/lib/zammad-api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

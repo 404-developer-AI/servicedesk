@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clock } from "lucide-react";
-import { slaApi } from "@/lib/api";
+import { slaApi } from "@/lib/sla-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatApproxMinutes } from "@/lib/format";
 

@@ -14,17 +14,15 @@ import {
   Trash2,
   Unlink,
 } from "lucide-react";
+import { ApiError, apiErrorMessage, errorMessage } from "@/lib/http";
+import { settingsApi, type SettingEntry } from "@/lib/settings-api";
 import {
-  ApiError,
-  apiErrorMessage,
-  settingsApi,
   telavoxAdminApi,
-  type SettingEntry,
   type TelavoxAgentLink,
   type TelavoxConnectionState,
   type TelavoxCustomer,
   type TelavoxExtension,
-} from "@/lib/api";
+} from "@/lib/telavox-api";
 import { userApi, type AgentUser } from "@/lib/ticket-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,7 +49,6 @@ import { TelavoxContactLookupSection } from "./TelavoxContactLookupSection";
 import { TelavoxEventProbeSection } from "./TelavoxEventProbeSection";
 import { cn } from "@/lib/utils";
 import { findEntry } from "@/components/settings/settingEntries";
-import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "telavox", "status"] as const;
 const SECRET_QK = ["integrations", "telavox", "secret"] as const;

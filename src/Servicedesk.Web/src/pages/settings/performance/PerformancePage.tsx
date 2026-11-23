@@ -25,7 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { serverNowMs } from "@/hooks/useServerTime";
 import { perfApi, type PerfStatus, type PeriodQuery } from "@/lib/perf-api";
 import { cn } from "@/lib/utils";

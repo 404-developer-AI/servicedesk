@@ -2,7 +2,7 @@ import * as React from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ExternalLink, Loader2, Search, X } from "lucide-react";
-import { searchApi, type SearchHit } from "@/lib/api";
+import { searchApi, type SearchHit } from "@/lib/search-api";
 import { hitHref, labelForKind, KIND_ORDER } from "@/components/search/searchMeta";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { useMobileHeader } from "../mobileHeader";

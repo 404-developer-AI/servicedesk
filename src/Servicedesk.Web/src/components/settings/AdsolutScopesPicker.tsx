@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, Code2, Lock } from "lucide-react";
-import { settingsApi, type SettingEntry } from "@/lib/api";
+import { settingsApi, type SettingEntry } from "@/lib/settings-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/lib/http";

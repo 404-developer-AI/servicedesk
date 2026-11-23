@@ -2,11 +2,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Trash2, Users } from "lucide-react";
-import {
-  viewGroupApi,
-  type ViewGroupSummary,
-  type ViewGroupInput,
-} from "@/lib/api";
+import { viewGroupApi, type ViewGroupSummary, type ViewGroupInput } from "@/lib/view-groups-api";
 import { userApi, viewApi, type AgentUser, type View } from "@/lib/ticket-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

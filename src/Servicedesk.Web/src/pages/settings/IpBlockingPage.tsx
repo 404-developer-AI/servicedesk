@@ -3,13 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearch } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Ban, ShieldAlert, ShieldCheck, ShieldOff, SlidersHorizontal, TriangleAlert } from "lucide-react";
-import {
-  ApiError,
-  apiErrorMessage,
-  ipBlockingApi,
-  type IpProposal,
-  type IpRule,
-} from "@/lib/api";
+import { ApiError, apiErrorMessage } from "@/lib/http";
+import { ipBlockingApi, type IpProposal, type IpRule } from "@/lib/ip-blocking-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

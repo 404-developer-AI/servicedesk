@@ -6,7 +6,7 @@ import {
   CheckCircle2,
   ChevronRight,
 } from "lucide-react";
-import { healthApi, type HealthStatus, type SubsystemHealth } from "@/lib/api";
+import { healthApi, type HealthStatus, type SubsystemHealth } from "@/lib/system-api";
 import { pollIntervalMs } from "@/lib/healthPolling";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";

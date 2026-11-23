@@ -4,7 +4,7 @@ import { Archive, BellRing, Gauge, Loader2, Radar, SlidersHorizontal, Target, Tr
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CollapsibleSettingsCard } from "@/components/settings/CollapsibleSettingsCard";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { perfApi, type PerfStatus } from "@/lib/perf-api";
 import { Panel } from "./PerfUi";
 import { PERF_KEY } from "./usePerfQuery";

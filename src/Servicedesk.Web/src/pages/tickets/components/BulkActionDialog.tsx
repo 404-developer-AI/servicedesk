@@ -14,7 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { TaxonomySelect, type TaxonomyOption } from "@/components/TaxonomySelect";
-import { agentQueueApi, taxonomyApi } from "@/lib/api";
+import { agentQueueApi } from "@/lib/queue-access-api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import {
   ticketApi,
   userApi,

@@ -17,7 +17,7 @@ import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { useTelavoxCallStream } from "@/hooks/useTelavoxCallStream";
 import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
 import { useUpdateCheck } from "@/hooks/useUpdateCheck";
-import { settingsApi } from "@/lib/api";
+import { settingsApi } from "@/lib/settings-api";
 import { useAuth } from "@/auth/authStore";
 import { useTheme } from "@/app/ThemeProvider";
 import { OrderPillHost } from "@/pages/orders/OrderPillHost";

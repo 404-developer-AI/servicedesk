@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ordersApi } from "@/lib/api";
+import { ordersApi } from "@/lib/adsolut-catalogue-api";
 import {
   Dialog,
   DialogContent,

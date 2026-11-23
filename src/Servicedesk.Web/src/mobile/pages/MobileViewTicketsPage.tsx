@@ -7,7 +7,7 @@ import { searchableColumns } from "@/lib/ticketColumns";
 import { flagColors as resolveFlagColors, useTicketFlagSettings } from "@/lib/ticketFlags";
 import { useTicketListRealtime } from "@/hooks/useTicketRealtime";
 import { useServerNowMs, useServerTimeZone } from "@/hooks/useServerTime";
-import { settingsApi } from "@/lib/api";
+import { settingsApi } from "@/lib/settings-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useMobileHeader } from "../mobileHeader";

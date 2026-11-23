@@ -5,7 +5,7 @@ import { SETTINGS_SECTIONS } from "@/shell/settingsSections";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { useAuth } from "@/auth/authStore";
 import { useQuery } from "@tanstack/react-query";
-import { ipBlockingApi } from "@/lib/api";
+import { ipBlockingApi } from "@/lib/ip-blocking-api";
 
 // Mounts a secondary nav rail into AppShell's root flex row (via
 // useSecondarySidebarStore), so the rail shares the main Sidebar's

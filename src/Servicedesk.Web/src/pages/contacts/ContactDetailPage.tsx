@@ -17,7 +17,7 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { ApiError } from "@/lib/api";
+import { ApiError, errorMessage } from "@/lib/http";
 import { useAuth } from "@/auth/authStore";
 import {
   companyApi,
@@ -48,7 +48,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useDebounced } from "@/hooks/useDebounced";
-import { errorMessage } from "@/lib/http";
 
 const ROLE_BADGE: Record<ContactCompanyRole, { label: string; className: string }> = {
   primary: {

@@ -9,7 +9,7 @@ import {
   type KbLocale,
   type KbSectionNode,
 } from "@/lib/kb-api";
-import { settingsApi } from "@/lib/api";
+import { settingsApi } from "@/lib/settings-api";
 import { SettingField } from "@/components/settings/SettingField";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

@@ -7,7 +7,8 @@ import {
   EyeOff,
   KeyRound,
 } from "lucide-react";
-import { ApiError, adsolutApi, type AdsolutDebugAccessToken } from "@/lib/api";
+import { ApiError } from "@/lib/http";
+import { adsolutApi, type AdsolutDebugAccessToken } from "@/lib/adsolut-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { serverNowMs } from "@/hooks/useServerTime";

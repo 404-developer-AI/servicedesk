@@ -1,11 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
-import {
-  adsolutApi,
-  type SettingEntry,
-  type AdsolutSyncState,
-} from "@/lib/api";
+import { adsolutApi, type AdsolutSyncState } from "@/lib/adsolut-api";
+import type { SettingEntry } from "@/lib/settings-api";
 import { Button } from "@/components/ui/button";
 import { SettingField } from "@/components/settings/SettingField";
 import { ADSOLUT_SETTINGS_QUERY_KEY, ADSOLUT_COVERAGE_QUERY_KEY } from "@/pages/settings/adsolut/shared";

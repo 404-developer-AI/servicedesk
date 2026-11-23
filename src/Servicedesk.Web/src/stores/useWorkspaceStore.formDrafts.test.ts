@@ -6,7 +6,7 @@ const api = vi.hoisted(() => ({
   deleteWorkspaceKey: vi.fn(),
   fireAndForgetWorkspaceSave: vi.fn(),
 }));
-vi.mock("@/lib/api", () => ({ preferencesApi: api }));
+vi.mock("@/lib/preferences-api", () => ({ preferencesApi: api }));
 
 import { formDraftKey, useWorkspaceStore, type FormDraftEntry } from "./useWorkspaceStore";
 

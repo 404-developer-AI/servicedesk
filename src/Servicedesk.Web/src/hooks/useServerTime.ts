@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { systemApi, type SystemTime } from "@/lib/api";
+import { systemApi, type SystemTime } from "@/lib/system-api";
 
 // How often to re-sync with the server. The visible wall clock ticks locally
 // every second between syncs — between syncs we just add elapsed ms to the

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DOMPurify from "dompurify";
 import { Info, AlertTriangle, AlertCircle } from "lucide-react";
-import { systemApi, type LoginBannerType } from "@/lib/api";
+import { systemApi, type LoginBannerType } from "@/lib/system-api";
 import { cn } from "@/lib/utils";
 import { escapeHtml } from "@/lib/format";
 

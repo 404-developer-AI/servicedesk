@@ -5,7 +5,7 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Bold, Italic, List, ListOrdered, Code, Link as LinkIcon } from "lucide-react";
 import { TemplateVariablePicker } from "./TemplateVariablePicker";
-import type { TriggerTemplateVariable } from "@/lib/api";
+import type { TriggerTemplateVariable } from "@/lib/triggers-api";
 import { cn } from "@/lib/utils";
 
 type Props = {

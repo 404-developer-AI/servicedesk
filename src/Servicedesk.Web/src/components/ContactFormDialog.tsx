@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/http";
 import { companyApi, contactApi } from "@/lib/ticket-api";
 import type {
   CompanyPickerItem,

@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { SettingField } from "@/components/settings/SettingField";
-import { reportingAdminApi, settingsApi } from "@/lib/api";
+import { reportingAdminApi } from "@/lib/reporting-admin-api";
+import { settingsApi } from "@/lib/settings-api";
 import { findEntry } from "@/components/settings/settingEntries";
 
 const SETTINGS_QUERY_KEY = ["settings", "list", "Reporting"] as const;

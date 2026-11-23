@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Activity, Phone, PhoneIncoming, PhoneOutgoing, ExternalLink, Lock } from "lucide-react";
-import { activityApi, type ActivityEntry, type ActivityListQuery } from "@/lib/api";
+import { activityApi, type ActivityEntry, type ActivityListQuery } from "@/lib/activity-api";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

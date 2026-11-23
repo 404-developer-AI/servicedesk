@@ -15,11 +15,8 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import {
-  apiErrorMessage,
-  m365AdminApi,
-  type M365ConnectionState,
-} from "@/lib/api";
+import { apiErrorMessage, errorMessage } from "@/lib/http";
+import { m365AdminApi, type M365ConnectionState } from "@/lib/m365-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +25,6 @@ import { Switch } from "@/components/ui/switch";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 import microsoftLogo from "@/assets/integrations/microsoft.svg";
 import { cn } from "@/lib/utils";
-import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "m365", "status"] as const;
 const SECRET_QK = ["integrations", "m365", "secret"] as const;

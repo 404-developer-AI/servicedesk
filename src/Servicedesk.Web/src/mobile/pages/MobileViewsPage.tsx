@@ -3,7 +3,8 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Inbox, LayoutList, Pin } from "lucide-react";
 import { viewApi, type View } from "@/lib/ticket-api";
-import { preferencesApi, settingsApi } from "@/lib/api";
+import { preferencesApi } from "@/lib/preferences-api";
+import { settingsApi } from "@/lib/settings-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMobileHeader } from "../mobileHeader";
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Building2, Plus, Search } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { IntegrationLinkableCompany } from "@/lib/api";
+import type { IntegrationLinkableCompany } from "@/lib/sophos-api";
 import { cn } from "@/lib/utils";
 
 /**

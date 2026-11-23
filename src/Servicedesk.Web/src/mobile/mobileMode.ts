@@ -1,4 +1,4 @@
-import { settingsApi } from "@/lib/api";
+import { settingsApi } from "@/lib/settings-api";
 
 /// Mobile web (staff). Decides whether a staff session on this device uses
 /// the lightweight /m views or the desktop app.

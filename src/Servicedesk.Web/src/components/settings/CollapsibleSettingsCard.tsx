@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { settingsApi, type SettingEntry } from "@/lib/api";
+import { settingsApi, type SettingEntry } from "@/lib/settings-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
 

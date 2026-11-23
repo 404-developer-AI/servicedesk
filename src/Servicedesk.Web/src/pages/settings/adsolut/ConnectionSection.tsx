@@ -1,19 +1,18 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ApiError, errorMessage } from "@/lib/http";
 import {
-  ApiError,
   adsolutApi,
   type AdsolutState,
   type AdsolutStatus,
   type AdsolutSyncState,
-} from "@/lib/api";
+} from "@/lib/adsolut-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { serverNowMs } from "@/hooks/useServerTime";
 import { ADSOLUT_STATUS_QUERY_KEY } from "@/pages/settings/adsolut/shared";
 import { formatDateTimeMedium } from "@/lib/dateFormat";
-import { errorMessage } from "@/lib/http";
 
 const STATE_LABEL: Record<AdsolutState, { tone: string; text: string; dot: string }> = {
   not_configured: {

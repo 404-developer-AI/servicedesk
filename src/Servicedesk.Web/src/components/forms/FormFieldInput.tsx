@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { useServerNowMs, useServerOffsetMinutes, useServerTimeZone } from "@/hooks/useServerTime";
 import { userApi } from "@/lib/ticket-api";
-import { agentQueueApi } from "@/lib/api";
+import { agentQueueApi } from "@/lib/queue-access-api";
 import { ticketFormsApi, type FormField } from "@/lib/forms-api";
 import { liveOrders, newRowKey, parseDuration, plainTextToHtml, type ArticleDraftRow, type DraftValue } from "@/lib/formDraft";
 import { RichTextEditor } from "@/components/RichTextEditor";

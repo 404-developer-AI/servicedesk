@@ -12,7 +12,7 @@ import {
   RefreshCw,
   Send,
 } from "lucide-react";
-import { contractM365Api, type M365Mailbox } from "@/lib/api";
+import { contractM365Api, type M365Mailbox } from "@/lib/contract-m365-api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {

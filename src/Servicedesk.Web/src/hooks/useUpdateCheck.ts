@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { systemApi, type SystemVersion } from "@/lib/api";
+import { systemApi, type SystemVersion } from "@/lib/system-api";
 import { CLIENT_VERSION_OUTDATED_EVENT } from "@/lib/clientVersion";
 import {
   SERVER_RECONNECTED_EVENT,

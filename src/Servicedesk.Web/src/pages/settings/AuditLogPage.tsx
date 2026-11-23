@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { auditApi, type AuditEntry, type AuditListQuery } from "@/lib/api";
+import { auditApi, type AuditEntry, type AuditListQuery } from "@/lib/audit-api";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

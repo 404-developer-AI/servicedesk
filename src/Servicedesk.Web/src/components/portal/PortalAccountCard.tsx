@@ -6,7 +6,7 @@ import { Send, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { portalAdminApi } from "@/lib/portal-api";
 import { contactApi, type Contact } from "@/lib/ticket-api";
 import { useAuth } from "@/auth/authStore";

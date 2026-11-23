@@ -13,8 +13,8 @@ const authApi = vi.hoisted(() => ({
   disableTotp: vi.fn(),
 }));
 
-vi.mock("@/lib/api", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+vi.mock("@/lib/auth-api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/auth-api")>("@/lib/auth-api");
   return { ...actual, authApi };
 });
 

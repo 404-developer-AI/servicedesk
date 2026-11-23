@@ -2,11 +2,9 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
-import {
-  adsolutApi,
-  type AdsolutErpContractsState,
-  type SettingEntry,
-} from "@/lib/api";
+import { adsolutApi } from "@/lib/adsolut-api";
+import type { AdsolutErpContractsState } from "@/lib/adsolut-erp-api";
+import type { SettingEntry } from "@/lib/settings-api";
 import { Button } from "@/components/ui/button";
 import { SettingField } from "@/components/settings/SettingField";
 import { findEntry } from "@/components/settings/settingEntries";

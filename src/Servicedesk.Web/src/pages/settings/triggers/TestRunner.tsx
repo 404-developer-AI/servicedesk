@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Beaker, CheckCircle2, AlertCircle, MinusCircle, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { triggerApi, type TriggerDryRunAction, type TriggerDryRunResult } from "@/lib/api";
+import { triggerApi, type TriggerDryRunAction, type TriggerDryRunResult } from "@/lib/triggers-api";
 import { ticketApi, type TicketPickerItem } from "@/lib/ticket-api";
 import { ticketFormsApi } from "@/lib/forms-api";
 import { formatDateTime } from "@/lib/dateFormat";

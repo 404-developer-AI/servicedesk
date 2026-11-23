@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { LogOut, Monitor } from "lucide-react";
 import { useAuth, authStore } from "@/auth/authStore";
 import { useTheme } from "@/app/ThemeProvider";
-import { authApi } from "@/lib/api";
+import { authApi } from "@/lib/auth-api";
 import { ThemePicker } from "@/components/ThemePicker";
 import { MySessionsCard } from "@/components/auth/MySessionsCard";
 import { useMobileHeader } from "../mobileHeader";

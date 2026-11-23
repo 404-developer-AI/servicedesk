@@ -11,7 +11,7 @@ import {
   type DashboardTile,
 } from "@/lib/dashboardTiles";
 import { cn } from "@/lib/utils";
-import { userDashboardLayoutApi, type DashboardLayoutEntry } from "@/lib/api";
+import { userDashboardLayoutApi, type DashboardLayoutEntry } from "@/lib/dashboard-api";
 import {
   DndContext,
   PointerSensor,

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { systemApi, type HealthStatus } from "@/lib/api";
+import { systemApi, type HealthStatus } from "@/lib/system-api";
 import { pollIntervalMs } from "@/lib/healthPolling";
 import { authStore } from "@/auth/authStore";
 

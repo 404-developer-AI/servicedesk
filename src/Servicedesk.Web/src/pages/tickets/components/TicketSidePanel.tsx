@@ -2,7 +2,11 @@ import * as React from "react";
 import { toast } from "sonner";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { agentQueueApi, errorMessage, ordersApi, settingsApi, taxonomyApi } from "@/lib/api";
+import { agentQueueApi } from "@/lib/queue-access-api";
+import { errorMessage } from "@/lib/http";
+import { ordersApi } from "@/lib/adsolut-catalogue-api";
+import { settingsApi } from "@/lib/settings-api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { AgentPicker } from "@/components/AgentPicker";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
@@ -27,15 +31,7 @@ import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/dateFormat";
 import { useServerTimeZone } from "@/hooks/useServerTime";
 import type { TicketFormSummary } from "@/lib/forms-api";
-import type {
-  Ticket,
-  TicketFieldUpdate,
-  Contact,
-  CompanyDetail,
-  ContactCompanyLink,
-  ContactCompanyOption,
-  ContactCompanyRole,
-} from "@/lib/ticket-api";
+import type { Ticket, TicketFieldUpdate, Contact, CompanyDetail, ContactCompanyLink, ContactCompanyOption, ContactCompanyRole } from "@/lib/ticket-api";
 import { contactApi, companyApi } from "@/lib/ticket-api";
 import { usePresenceStore, type PresenceUser } from "@/stores/usePresenceStore";
 import { useAuth } from "@/auth/authStore";

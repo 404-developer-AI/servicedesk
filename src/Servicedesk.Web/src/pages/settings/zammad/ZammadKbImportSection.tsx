@@ -14,14 +14,14 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { apiErrorMessage } from "@/lib/http";
 import {
-  apiErrorMessage,
   zammadKbImportApi,
   type ZammadKbImportRunSummary,
   type ZammadKbProposal,
   type ZammadKbProposalNode,
   type ZammadKbPickerItem,
-} from "@/lib/api";
+} from "@/lib/zammad-kb-import-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";

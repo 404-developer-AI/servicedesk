@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { taxonomyApi } from "@/lib/api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 
 /// v0.1.61 — the soft lock: is this ticket's category "Locked" (handled via
 /// Back office forms)? UI only — never an access rule; the server accepts

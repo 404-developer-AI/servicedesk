@@ -50,11 +50,7 @@ import { ticketApi, ApiError, type TicketEvent, type OutboundMailKind } from "@/
 import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { useAuth } from "@/auth/authStore";
-import {
-  feedbackApi,
-  type FeedbackEmployee,
-  type FeedbackWorkPointType,
-} from "@/lib/api";
+import { feedbackApi, type FeedbackEmployee, type FeedbackWorkPointType } from "@/lib/feedback-api";
 import { Button } from "@/components/ui/button";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import {

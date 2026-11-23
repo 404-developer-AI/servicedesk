@@ -17,7 +17,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { settingsApi, type SettingEntry } from "@/lib/api";
+import { settingsApi, type SettingEntry } from "@/lib/settings-api";
 import {
   claudeAdminApi,
   type ClaudeConnectionState,

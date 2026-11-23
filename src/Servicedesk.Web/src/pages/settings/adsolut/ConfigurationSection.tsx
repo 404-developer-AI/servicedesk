@@ -2,11 +2,8 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy } from "lucide-react";
-import {
-  adsolutApi,
-  type SettingEntry,
-  type AdsolutStatus,
-} from "@/lib/api";
+import { adsolutApi, type AdsolutStatus } from "@/lib/adsolut-api";
+import type { SettingEntry } from "@/lib/settings-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingField } from "@/components/settings/SettingField";

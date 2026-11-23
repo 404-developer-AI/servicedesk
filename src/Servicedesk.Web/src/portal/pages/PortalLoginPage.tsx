@@ -8,7 +8,7 @@ import { LockKeyhole, Mail, ShieldCheck, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/http";
 import { portalAuthApi } from "@/lib/portal-api";
 import { authStore } from "@/auth/authStore";
 import { portalAuthStore, refreshPortalAuth } from "@/auth/portalAuth";

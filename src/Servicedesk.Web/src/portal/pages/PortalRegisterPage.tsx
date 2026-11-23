@@ -6,7 +6,7 @@ import { z } from "zod";
 import { MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ApiError, apiErrorMessage } from "@/lib/api";
+import { ApiError, apiErrorMessage } from "@/lib/http";
 import { portalAuthApi } from "@/lib/portal-api";
 import { SafeHtml } from "@/components/SafeHtml";
 import { TurnstileWidget, type TurnstileHandle } from "@/portal/TurnstileWidget";

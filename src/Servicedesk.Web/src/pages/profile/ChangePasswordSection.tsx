@@ -3,7 +3,8 @@ import { KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { authApi, ApiError, apiErrorMessage } from "@/lib/api";
+import { authApi } from "@/lib/auth-api";
+import { ApiError, apiErrorMessage } from "@/lib/http";
 import { useAuth } from "@/auth/authStore";
 
 /// v0.1.3 (audit v0.1.1 #8) — self-service password change for Local staff

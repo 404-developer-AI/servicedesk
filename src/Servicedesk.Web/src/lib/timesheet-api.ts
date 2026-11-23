@@ -440,3 +440,136 @@ export const timesheetManagerApi = {
   exportCsvUrl: (userId: string, year: number, month: number) =>
     `/api/timesheet/manager/month/export.csv?userId=${userId}&year=${year}&month=${month}`,
 };
+
+// ---- Back-office Timesheet tabs (Resolved / CWI) — v0.0.56 -----------
+
+export type BackofficeContext = "resolved" | "cwi" | "adsolut";
+export type BackofficeTicket = {
+  ticketId: string;
+  ticketNumber: number;
+  subject: string;
+  companyName: string | null;
+  /// Total registered timesheet minutes on the ticket (all agents).
+  totalMinutes: number;
+  boChecked: boolean;
+  checkedUtc: string | null;
+  checkedByEmail: string | null;
+  /// When the ticket entered its current status (server-resolved).
+  enteredUtc: string;
+  // v0.0.84 — Timesheet → Comments (shared per-ticket thread).
+  commentThreadId: string | null;
+  hasComments: boolean;
+  commentsUnread: boolean;
+};
+export type BackofficeListResponse = {
+  year: number;
+  month: number;
+  /// False when no statuses are configured for this tab in Settings —
+  /// the tab then renders a "configure statuses" hint instead of an
+  /// empty list that looks like a bug.
+  statusesConfigured: boolean;
+  items: BackofficeTicket[];
+};
+export type BackofficeTicketHours = {
+  totalMinutes: number;
+  byTask: { taskName: string; isAbsence: boolean; minutes: number }[];
+};
+/// Agent-facing data for the back-office Resolved + CWI tabs. The two
+/// list calls take a calendar month (1-12); the server resolves the month
+/// boundaries in its own timezone.
+export const backofficeTimesheetApi = {
+  listResolved: (year: number, month: number) =>
+    request<BackofficeListResponse>(
+      "GET",
+      `/api/timesheet/backoffice/resolved?year=${year}&month=${month}`,
+    ),
+  listCwi: (year: number, month: number) =>
+    request<BackofficeListResponse>(
+      "GET",
+      `/api/timesheet/backoffice/cwi?year=${year}&month=${month}`,
+    ),
+  ticketHours: (ticketId: string) =>
+    request<BackofficeTicketHours>(
+      "GET",
+      `/api/timesheet/backoffice/tickets/${ticketId}/hours`,
+    ),
+  /// Tick/untick the BO marker for a set of entities on one tab. `ids` are
+  /// ticket ids for resolved/cwi and sales-receipt ids for adsolut.
+  setChecks: (context: BackofficeContext, ids: string[], checked: boolean) =>
+    request<{ ok: boolean; count: number; checked: boolean }>(
+      "POST",
+      "/api/timesheet/backoffice/checks",
+      { context, ids, checked },
+    ),
+};
+// ---- Timesheet → Comments (per-ticket review chat) — v0.0.84 ----------
+
+/// One row in the current user's Comments inbox: a thread they are linked into
+/// that is still active (its origin row is not yet BO-checked).
+export type CommentInboxItem = {
+  threadId: string;
+  ticketNumber: number;
+  ticketId: string | null;
+  originContext: BackofficeContext;
+  /// The exact origin row id (sales-receipt for adsolut, ticket for
+  /// resolved/cwi). Used to BO-check the row straight from the Comments tab —
+  /// the same shared check the origin tab toggles.
+  originEntityId: string;
+  lastMessageUtc: string;
+  lastMessagePreview: string | null;
+  lastAuthorEmail: string | null;
+  unreadCount: number;
+};
+export type CommentRecipient = { userId: string; email: string };
+export type CommentMessage = {
+  id: number;
+  authorId: string | null;
+  authorEmail: string | null;
+  body: string;
+  createdUtc: string;
+  recipients: CommentRecipient[];
+};
+export type CommentThread = {
+  id: string;
+  ticketNumber: number;
+  ticketId: string | null;
+  originContext: BackofficeContext;
+  createdBy: string | null;
+  createdByEmail: string | null;
+  messages: CommentMessage[];
+};
+export type CommentUserOption = { id: string; email: string };
+/// Body for posting a message. `threadId` continues an existing thread (a
+/// reply); omit it to find-or-create the shared thread for `ticketNumber`, in
+/// which case `context` + `entityId` (the origin row) are required. Linking
+/// `recipientIds` (≥1) is mandatory both ways.
+export type PostCommentBody = {
+  threadId?: string;
+  ticketNumber: number;
+  ticketId?: string | null;
+  context?: BackofficeContext;
+  entityId?: string;
+  body: string;
+  recipientIds: string[];
+};
+export const timesheetCommentsApi = {
+  inbox: () => request<CommentInboxItem[]>("GET", "/api/timesheet/comments/inbox"),
+  unreadCount: () =>
+    request<{ count: number }>("GET", "/api/timesheet/comments/unread-count"),
+  recipients: () =>
+    request<CommentUserOption[]>("GET", "/api/timesheet/comments/recipients"),
+  thread: (threadId: string) =>
+    request<CommentThread>("GET", `/api/timesheet/comments/threads/${threadId}`),
+  markRead: (threadId: string) =>
+    request<{ ok: boolean }>(
+      "POST",
+      `/api/timesheet/comments/threads/${threadId}/read`,
+      {},
+    ),
+  post: (body: PostCommentBody) =>
+    request<{ ok: boolean; threadId: string; messageId: number }>(
+      "POST",
+      "/api/timesheet/comments/messages",
+      body,
+    ),
+};

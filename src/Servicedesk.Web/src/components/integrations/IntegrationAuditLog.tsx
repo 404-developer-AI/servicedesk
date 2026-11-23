@@ -6,16 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   adsolutApi,
-  m365AdminApi,
-  sophosAdminApi,
-  telavoxAdminApi,
-  trmmAdminApi,
-  veeamAdminApi,
-  zammadAdminApi,
   type IntegrationAuditEntry,
   type IntegrationAuditOutcome,
   type IntegrationAuditPage,
-} from "@/lib/api";
+} from "@/lib/adsolut-api";
+import { m365AdminApi } from "@/lib/m365-api";
+import { sophosAdminApi } from "@/lib/sophos-api";
+import { telavoxAdminApi } from "@/lib/telavox-api";
+import { trmmAdminApi } from "@/lib/trmm-api";
+import { veeamAdminApi } from "@/lib/veeam-api";
+import { zammadAdminApi } from "@/lib/zammad-api";
 import { tdSynnexAdminApi } from "@/lib/order-management-api";
 import { cn } from "@/lib/utils";
 

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Wrench } from "lucide-react";
-import { systemApi } from "@/lib/api";
+import { systemApi } from "@/lib/system-api";
 import { useServerOffsetMinutes } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 

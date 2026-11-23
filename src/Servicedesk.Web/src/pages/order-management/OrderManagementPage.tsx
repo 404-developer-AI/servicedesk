@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useServerTimeZone } from "@/hooks/useServerTime";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { formatDate } from "@/lib/dateFormat";
 import { formatMoney, formatNumber, formatTimeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";

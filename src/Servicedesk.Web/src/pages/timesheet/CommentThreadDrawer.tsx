@@ -20,7 +20,7 @@ import {
   timesheetCommentsApi,
   type BackofficeContext,
   type CommentMessage,
-} from "@/lib/api";
+} from "@/lib/timesheet-api";
 import { useAuth } from "@/auth/authStore";
 import { openTicketInSharedWindow } from "@/lib/ticketWindow";
 import { cn } from "@/lib/utils";

@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Filter, Search, Timer } from "lucide-react";
-import { slaApi, taxonomyApi, type SlaLogItem } from "@/lib/api";
+import { slaApi, type SlaLogItem } from "@/lib/sla-api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {

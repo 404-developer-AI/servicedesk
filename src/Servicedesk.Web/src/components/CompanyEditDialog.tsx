@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/http";
 import { companyApi, type Company, type CompanyInput } from "@/lib/ticket-api";
 import { CompanyFormFields, companyToInput } from "@/components/CompanyFormFields";
 

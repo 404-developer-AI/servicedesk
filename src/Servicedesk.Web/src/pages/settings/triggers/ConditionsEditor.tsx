@@ -15,13 +15,8 @@ import {
   type ConditionLeaf,
   type ConditionNode,
 } from "./types";
-import type {
-  TriggerConditionField,
-  Queue,
-  Status,
-  Priority,
-  Category,
-} from "@/lib/api";
+import type { TriggerConditionField } from "@/lib/triggers-api";
+import type { Queue, Status, Priority, Category } from "@/lib/taxonomy-api";
 import { cn } from "@/lib/utils";
 import {
   FORM_FIELD_CHECKBOX_CONDITION_TYPE,

@@ -20,14 +20,9 @@ import { useProjectSettings } from "@/pages/tickets/components/projects/ProjectP
 import { FlagToggleRow } from "@/components/TicketFlagToggle";
 import { flagColors, useTicketFlagSettings } from "@/lib/ticketFlags";
 import { TicketCompanyAssignmentDialog } from "@/components/TicketCompanyAssignmentDialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { agentQueueApi, taxonomyApi } from "@/lib/api";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { agentQueueApi } from "@/lib/queue-access-api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import {
   ticketApi,
   type CompanyAlert,

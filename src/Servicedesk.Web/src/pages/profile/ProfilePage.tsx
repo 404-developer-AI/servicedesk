@@ -9,7 +9,7 @@ import { useTheme } from "@/app/ThemeProvider";
 import { ThemePicker } from "@/components/ThemePicker";
 import { MySessionsCard } from "@/components/auth/MySessionsCard";
 import { Switch } from "@/components/ui/switch";
-import { preferencesApi, type NotificationMailPreferences } from "@/lib/api";
+import { preferencesApi, type NotificationMailPreferences } from "@/lib/preferences-api";
 import { viewApi } from "@/lib/ticket-api";
 import {
   DASHBOARD_TOKEN,

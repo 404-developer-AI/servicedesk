@@ -19,11 +19,11 @@ import {
 } from "lucide-react";
 import {
   adsolutTimesheetApi,
-  backofficeTimesheetApi,
-  preferencesApi,
   type AdsolutSalesReceiptDetail,
   type AdsolutSalesReceiptHeader,
-} from "@/lib/api";
+} from "@/lib/adsolut-erp-api";
+import { backofficeTimesheetApi } from "@/lib/timesheet-api";
+import { preferencesApi } from "@/lib/preferences-api";
 import { openTicketInSharedWindow } from "@/lib/ticketWindow";
 import { CommentThreadDrawer, type CommentTarget } from "@/pages/timesheet/CommentThreadDrawer";
 import { Button } from "@/components/ui/button";

@@ -12,18 +12,17 @@ import {
   Receipt,
   Package,
 } from "lucide-react";
+import { ApiError, errorMessage } from "@/lib/http";
+import { adsolutApi } from "@/lib/adsolut-api";
 import {
-  ApiError,
-  adsolutApi,
   healthApi,
   integrationsHealthApi,
   type HealthAction,
   type HealthStatus,
   type IntegrationHealth,
   type SubsystemHealth,
-  type AdsolutErpSalesReceiptsState,
-  type AdsolutErpOrdersState, errorMessage,
-} from "@/lib/api";
+} from "@/lib/system-api";
+import type { AdsolutErpSalesReceiptsState, AdsolutErpOrdersState } from "@/lib/adsolut-erp-api";
 import { pollIntervalMs } from "@/lib/healthPolling";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

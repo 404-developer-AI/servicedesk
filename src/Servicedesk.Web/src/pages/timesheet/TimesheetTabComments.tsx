@@ -8,7 +8,7 @@ import {
   timesheetCommentsApi,
   type BackofficeContext,
   type CommentInboxItem,
-} from "@/lib/api";
+} from "@/lib/timesheet-api";
 import { useAuth } from "@/auth/authStore";
 import { Skeleton } from "@/components/ui/skeleton";
 import {

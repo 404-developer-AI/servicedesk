@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { systemApi } from "@/lib/api";
+import { systemApi } from "@/lib/system-api";
 import { DEFAULT_TICKET_REFERENCE_PREFIX } from "@/lib/ticketRef";
 
 /// Reads the admin-configurable ticket reference prefix (e.g. "Ticket#") once

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Clock, PauseCircle } from "lucide-react";
-import { slaApi, type TicketSlaState } from "@/lib/api";
+import { slaApi, type TicketSlaState } from "@/lib/sla-api";
 import { useServerTime } from "@/hooks/useServerTime";
 import { useAuth } from "@/auth/authStore";
 import { cn } from "@/lib/utils";

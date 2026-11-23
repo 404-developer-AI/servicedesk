@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
-import { type AdsolutCoverageCounts } from "@/lib/api";
+import type { AdsolutCoverageCounts } from "@/lib/adsolut-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 

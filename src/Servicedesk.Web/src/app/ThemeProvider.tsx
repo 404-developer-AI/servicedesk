@@ -10,7 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import { authStore } from "@/auth/authStore";
-import { preferencesApi, systemApi } from "@/lib/api";
+import { preferencesApi } from "@/lib/preferences-api";
+import { systemApi } from "@/lib/system-api";
 import {
   FACTORY_THEME,
   THEME_STORAGE_KEY,

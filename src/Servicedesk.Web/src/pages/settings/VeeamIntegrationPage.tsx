@@ -19,11 +19,8 @@ import {
   User,
   X,
 } from "lucide-react";
-import {
-  apiErrorMessage,
-  veeamAdminApi,
-  type VeeamConnectionState,
-} from "@/lib/api";
+import { apiErrorMessage, errorMessage } from "@/lib/http";
+import { veeamAdminApi, type VeeamConnectionState } from "@/lib/veeam-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +30,6 @@ import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditL
 import { CompanyLinkPicker } from "@/components/integrations/CompanyLinkPicker";
 import veeamLogo from "@/assets/integrations/veeam.svg";
 import { cn } from "@/lib/utils";
-import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "veeam", "status"] as const;
 const SECRET_QK = ["integrations", "veeam", "secret"] as const;

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Bell, ExternalLink } from "lucide-react";
-import { ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/http";
 import { companyApi, type Company, type CompanyInput } from "@/lib/ticket-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

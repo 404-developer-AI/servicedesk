@@ -2,13 +2,13 @@ import * as React from "react";
 import { Paperclip, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
+import { ApiError } from "@/lib/http";
 import {
-  ApiError,
   mailDiagnosticsApi,
   type MailAttachmentDiagnostic,
   type MailAttachmentDiagnosticItem,
   type MailAttachmentSummary,
-} from "@/lib/api";
+} from "@/lib/mail-diagnostics-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

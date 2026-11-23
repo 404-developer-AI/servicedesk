@@ -1,4 +1,4 @@
-import type { AdsolutOrderDetail, AdsolutSupplierOrderLine } from "@/lib/api";
+import type { AdsolutOrderDetail, AdsolutSupplierOrderLine } from "@/lib/adsolut-catalogue-api";
 import { cn } from "@/lib/utils";
 import { formatMarginPercent, formatMoney, formatNumber } from "./orderFormat";
 import { formatDateMedium, formatDateTimeMedium } from "@/lib/dateFormat";

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Activity, Phone, ChevronRight, Lock } from "lucide-react";
-import { activityApi, type ActivityEntry } from "@/lib/api";
+import { activityApi, type ActivityEntry } from "@/lib/activity-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActivityFeedSignalR } from "@/hooks/useActivityFeedSignalR";
 import { formatTimeAgo } from "@/lib/format";

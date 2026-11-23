@@ -1,15 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import {
   SortableContext,
   arrayMove,
@@ -58,7 +50,8 @@ import { PlainTextPicker } from "@/components/forms/PlainTextPicker";
 import type { IntakeMentionItem } from "@/components/intake/IntakeMentionList";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { unknownTokens } from "@/lib/composeTokens";
-import { settingsApi, taxonomyApi } from "@/lib/api";
+import { settingsApi } from "@/lib/settings-api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import {
   FORM_FIELD_TYPES,
   FORM_FIELD_TYPE_LABEL,

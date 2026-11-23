@@ -1,5 +1,5 @@
 import { request } from "@/lib/http";
-import type { IntegrationAuditPage } from "@/lib/api";
+import type { IntegrationAuditPage } from "@/lib/adsolut-api";
 
 /// v0.1.59 — Order Management: TD SYNNEX (EU Resellers API) orders mirrored
 /// by the server. Every agent route is gated server-side by the per-user

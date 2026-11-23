@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { preferencesApi } from "@/lib/api";
+import { preferencesApi } from "@/lib/preferences-api";
 
 const FALLBACK_COLUMNS = [
   "number",

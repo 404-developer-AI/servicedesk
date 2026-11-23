@@ -3,13 +3,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { BookOpen, MessageCircleQuestion, Search, Send, Sparkles, X } from "lucide-react";
-import {
-  apiErrorMessage,
-  kbChatApi,
-  preferencesApi,
-  type KbChatCitation,
-  type KbChatHistoryMessage,
-} from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
+import { kbChatApi, type KbChatCitation, type KbChatHistoryMessage } from "@/lib/kb-api";
+import { preferencesApi } from "@/lib/preferences-api";
 import { useAuth } from "@/auth/authStore";
 import { SafeHtml } from "@/components/SafeHtml";
 import { cn } from "@/lib/utils";

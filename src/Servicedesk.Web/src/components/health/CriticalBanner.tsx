@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
-import { systemApi } from "@/lib/api";
+import { systemApi } from "@/lib/system-api";
 import { pollIntervalMs } from "@/lib/healthPolling";
 import { authStore } from "@/auth/authStore";
 

@@ -16,7 +16,7 @@ import {
   ticketTemplatesApi,
   type TicketTemplate,
 } from "@/lib/ticketTemplates-api";
-import { taxonomyApi } from "@/lib/api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import { useConfirm } from "@/components/ConfirmDialog";
 
 const LIST_QUERY_KEY = ["compose-templates", "list"] as const;

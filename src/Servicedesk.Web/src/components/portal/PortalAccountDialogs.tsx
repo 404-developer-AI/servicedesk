@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CompanyPicker } from "@/components/CompanyPicker";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { portalAdminApi, type PortalAccount, type PortalAccountStatus, type PortalCompanyLinkInput } from "@/lib/portal-api";
 import { contactApi } from "@/lib/ticket-api";
 import { Eye, Plus, X } from "lucide-react";

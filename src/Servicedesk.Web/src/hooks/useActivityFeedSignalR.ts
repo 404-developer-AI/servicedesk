@@ -6,7 +6,7 @@ import {
   type HubConnection,
 } from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ActivityEntry, ActivityListPage } from "@/lib/api";
+import type { ActivityEntry, ActivityListPage } from "@/lib/activity-api";
 
 let connection: HubConnection | null = null;
 

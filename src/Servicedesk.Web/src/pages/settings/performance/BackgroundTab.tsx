@@ -2,7 +2,7 @@ import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { perfApi, type BackgroundResponse, type PeriodQuery, type SpanRow, type WorkerRun } from "@/lib/perf-api";
 import { cn } from "@/lib/utils";
 import { useTabQuery } from "./usePerfQuery";

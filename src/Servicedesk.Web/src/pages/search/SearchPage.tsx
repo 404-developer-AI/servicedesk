@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { searchApi, type SearchHit, type SearchSort } from "@/lib/api";
+import { searchApi, type SearchHit, type SearchSort } from "@/lib/search-api";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 import { useTheme } from "@/app/ThemeProvider";

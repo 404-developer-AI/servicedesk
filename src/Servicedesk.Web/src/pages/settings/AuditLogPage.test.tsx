@@ -7,8 +7,8 @@ const auditApi = vi.hoisted(() => ({
   get: vi.fn(),
 }));
 
-vi.mock("@/lib/api", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+vi.mock("@/lib/audit-api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/audit-api")>("@/lib/audit-api");
   return { ...actual, auditApi };
 });
 

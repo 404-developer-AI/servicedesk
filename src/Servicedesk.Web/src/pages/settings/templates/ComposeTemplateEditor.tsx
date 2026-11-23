@@ -13,7 +13,7 @@ import {
   type ComposeTemplate,
 } from "@/lib/composeTemplates-api";
 import { surveysAgentApi } from "@/lib/surveys-api";
-import { taxonomyApi } from "@/lib/api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import {
   Select,
   SelectContent,

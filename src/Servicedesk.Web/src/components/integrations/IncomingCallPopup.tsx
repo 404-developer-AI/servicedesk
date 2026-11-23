@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { useIncomingCallStore } from "@/stores/useIncomingCallStore";
 import { contactApi, type Contact, type ContactPhoneLookupItem } from "@/lib/ticket-api";
-import { ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/http";
 import { NewTicketDrawer } from "@/shell/NewTicketDrawer";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
 import { cn } from "@/lib/utils";

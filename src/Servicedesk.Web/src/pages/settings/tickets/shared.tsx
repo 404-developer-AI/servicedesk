@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ApiError } from "@/lib/api";
-import { errorMessage } from "@/lib/http";
+import { ApiError, errorMessage } from "@/lib/http";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function TableShell({ children }: { children: React.ReactNode }) {

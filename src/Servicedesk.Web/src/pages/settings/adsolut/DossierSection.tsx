@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { adsolutApi, type AdsolutStatus } from "@/lib/api";
+import { adsolutApi, type AdsolutStatus } from "@/lib/adsolut-api";
 import { Button } from "@/components/ui/button";
 import {
   Select,

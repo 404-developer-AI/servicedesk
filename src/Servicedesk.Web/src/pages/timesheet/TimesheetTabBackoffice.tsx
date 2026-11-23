@@ -16,10 +16,10 @@ import {
 } from "lucide-react";
 import {
   backofficeTimesheetApi,
-  preferencesApi,
   type BackofficeContext,
   type BackofficeTicket,
-} from "@/lib/api";
+} from "@/lib/timesheet-api";
+import { preferencesApi } from "@/lib/preferences-api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";

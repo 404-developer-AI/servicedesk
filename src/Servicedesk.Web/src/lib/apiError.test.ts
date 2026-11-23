@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { ApiError as CoreApiError, apiErrorMessage } from "@/lib/api";
+import { ApiError as CoreApiError, apiErrorMessage } from "@/lib/http";
 import { ApiError as TicketApiError } from "@/lib/ticket-api";
 
 describe("ApiError", () => {
-  it("is one class across lib/api and lib/ticket-api", () => {
+  it("is one class across lib/http and lib/ticket-api", () => {
     expect(TicketApiError).toBe(CoreApiError);
   });
 

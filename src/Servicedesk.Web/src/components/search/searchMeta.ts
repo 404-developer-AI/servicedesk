@@ -2,7 +2,7 @@
 // source kinds (companies, kennisbank, …) land here together with their
 // label, icon, and click-through target.
 
-import type { SearchHit } from "@/lib/api";
+import type { SearchHit } from "@/lib/search-api";
 
 export type SearchKind =
   | "tickets"

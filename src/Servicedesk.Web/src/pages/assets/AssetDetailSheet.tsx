@@ -9,7 +9,8 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { assetsApi, trmmAdminApi } from "@/lib/api";
+import { assetsApi } from "@/lib/assets-api";
+import { trmmAdminApi } from "@/lib/trmm-api";
 import { cn } from "@/lib/utils";
 
 function formatWhen(iso: string | null): string {

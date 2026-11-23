@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { triggerApi, type TriggerConditionField, type TriggerFormField } from "@/lib/api";
+import { triggerApi, type TriggerConditionField, type TriggerFormField } from "@/lib/triggers-api";
 
 /// v0.1.58 — form fields with a trigger key, as the trigger editor uses them:
 /// `form.field.<key>` conditions and "from form field" action values. The same

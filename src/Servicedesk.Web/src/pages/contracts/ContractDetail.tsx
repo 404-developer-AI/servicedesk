@@ -1,5 +1,5 @@
 import { formatDateMedium, formatDateTimeMedium } from "@/lib/dateFormat";
-import type { AdsolutContractDetail } from "@/lib/api";
+import type { AdsolutContractDetail } from "@/lib/adsolut-erp-api";
 import { formatMoney, formatNumber } from "@/lib/format";
 
 

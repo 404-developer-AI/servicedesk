@@ -7,7 +7,7 @@ import {
   type AgentActivity,
   type AgentActivitySnapshot,
   type AgentActivityTicket,
-} from "@/lib/api";
+} from "@/lib/dashboard-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { getConnection } from "@/hooks/usePresence";

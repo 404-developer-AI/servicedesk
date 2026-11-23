@@ -10,12 +10,12 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { apiErrorMessage } from "@/lib/http";
 import {
-  apiErrorMessage,
   remoteDesktopApi,
   type RemoteDesktopClient,
   type RemoteDesktopClientNote,
-} from "@/lib/api";
+} from "@/lib/assets-api";
 import { useAuth } from "@/auth/authStore";
 import { toServerLocal, useServerOffsetMinutes } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";

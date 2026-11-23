@@ -14,11 +14,8 @@ import {
   Server,
   Trash2,
 } from "lucide-react";
-import {
-  apiErrorMessage,
-  trmmAdminApi,
-  type TrmmConnectionState,
-} from "@/lib/api";
+import { apiErrorMessage, errorMessage } from "@/lib/http";
+import { trmmAdminApi, type TrmmConnectionState } from "@/lib/trmm-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +24,6 @@ import { Switch } from "@/components/ui/switch";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 import { TrmmClientMappingsSection } from "./trmm/TrmmClientMappingsSection";
 import { cn } from "@/lib/utils";
-import { errorMessage } from "@/lib/http";
 
 const STATUS_QK = ["integrations", "trmm", "status"] as const;
 const SECRET_QK = ["integrations", "trmm", "secret"] as const;

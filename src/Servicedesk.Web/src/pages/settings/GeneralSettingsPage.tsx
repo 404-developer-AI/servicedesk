@@ -1,23 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { StatusSetField } from "./TimesheetSettingsPage";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  SlidersHorizontal,
-  Globe2,
-  Clock,
-  Wrench,
-  AlertTriangle,
-  Megaphone,
-  Info,
-  AlertCircle,
-  Palette,
-  Sparkles,
-  Search,
-  RefreshCw,
-  KeyRound,
-  ChartColumnStacked,
-  Smartphone,
-} from "lucide-react";
+import { SlidersHorizontal, Globe2, Clock, Wrench, AlertTriangle, Megaphone, Info, AlertCircle, Palette, Sparkles, Search, RefreshCw, KeyRound, ChartColumnStacked, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -40,7 +24,8 @@ const MOBILE_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
 ];
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { renderLoginBannerPreviewHtml } from "@/components/auth/LoginBanner";
-import { settingsApi, type SettingEntry, type LoginBannerType } from "@/lib/api";
+import { settingsApi, type SettingEntry } from "@/lib/settings-api";
+import type { LoginBannerType } from "@/lib/system-api";
 import { KIND_ORDER, labelForKind } from "@/components/search/searchMeta";
 import { useServerTime } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";

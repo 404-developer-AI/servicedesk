@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, Flag, Globe2, Power, RefreshCw, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { settingsApi } from "@/lib/api";
+import { settingsApi } from "@/lib/settings-api";
 import { authStore } from "@/auth/authStore";
 import { Switch } from "@/components/ui/switch";
 import { BusinessHoursTab } from "./sla/BusinessHoursTab";

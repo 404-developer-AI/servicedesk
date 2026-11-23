@@ -202,6 +202,8 @@ export type TriggerAction =
   // the entry.
   | { kind: "__unknown"; original_kind: string; raw: Record<string, unknown> };
 
+type RawAction = Record<string, unknown>;
+
 /// v0.1.54 — bell notification for agents. `targets` resolve per pass
 /// (the form's submitter on a back office form trigger, the ticket owner);
 /// `user_ids` are fixed agents. `message` is a plain-text template.
@@ -366,11 +368,11 @@ export function actionToBackend(action: TriggerAction): Record<string, unknown> 
 /// is detected by the presence of one of the four BE keys. Anything we
 /// don't recognise is wrapped as `__unknown` so the editor can warn the
 /// admin instead of silently coercing the entry to a different kind.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function actionFromBackend(raw: any): TriggerAction {
-  if (!raw || typeof raw !== "object") {
+export function actionFromBackend(input: unknown): TriggerAction {
+  if (!input || typeof input !== "object") {
     return { kind: "__unknown", original_kind: "(invalid)", raw: {} };
   }
+  const raw = input as RawAction;
   if (typeof raw.kind !== "string"
       || !(KNOWN_ACTION_KINDS as readonly string[]).includes(raw.kind)) {
     return {
@@ -443,11 +445,9 @@ export function actionFromBackend(raw: any): TriggerAction {
 /// (prompt_label / prompt_required) into a single text question with
 /// key="answer" so legacy gates render correctly and existing
 /// `#{prompt.answer}` tokens keep resolving after re-save.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizePromptConfirm(raw: any): PromptConfirmAction {
+function normalizePromptConfirm(raw: RawAction): PromptConfirmAction {
   const questions: PromptQuestion[] = Array.isArray(raw.questions)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ? (raw.questions as any[]).flatMap((q): PromptQuestion[] => {
+    ? (raw.questions as RawAction[]).flatMap((q): PromptQuestion[] => {
         if (!q || typeof q !== "object") return [];
         const key = typeof q.key === "string" ? q.key : "";
         const label = typeof q.label === "string" ? q.label : "";
@@ -463,8 +463,7 @@ function normalizePromptConfirm(raw: any): PromptConfirmAction {
         }
         if (q.type === "choice") {
           const options: PromptChoiceOption[] = Array.isArray(q.options)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            ? (q.options as any[]).flatMap((o): PromptChoiceOption[] => {
+            ? (q.options as RawAction[]).flatMap((o): PromptChoiceOption[] => {
                 if (!o || typeof o !== "object") return [];
                 const label = typeof o.label === "string" ? o.label : "";
                 if (!label) return [];
@@ -516,8 +515,7 @@ function normalizePromptConfirm(raw: any): PromptConfirmAction {
 /// Round-trips a title_review action from the BE-stored shape to the
 /// editor shape, defaulting any missing field so a hand-written or older
 /// payload still renders.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeTitleReview(raw: any): TitleReviewAction {
+function normalizeTitleReview(raw: RawAction): TitleReviewAction {
   const message = typeof raw.message === "string" ? raw.message : "";
   const showMessage = typeof raw.show_message === "boolean"
     ? raw.show_message

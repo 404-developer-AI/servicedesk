@@ -2,16 +2,15 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { Zap, Plus, Pencil, Trash2, Activity, Clock, AlertTriangle, CheckCircle2, MinusCircle, History, GripVertical, ChevronRight, FolderPlus, Timer } from "lucide-react";
 import {
-  Zap, Plus, Pencil, Trash2, Activity,
-  Clock, AlertTriangle, CheckCircle2, MinusCircle, History,
-  GripVertical, ChevronRight, FolderPlus, Timer,
-} from "lucide-react";
-import {
-  triggerApi, triggerGroupApi,
-  type TriggerListItem, type TriggerGroup,
-  type TriggerPlacement, type TriggerGroupPlacement,
-} from "@/lib/api";
+  triggerApi,
+  triggerGroupApi,
+  type TriggerListItem,
+  type TriggerGroup,
+  type TriggerPlacement,
+  type TriggerGroupPlacement,
+} from "@/lib/triggers-api";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";

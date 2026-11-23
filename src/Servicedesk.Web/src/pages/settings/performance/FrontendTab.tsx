@@ -2,7 +2,7 @@ import { formatDateTime } from "@/lib/dateFormat";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { MonitorSmartphone } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
 import { perfApi, type FrontendResponse, type PeriodQuery } from "@/lib/perf-api";
 import { cn } from "@/lib/utils";
 import { useTabQuery } from "./usePerfQuery";

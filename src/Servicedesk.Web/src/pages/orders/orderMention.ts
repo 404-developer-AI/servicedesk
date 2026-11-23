@@ -1,4 +1,4 @@
-import { ordersApi, type AdsolutOrderHeader } from "@/lib/api";
+import { ordersApi, type AdsolutOrderHeader } from "@/lib/adsolut-catalogue-api";
 import type { IntakeMentionItem } from "@/components/intake/IntakeMentionList";
 
 /// Display label for an order pill / picker row: the Adsolut document ref

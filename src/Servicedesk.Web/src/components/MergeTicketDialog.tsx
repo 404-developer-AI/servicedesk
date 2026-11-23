@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError, contactApi, companyApi, ticketApi } from "@/lib/ticket-api";
 import type { Ticket, TicketPickerItem } from "@/lib/ticket-api";
-import { taxonomyApi, type Status } from "@/lib/api";
+import { taxonomyApi, type Status } from "@/lib/taxonomy-api";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
 import { cn } from "@/lib/utils";
 

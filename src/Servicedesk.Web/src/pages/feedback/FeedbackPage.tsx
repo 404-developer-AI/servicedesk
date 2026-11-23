@@ -46,7 +46,7 @@ import { cn } from "@/lib/utils";
 import { TicketAutocomplete } from "@/components/TicketAutocomplete";
 import { serverTodayNow } from "@/lib/serverToday";
 import type { TicketPickerItem } from "@/lib/ticket-api";
-import { preferencesApi } from "@/lib/api";
+import { preferencesApi } from "@/lib/preferences-api";
 import {
   feedbackApi,
   type FeedbackEntryRow,
@@ -54,7 +54,7 @@ import {
   type FeedbackWorkPointType,
   type FeedbackEntryFilter,
   type FeedbackEntryUpdate,
-} from "@/lib/api";
+} from "@/lib/feedback-api";
 import { SafeHtml } from "@/components/SafeHtml";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useAuth } from "@/auth/authStore";

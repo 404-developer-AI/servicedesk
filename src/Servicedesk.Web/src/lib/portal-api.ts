@@ -1,5 +1,5 @@
 // v0.1.0 — Customer-portal API client. Own module (like ticket-api.ts)
-// with the same request conventions as lib/api.ts: cookie session, CSRF
+// with the same request conventions as the other lib/*-api modules: cookie session, CSRF
 // header on writes, ApiError on non-2xx. Three surfaces:
 //   portalPublicApi — anonymous config
 //   portalAuthApi   — the separate customer auth flow

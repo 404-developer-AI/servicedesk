@@ -1,14 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  ApiError,
-  graphAdminApi,
-  taxonomyApi,
-  type GraphMailFolder,
-  type Queue,
-  type QueueInput,
-} from "@/lib/api";
+import { ApiError } from "@/lib/http";
+import { graphAdminApi, type GraphMailFolder } from "@/lib/graph-api";
+import { taxonomyApi, type Queue, type QueueInput } from "@/lib/taxonomy-api";
 import { Plus, Trash2, Mail } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";

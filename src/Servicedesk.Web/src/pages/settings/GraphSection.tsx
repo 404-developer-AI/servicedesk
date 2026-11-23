@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ApiError, graphAdminApi, settingsApi } from "@/lib/api";
+import { ApiError, errorMessage } from "@/lib/http";
+import { graphAdminApi } from "@/lib/graph-api";
+import { settingsApi } from "@/lib/settings-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
 import { findEntry } from "@/components/settings/settingEntries";
-import { errorMessage } from "@/lib/http";
 
 const GRAPH_QUERY_KEY = ["settings", "list", "Graph"] as const;
 const GRAPH_SECRET_QUERY_KEY = ["settings", "graph", "secret"] as const;

@@ -20,7 +20,7 @@ import {
   type FeedbackWorkPointType,
   type FeedbackAdminWorkPointTypeInput,
   type FeedbackAdminWorkPointTypeUpdate,
-} from "@/lib/api";
+} from "@/lib/feedback-api";
 import { ApiError } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
 

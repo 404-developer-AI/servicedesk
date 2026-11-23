@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2, Search, X } from "lucide-react";
-import { apiErrorMessage, zammadAdminApi, zammadDryRunApi } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/http";
+import { zammadAdminApi, zammadDryRunApi } from "@/lib/zammad-api";
 import {
   contactApi,
   companyApi,

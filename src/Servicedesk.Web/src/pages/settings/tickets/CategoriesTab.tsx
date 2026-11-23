@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  taxonomyApi,
-  type Category,
-  type CategoryInput,
-} from "@/lib/api";
+import { taxonomyApi, type Category, type CategoryInput } from "@/lib/taxonomy-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

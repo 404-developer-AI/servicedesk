@@ -25,7 +25,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { taxonomyApi } from "@/lib/api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
 import { cn } from "@/lib/utils";
 
 // Same whitelist used by LinkedTicketTypeDialog; kept duplicate to avoid

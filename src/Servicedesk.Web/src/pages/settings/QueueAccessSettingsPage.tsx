@@ -1,11 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Shield } from "lucide-react";
-import {
-  queueAccessApi,
-  taxonomyApi,
-  type Queue,
-} from "@/lib/api";
+import { queueAccessApi } from "@/lib/queue-access-api";
+import { taxonomyApi, type Queue } from "@/lib/taxonomy-api";
 import { userApi, type AgentUser } from "@/lib/ticket-api";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";

@@ -13,14 +13,14 @@ import {
   Settings2,
   X,
 } from "lucide-react";
+import { articlesApi } from "@/lib/adsolut-catalogue-api";
 import {
-  articlesApi,
   contractM365Api,
   type M365Company,
   type M365Connection,
   type M365LinkStatus,
   type M365SelectedArticle,
-} from "@/lib/api";
+} from "@/lib/contract-m365-api";
 import { M365StatusBadge, openConsentWindow } from "@/components/contracts/m365Connection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

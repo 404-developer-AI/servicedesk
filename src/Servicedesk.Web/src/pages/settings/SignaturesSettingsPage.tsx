@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { settingsApi, type SettingEntry } from "@/lib/api";
+import { settingsApi, type SettingEntry } from "@/lib/settings-api";
 import { SettingField } from "@/components/settings/SettingField";
 import {
   signaturesApi,

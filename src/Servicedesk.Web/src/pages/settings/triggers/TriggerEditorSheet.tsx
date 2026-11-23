@@ -14,7 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
-import { taxonomyApi, triggerApi, type TriggerDetail, type TriggerInput, type TriggerMetadata } from "@/lib/api";
+import { taxonomyApi } from "@/lib/taxonomy-api";
+import {
+  triggerApi,
+  type TriggerDetail,
+  type TriggerInput,
+  type TriggerMetadata,
+} from "@/lib/triggers-api";
 import { ConditionsEditor } from "./ConditionsEditor";
 import { ActionsEditor } from "./ActionsEditor";
 import { TestRunner } from "./TestRunner";

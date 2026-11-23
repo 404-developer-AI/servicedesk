@@ -2,7 +2,7 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { ticketApi, contactApi } from "@/lib/ticket-api";
-import { agentQueueApi } from "@/lib/api";
+import { agentQueueApi } from "@/lib/queue-access-api";
 import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { AddNoteForm } from "./components/AddNoteForm";
 import { useProjectSettings } from "./components/projects/ProjectPromptDialog";

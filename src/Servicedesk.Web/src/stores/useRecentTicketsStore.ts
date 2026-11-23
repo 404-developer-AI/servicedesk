@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { recentTicketsApi } from "@/lib/api";
+import { recentTicketsApi } from "@/lib/dashboard-api";
 
 /// v0.0.42 — recent-tickets storage moved from `localStorage` to a
 /// server-side per-user list with SignalR cross-browser sync. The store
