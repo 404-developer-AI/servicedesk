@@ -24,7 +24,7 @@ import {
   type TelavoxCustomer,
   type TelavoxExtension,
 } from "@/lib/telavox-api";
-import { userApi, type AgentUser } from "@/lib/ticket-api";
+import { userApi, type AgentUser } from "@/lib/users-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

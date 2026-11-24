@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, Mail, Phone, StickyNote } from "lucide-react";
-import { mentionApi } from "@/lib/ticket-api";
+import { mentionApi } from "@/lib/mentions-api";
 import { agentQueueApi } from "@/lib/queue-access-api";
 import { useAuth } from "@/auth/authStore";
 import { RichTextEditor } from "@/components/RichTextEditor";

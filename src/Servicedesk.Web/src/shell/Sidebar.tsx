@@ -18,7 +18,7 @@ import {
   formatServerLocalClock,
   formatServerLocalDate,
 } from "@/hooks/useServerTime";
-import { viewApi, type View } from "@/lib/ticket-api";
+import { viewApi, type View } from "@/lib/views-api";
 import { settingsApi } from "@/lib/settings-api";
 import { preferencesApi } from "@/lib/preferences-api";
 import { timesheetCommentsApi } from "@/lib/timesheet-api";

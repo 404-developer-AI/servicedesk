@@ -15,7 +15,7 @@ import {
   companyApi,
   type ContactBrowseQuery,
   type CompanyPickerItem,
-} from "@/lib/ticket-api";
+} from "@/lib/companies-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

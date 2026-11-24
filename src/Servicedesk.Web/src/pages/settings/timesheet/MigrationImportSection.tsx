@@ -9,18 +9,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { timesheetImportAdminApi } from "@/lib/reporting-admin-api";
 import { errorMessage } from "@/lib/http";
-import { SectionHeader } from "./timesheetSettingsShared";
+import { SectionHeader } from "../settingsShared";
+import { generateRandomToken } from "@/lib/randomToken";
 
 // ---- Migration import section ----------------------------------------
 
 const IMPORT_STATUS_KEY = ["settings", "timesheet", "import", "status"] as const;
-
-function generateToken(): string {
-  const bytes = new Uint8Array(30);
-  crypto.getRandomValues(bytes);
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
-}
 
 export function MigrationImportSection() {
   const qc = useQueryClient();
@@ -139,7 +133,7 @@ export function MigrationImportSection() {
                     size="sm"
                     variant="ghost"
                     className="h-9 shrink-0 px-3"
-                    onClick={() => setDraft(generateToken())}
+                    onClick={() => setDraft(generateRandomToken())}
                     disabled={setSecret.isPending}
                   >
                     Generate

@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { ApiError, ticketApi } from "@/lib/ticket-api";
 import type { Ticket, TicketPickerItem } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 type Props = {
   open: boolean;
@@ -60,7 +61,7 @@ export function LinkParentDialog({
         const response = await ticketApi.picker(query.trim() || undefined, source.id, 20, true);
         setResults(response.items);
       } catch (err) {
-        setSearchError(err instanceof Error ? err.message : "Search failed");
+        setSearchError(errorMessage(err, "Search failed"));
         setResults([]);
       } finally {
         setSearching(false);

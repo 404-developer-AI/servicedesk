@@ -14,7 +14,9 @@ import {
   StickyNote,
   User,
 } from "lucide-react";
-import { ticketApi, contactApi, companyApi, userApi, type TicketEvent } from "@/lib/ticket-api";
+import { ticketApi, type TicketEvent } from "@/lib/ticket-api";
+import { contactApi, companyApi } from "@/lib/companies-api";
+import { userApi } from "@/lib/users-api";
 import { agentQueueApi } from "@/lib/queue-access-api";
 import { taxonomyApi } from "@/lib/taxonomy-api";
 import { colorPillStyle } from "@/lib/colorPill";

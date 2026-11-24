@@ -210,7 +210,7 @@ export function ReportTemplateEditor({
           minHeight="200px"
           maxHeight="420px"
           onEditorReady={(editor) => {
-            bodyEditorRef.current = editor as unknown as EditorHandle | null;
+            bodyEditorRef.current = editor;
           }}
         />
         <p className="text-[11px] text-muted-foreground/70">

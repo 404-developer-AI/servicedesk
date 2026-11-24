@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/http";
 import { portalAdminApi } from "@/lib/portal-api";
-import { contactApi, type Contact } from "@/lib/ticket-api";
+import { contactApi, type Contact } from "@/lib/companies-api";
 import { useAuth } from "@/auth/authStore";
 import { useServerTimeZone } from "@/hooks/useServerTime";
 import {

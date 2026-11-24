@@ -1,4 +1,5 @@
-import type { DisplayConfig, TicketListQuery, View } from "@/lib/ticket-api";
+import type { DisplayConfig, TicketListQuery } from "@/lib/ticket-api";
+import type { View } from "@/lib/views-api";
 
 /// A saved view's stored filters and display config, translated to the
 /// `GET /api/tickets` query. Shared by the desktop ticket list and the mobile

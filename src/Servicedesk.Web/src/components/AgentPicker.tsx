@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, UserCircle } from "lucide-react"
-import { userApi } from "@/lib/ticket-api"
+import { userApi } from "@/lib/users-api";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"

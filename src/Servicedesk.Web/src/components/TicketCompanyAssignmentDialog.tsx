@@ -12,12 +12,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { contactApi, companyApi } from "@/lib/ticket-api";
-import type {
-  ContactCompanyOption,
-  ContactCompanyRole,
-  CompanyPickerItem,
-} from "@/lib/ticket-api";
+import { contactApi, companyApi } from "@/lib/companies-api";
+import type { ContactCompanyOption, CompanyPickerItem } from "@/lib/companies-api";
+import type { ContactCompanyRole } from "@/lib/ticket-api";
 
 type Props = {
   open: boolean;

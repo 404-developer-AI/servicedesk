@@ -18,16 +18,17 @@ import { agentQueueApi } from "@/lib/queue-access-api";
 import { taxonomyApi } from "@/lib/taxonomy-api";
 import {
   ticketApi,
-  userApi,
   type BulkSkippedTicket,
   type BulkTicketActionRequest,
   type BulkTicketActionResult,
   type TicketListItem,
 } from "@/lib/ticket-api";
+import { userApi } from "@/lib/users-api";
 import { cn } from "@/lib/utils";
 import { PendingTillField } from "@/components/PendingTillField";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { htmlToText } from "@/lib/sanitize";
+import { errorMessage } from "@/lib/http";
 
 /// Sentinel option id for "clear the assignee" — never collides with a user id.
 const UNASSIGN = "__unassign__";
@@ -205,7 +206,7 @@ export function BulkActionDialog({ open, onOpenChange, selected, onCompleted }: 
       onCompleted(res);
     },
     onError: (err) => {
-      const msg = err instanceof Error ? err.message : "Bulk action failed";
+      const msg = errorMessage(err, "Bulk action failed");
       toast.error(msg);
     },
   });

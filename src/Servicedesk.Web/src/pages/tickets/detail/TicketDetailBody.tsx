@@ -1,7 +1,14 @@
 import * as React from "react";
 import type { QueryClient, UseMutationResult } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { type Ticket, type TicketBody, type TicketEvent, type TicketEventPin, type TicketFieldUpdate, type TicketMutationResult } from "@/lib/ticket-api";
+import {
+  type Ticket,
+  type TicketBody,
+  type TicketEvent,
+  type TicketEventPin,
+  type TicketFieldUpdate,
+  type TicketMutationResult,
+} from "@/lib/ticket-api";
 import type { ChecklistSettings, TicketChecklist } from "@/lib/checklist-api";
 import { TicketChecklistBar } from "../components/checklists/TicketChecklistBar";
 import { SearchContextBar } from "@/components/SearchContextBar";

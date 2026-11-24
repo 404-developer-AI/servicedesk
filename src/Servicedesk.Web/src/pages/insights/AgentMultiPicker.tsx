@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, Search, UserPlus, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
-import { userApi } from "@/lib/ticket-api";
+import { userApi } from "@/lib/users-api";
 import { cn } from "@/lib/utils";
 
 /// Picks up to `max` agents for the Agents overview. The order of picking

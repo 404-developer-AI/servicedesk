@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { adminUserApi, type UserAdminRow } from "@/lib/ticket-api";
+import { adminUserApi, type UserAdminRow } from "@/lib/admin-users-api";
 import {
   parseHHMM,
   formatHHMM,

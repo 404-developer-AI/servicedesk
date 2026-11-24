@@ -34,6 +34,7 @@ import {
   type TriggerAction,
 } from "./types";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 type Props = {
   triggerId: string | "new" | null;
@@ -232,7 +233,7 @@ function EditorBody({
       onClose();
     },
     onError: (err: unknown) => {
-      const msg = err instanceof Error ? err.message : "Save failed";
+      const msg = errorMessage(err, "Save failed");
       toast.error(msg);
     },
   });

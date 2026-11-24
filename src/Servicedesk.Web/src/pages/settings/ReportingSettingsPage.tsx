@@ -11,6 +11,9 @@ import { SettingField } from "@/components/settings/SettingField";
 import { reportingAdminApi } from "@/lib/reporting-admin-api";
 import { settingsApi } from "@/lib/settings-api";
 import { findEntry } from "@/components/settings/settingEntries";
+import { errorMessage } from "@/lib/http";
+import { SectionHeader, MissingEntry } from "./settingsShared";
+import { generateRandomToken } from "@/lib/randomToken";
 
 const SETTINGS_QUERY_KEY = ["settings", "list", "Reporting"] as const;
 const STATUS_QUERY_KEY = ["settings", "reporting", "status"] as const;
@@ -95,13 +98,6 @@ export function ReportingSettingsPage() {
 
 // ---- Access section (master switch + API key) --------------------------
 
-function generateKey(): string {
-  const bytes = new Uint8Array(30);
-  crypto.getRandomValues(bytes);
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
-}
-
 function AccessSection() {
   const qc = useQueryClient();
   const [showInput, setShowInput] = React.useState(false);
@@ -118,7 +114,7 @@ function AccessSection() {
       qc.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
       toast.success(enabled ? "Reporting API enabled" : "Reporting API disabled");
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to update"),
+    onError: (err) => toast.error(errorMessage(err, "Failed to update")),
   });
 
   const setKey = useMutation({
@@ -129,7 +125,7 @@ function AccessSection() {
       setDraft("");
       setShowInput(false);
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save key"),
+    onError: (err) => toast.error(errorMessage(err, "Failed to save key")),
   });
 
   const deleteKey = useMutation({
@@ -138,7 +134,7 @@ function AccessSection() {
       qc.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
       toast.success("API key cleared");
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to clear key"),
+    onError: (err) => toast.error(errorMessage(err, "Failed to clear key")),
   });
 
   const configured = status.data?.keyConfigured ?? false;
@@ -219,7 +215,7 @@ function AccessSection() {
                     size="sm"
                     variant="ghost"
                     className="h-9 shrink-0 px-3"
-                    onClick={() => setDraft(generateKey())}
+                    onClick={() => setDraft(generateRandomToken())}
                     disabled={setKey.isPending}
                   >
                     Generate
@@ -306,36 +302,5 @@ X-Reporting-Api-Key: <your key>`}
         </ul>
       </div>
     </section>
-  );
-}
-
-// ---- shared bits ------------------------------------------------------
-
-function SectionHeader({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="mb-4 flex items-center gap-3">
-      <div className="rounded-md bg-glass p-2 text-primary">{icon}</div>
-      <div>
-        <h2 className="text-base font-semibold text-foreground">{title}</h2>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-    </div>
-  );
-}
-
-function MissingEntry({ keyName }: { keyName: string }) {
-  return (
-    <p className="text-xs text-amber-200/70">
-      Setting <code className="font-mono">{keyName}</code> not seeded yet —
-      restart the API once to run the settings seeder.
-    </p>
   );
 }

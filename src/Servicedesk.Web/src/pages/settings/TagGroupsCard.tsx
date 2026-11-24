@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/http";
-import { userApi } from "@/lib/ticket-api";
+import { userApi } from "@/lib/users-api";
 import { tagGroupApi, type TagGroup, type TagGroupInput } from "@/lib/group-tags-api";
 
 const KEY = ["admin", "tag-groups"] as const;

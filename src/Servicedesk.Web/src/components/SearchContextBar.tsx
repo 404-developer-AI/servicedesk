@@ -2,7 +2,7 @@ import * as React from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown, ChevronUp, X } from "lucide-react";
-import { contactApi, companyApi } from "@/lib/ticket-api";
+import { contactApi, companyApi } from "@/lib/companies-api";
 import { EntityTicketsList } from "@/components/EntityTicketsList";
 import { cn } from "@/lib/utils";
 

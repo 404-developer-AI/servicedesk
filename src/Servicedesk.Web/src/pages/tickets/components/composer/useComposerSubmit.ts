@@ -2,7 +2,7 @@ import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ticketApi } from "@/lib/ticket-api";
-import { splitMentionIds } from "@/components/RichTextEditor";
+import { splitMentionIds } from "@/components/editorDocIds";
 import type { useAttachmentUploads } from "../../hooks/useAttachmentUploads";
 import type { TabType } from "./composerTypes";
 

@@ -1,4 +1,4 @@
-import type { View } from "@/lib/ticket-api";
+import type { View } from "@/lib/views-api";
 
 /** Concrete TanStack navigation target for the post-close redirect. */
 export type PostCloseTarget =

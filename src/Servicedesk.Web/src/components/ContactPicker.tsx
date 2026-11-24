@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, Search, Plus, User } from "lucide-react"
-import { contactApi, type Contact } from "@/lib/ticket-api"
+import { contactApi, type Contact } from "@/lib/companies-api";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ContactFormDialog } from "@/components/ContactFormDialog"
 import { Skeleton } from "@/components/ui/skeleton"

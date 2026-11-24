@@ -1,7 +1,8 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { contactApi, ticketApi, type MailRecipientInput } from "@/lib/ticket-api";
+import { contactApi } from "@/lib/companies-api";
+import { ticketApi, type MailRecipientInput } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
 import { useDebounced } from "@/hooks/useDebounced";
 

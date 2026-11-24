@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { Bell } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { CompanyInput } from "@/lib/ticket-api";
+import type { CompanyInput } from "@/lib/companies-api";
 
 /// Shared edit-form for companies. Used by the Overview-tab on
 /// `/companies/:id` and by the `CompanyEditDialog` that opens from the

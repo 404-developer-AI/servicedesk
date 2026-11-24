@@ -251,7 +251,7 @@ export function TemplateEditor({
           minHeight="200px"
           maxHeight="420px"
           onEditorReady={(editor) => {
-            editorRef.current = editor as unknown as EditorHandle | null;
+            editorRef.current = editor;
           }}
           onUploadFile={async (file) => {
             try {

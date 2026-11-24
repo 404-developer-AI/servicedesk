@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import type { CSSProperties } from "react";
-import { ticketApi, type TicketFlagSettings, type TicketListItem, type DisplayConfig } from "@/lib/ticket-api";
+import {
+  ticketApi,
+  type TicketFlagSettings,
+  type TicketListItem,
+  type DisplayConfig,
+} from "@/lib/ticket-api";
 
 /// v0.1.17 — Call-back / Research ticket flags. Colours are admin settings
 /// (Settings → Tickets → General); these fallbacks match the registered

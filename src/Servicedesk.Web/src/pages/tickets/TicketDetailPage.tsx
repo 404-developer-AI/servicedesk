@@ -1,7 +1,14 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ticketApi, contactApi, ApiError, mergeTicketMutation, type TicketDetail, type TicketFieldUpdate } from "@/lib/ticket-api";
+import {
+  ticketApi,
+  ApiError,
+  mergeTicketMutation,
+  type TicketDetail,
+  type TicketFieldUpdate,
+} from "@/lib/ticket-api";
+import { contactApi } from "@/lib/companies-api";
 import { checklistErrorCode } from "@/lib/checklist-api";
 import { ChecklistBlockedDialog } from "./components/checklists/ChecklistBlockedDialog";
 import { StatusGateDialog } from "@/components/StatusGateDialog";

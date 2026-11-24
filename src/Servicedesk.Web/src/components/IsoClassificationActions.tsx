@@ -16,6 +16,7 @@ import { ticketApi, type Ticket } from "@/lib/ticket-api";
 import { taxonomyApi, type Status } from "@/lib/taxonomy-api";
 import { useAuth } from "@/auth/authStore";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 // Slug of the ISO MGM-review status seeded in v0.0.40. Matches the
 // constant on the server-side IsoEndpoints.IsoSlugs. Looking up by slug
@@ -187,7 +188,7 @@ function MotivationDialog({
       onSuccess();
     },
     onError: (err: unknown) => {
-      const msg = err instanceof Error ? err.message : "Classification failed";
+      const msg = errorMessage(err, "Classification failed");
       toast.error(msg);
     },
   });

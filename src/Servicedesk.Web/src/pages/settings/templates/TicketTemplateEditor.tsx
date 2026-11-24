@@ -298,7 +298,7 @@ export function TicketTemplateEditor({
           minHeight="160px"
           maxHeight="380px"
           onEditorReady={(editor) => {
-            bodyRef.current = editor as unknown as EditorHandle | null;
+            bodyRef.current = editor;
           }}
         />
         <p className="text-[11px] text-muted-foreground/70">
@@ -418,7 +418,7 @@ export function TicketTemplateEditor({
           minHeight="120px"
           maxHeight="320px"
           onEditorReady={(editor) => {
-            noteRef.current = editor as unknown as EditorHandle | null;
+            noteRef.current = editor;
           }}
         />
       </div>

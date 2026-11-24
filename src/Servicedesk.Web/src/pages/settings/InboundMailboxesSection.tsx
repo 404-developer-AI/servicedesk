@@ -2,7 +2,7 @@ import { formatDateTime } from "@/lib/dateFormat";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Inbox, AlertTriangle, PauseCircle } from "lucide-react";
-import { mailMailboxApi, type InboundMailbox } from "@/lib/ticket-api";
+import { mailMailboxApi, type InboundMailbox } from "@/lib/mailboxes-api";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";

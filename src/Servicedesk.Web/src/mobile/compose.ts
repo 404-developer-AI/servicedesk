@@ -1,4 +1,4 @@
-import type { MentionPickerItem } from "@/lib/ticket-api";
+import type { MentionPickerItem } from "@/lib/mentions-api";
 import { escapeHtml } from "@/lib/format";
 
 /// Mobile composer helpers: plain text in, the same HTML the desktop editor

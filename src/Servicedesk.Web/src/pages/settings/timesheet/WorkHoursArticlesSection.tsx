@@ -2,7 +2,8 @@ import * as React from "react";
 import { Boxes } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdsolutWorkHoursDialog } from "../AdsolutWorkHoursDialog";
-import { SectionHeader, FieldRow } from "./timesheetSettingsShared";
+import { FieldRow } from "./timesheetSettingsShared";
+import { SectionHeader } from "../settingsShared";
 
 // ---- Work-hours articles (Adsolut "VK Werkuren" matching) -------------
 

@@ -12,8 +12,10 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ContactPicker } from "@/components/ContactPicker";
-import { contactApi, companyApi, ticketApi, mergeTicketMutation, type TicketDetail } from "@/lib/ticket-api";
+import { contactApi, companyApi } from "@/lib/companies-api";
+import { ticketApi, mergeTicketMutation, type TicketDetail } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 type Props = {
   open: boolean;
@@ -107,7 +109,7 @@ export function SwitchRequesterDialog({
       onClose();
     },
     onError: (e) => {
-      toast.error(e instanceof Error ? e.message : "Switch failed");
+      toast.error(errorMessage(e, "Switch failed"));
     },
   });
 

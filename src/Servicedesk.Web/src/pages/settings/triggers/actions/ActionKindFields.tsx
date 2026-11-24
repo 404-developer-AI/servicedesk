@@ -4,7 +4,7 @@ import { type NotifyAgentAction, type NotifyAgentTarget, type TriggerAction } fr
 import { type TriggerTemplateVariable } from "@/lib/triggers-api";
 import { surveysAgentApi } from "@/lib/surveys-api";
 import { formTemplatesApi } from "@/lib/forms-api";
-import { userApi } from "@/lib/ticket-api";
+import { userApi } from "@/lib/users-api";
 import { TriggerTemplateField } from "../TriggerTemplateField";
 import { AgentPicker } from "@/components/AgentPicker";
 import { cn } from "@/lib/utils";

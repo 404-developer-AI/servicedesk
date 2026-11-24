@@ -1,7 +1,13 @@
 import * as React from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Loader2, Search, X } from "lucide-react";
-import { ticketApi, viewApi, type TicketListQuery, type TicketPage, type ViewSearchMode } from "@/lib/ticket-api";
+import {
+  ticketApi,
+  type TicketListQuery,
+  type TicketPage,
+  type ViewSearchMode,
+} from "@/lib/ticket-api";
+import { viewApi } from "@/lib/views-api";
 import { viewDisplayConfig, viewFilters, viewListQuery } from "@/lib/viewFilters";
 import { searchableColumns } from "@/lib/ticketColumns";
 import { flagColors as resolveFlagColors, useTicketFlagSettings } from "@/lib/ticketFlags";

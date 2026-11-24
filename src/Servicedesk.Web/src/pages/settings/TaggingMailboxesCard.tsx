@@ -13,7 +13,7 @@ import {
   taggingMailboxApi,
   type TaggingMailbox,
   type TaggingMailboxInput,
-} from "@/lib/ticket-api";
+} from "@/lib/mailboxes-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { errorMessage } from "@/lib/http";
 
 // Light client-side guard; the server is the source of truth (FluentValidation-
 // style manual checks + a unique-email constraint).
@@ -58,7 +59,7 @@ export function TaggingMailboxesCard() {
       invalidate();
     },
     onError: (e: unknown) =>
-      toast.error(e instanceof Error ? e.message : "Could not delete mailbox"),
+      toast.error(errorMessage(e, "Could not delete mailbox")),
   });
 
   function openAdd() {
@@ -226,7 +227,7 @@ function MailboxEditorDialog({
       onSaved();
     },
     onError: (e: unknown) =>
-      toast.error(e instanceof Error ? e.message : "Could not save mailbox"),
+      toast.error(errorMessage(e, "Could not save mailbox")),
   });
 
   function submit() {

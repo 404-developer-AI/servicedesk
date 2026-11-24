@@ -7,7 +7,7 @@ import { findEntry } from "@/components/settings/settingEntries";
 import { MigrationImportSection } from "./timesheet/MigrationImportSection";
 import { HtmlTemplateField } from "./timesheet/HtmlTemplateField";
 import { WorkHoursArticlesSection } from "./timesheet/WorkHoursArticlesSection";
-import { SectionHeader, MissingEntry } from "./timesheet/timesheetSettingsShared";
+import { SectionHeader, MissingEntry } from "./settingsShared";
 import { QUERY_KEY } from "./timesheet/timesheetSettingsKeys";
 import { TimeOfDayField, MinutesField, ToggleField, TextAreaField, HourlyRateField } from "./timesheet/FieldEditors";
 import { WorkDaysField } from "./timesheet/WorkDaysField";

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 export type AttachmentPreview = {
   url: string;
@@ -90,7 +91,7 @@ function TextPreview({ url }: { url: string }) {
         if (!cancelled) setState({ kind: "ok", text });
       } catch (e) {
         if (!cancelled)
-          setState({ kind: "error", msg: e instanceof Error ? e.message : "Load failed" });
+          setState({ kind: "error", msg: errorMessage(e, "Load failed") });
       }
     })();
     return () => {

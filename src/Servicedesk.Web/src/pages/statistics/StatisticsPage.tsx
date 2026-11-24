@@ -2,7 +2,11 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Pencil, Check, Maximize2, Eye, EyeOff, Settings2 } from "lucide-react";
 import { useAuth } from "@/auth/authStore";
-import { statisticsApi, type StatisticTileDto, type StatisticLayoutEntry } from "@/lib/ticket-api";
+import {
+  statisticsApi,
+  type StatisticTileDto,
+  type StatisticLayoutEntry,
+} from "@/lib/statistics-api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {

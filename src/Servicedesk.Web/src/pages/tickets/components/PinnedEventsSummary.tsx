@@ -3,11 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Pin, X, Pencil, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  ticketApi,
-  type TicketEvent,
-  type TicketEventPin,
-} from "@/lib/ticket-api";
+import { ticketApi, type TicketEvent, type TicketEventPin } from "@/lib/ticket-api";
 import {
   Popover,
   PopoverContent,

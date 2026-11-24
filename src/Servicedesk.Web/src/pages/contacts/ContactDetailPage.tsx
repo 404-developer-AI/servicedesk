@@ -23,12 +23,11 @@ import {
   companyApi,
   contactApi,
   type Contact,
-  type ContactAuditEntry,
   type ContactCompanyOption,
-  type ContactCompanyRole,
   type ContactInput,
   type CompanyPickerItem,
-} from "@/lib/ticket-api";
+} from "@/lib/companies-api";
+import { type ContactAuditEntry, type ContactCompanyRole } from "@/lib/ticket-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";

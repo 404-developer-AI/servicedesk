@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Mailbox, Users } from "lucide-react";
-import type { MentionPickerItem } from "@/lib/ticket-api";
+import type { MentionPickerItem } from "@/lib/mentions-api";
 import { cn } from "@/lib/utils";
 
 export type MentionListHandle = {

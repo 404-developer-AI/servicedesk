@@ -8,9 +8,9 @@ const contactApi = vi.hoisted(() => ({
   listCompanies: vi.fn(),
 }));
 
-vi.mock("@/lib/ticket-api", async () => {
+vi.mock("@/lib/companies-api", async () => {
   const actual =
-    await vi.importActual<typeof import("@/lib/ticket-api")>("@/lib/ticket-api");
+    await vi.importActual<typeof import("@/lib/companies-api")>("@/lib/companies-api");
   return { ...actual, contactApi: { ...actual.contactApi, ...contactApi } };
 });
 

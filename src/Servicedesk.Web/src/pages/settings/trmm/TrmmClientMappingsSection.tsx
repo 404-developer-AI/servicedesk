@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Link2, Link2Off, Search, Sparkles } from "lucide-react";
 import { trmmAdminApi, type TrmmClientMapping } from "@/lib/trmm-api";
-import { companyApi } from "@/lib/ticket-api";
+import { companyApi } from "@/lib/companies-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";

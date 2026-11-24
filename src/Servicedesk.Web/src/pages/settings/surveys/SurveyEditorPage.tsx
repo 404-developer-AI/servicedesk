@@ -488,7 +488,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             minHeight="160px"
             maxHeight="420px"
             onEditorReady={(editor) => {
-              bodyEditorRef.current = editor as unknown as EditorHandle | null;
+              bodyEditorRef.current = editor;
             }}
           />
           <p className="mt-1 text-[11px] text-muted-foreground/70">

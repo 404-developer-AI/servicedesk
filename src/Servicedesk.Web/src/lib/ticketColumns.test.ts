@@ -5,7 +5,7 @@ import {
   rowMatchesColumns,
   searchTokens,
 } from "./ticketColumns";
-import type { TicketListItem } from "./ticket-api";
+import type { TicketListItem } from "@/lib/ticket-api";
 
 const row = {
   number: 1042,

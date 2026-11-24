@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Briefcase, Building2, Mail, Phone, Smartphone, UserRound } from "lucide-react";
-import { contactApi } from "@/lib/ticket-api";
+import { contactApi } from "@/lib/companies-api";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { CopyButton } from "@/components/CopyButton";
 import { Skeleton } from "@/components/ui/skeleton";

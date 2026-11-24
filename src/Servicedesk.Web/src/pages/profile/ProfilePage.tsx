@@ -10,7 +10,7 @@ import { ThemePicker } from "@/components/ThemePicker";
 import { MySessionsCard } from "@/components/auth/MySessionsCard";
 import { Switch } from "@/components/ui/switch";
 import { preferencesApi, type NotificationMailPreferences } from "@/lib/preferences-api";
-import { viewApi } from "@/lib/ticket-api";
+import { viewApi } from "@/lib/views-api";
 import {
   DASHBOARD_TOKEN,
   TIMESHEET_TOKEN,

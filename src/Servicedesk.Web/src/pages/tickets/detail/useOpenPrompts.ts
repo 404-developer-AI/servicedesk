@@ -1,7 +1,12 @@
 import * as React from "react";
 import { useMutation, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ticketApi, mergeTicketMutation, type ContactCompanyRole, type TicketDetail } from "@/lib/ticket-api";
+import {
+  ticketApi,
+  mergeTicketMutation,
+  type ContactCompanyRole,
+  type TicketDetail,
+} from "@/lib/ticket-api";
 import { hasSeenAlertThisSession, markAlertSeen } from "@/components/CompanyAlertDialog";
 import { useTicketFlagSettings } from "@/lib/ticketFlags";
 

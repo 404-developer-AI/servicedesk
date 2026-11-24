@@ -3,7 +3,8 @@ import { Drawer } from "vaul";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AtSign, Loader2, Lock, Mail, Phone, StickyNote, X } from "lucide-react";
-import { mentionApi, ticketApi } from "@/lib/ticket-api";
+import { mentionApi } from "@/lib/mentions-api";
+import { ticketApi } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
 import {
   activeMentionQuery,

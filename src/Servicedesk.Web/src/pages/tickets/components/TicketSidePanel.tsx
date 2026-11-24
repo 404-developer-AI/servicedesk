@@ -9,7 +9,7 @@ import { ticketApi as ticketApiClient } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
 import type { TicketFormSummary } from "@/lib/forms-api";
 import type { Ticket, TicketFieldUpdate } from "@/lib/ticket-api";
-import { contactApi, companyApi } from "@/lib/ticket-api";
+import { contactApi, companyApi } from "@/lib/companies-api";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Pin, PinOff } from "lucide-react";
 import { StatusTab } from "./sidePanel/StatusTab";

@@ -2,12 +2,8 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { UserRound } from "lucide-react";
-import {
-  contactApi,
-  companyApi,
-  type Contact,
-  type ContactCompanyRole,
-} from "@/lib/ticket-api";
+import { contactApi, companyApi, type Contact } from "@/lib/companies-api";
+import { type ContactCompanyRole } from "@/lib/ticket-api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

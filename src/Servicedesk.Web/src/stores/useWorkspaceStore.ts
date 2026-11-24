@@ -1,11 +1,7 @@
 import { create } from "zustand";
 import { preferencesApi } from "@/lib/preferences-api";
 import type { FormDraft } from "@/lib/formDraft";
-import type {
-  MailRecipientInput,
-  OutboundMailKind,
-  TicketAttachmentMeta,
-} from "@/lib/ticket-api";
+import type { MailRecipientInput, OutboundMailKind, TicketAttachmentMeta } from "@/lib/ticket-api";
 
 export type Draft = {
   ticketId: string;

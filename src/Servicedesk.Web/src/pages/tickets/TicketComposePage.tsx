@@ -1,7 +1,8 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { ticketApi, contactApi } from "@/lib/ticket-api";
+import { ticketApi } from "@/lib/ticket-api";
+import { contactApi } from "@/lib/companies-api";
 import { agentQueueApi } from "@/lib/queue-access-api";
 import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { AddNoteForm } from "./components/AddNoteForm";

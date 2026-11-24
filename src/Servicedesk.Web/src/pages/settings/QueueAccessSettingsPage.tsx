@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { Shield } from "lucide-react";
 import { queueAccessApi } from "@/lib/queue-access-api";
 import { taxonomyApi, type Queue } from "@/lib/taxonomy-api";
-import { userApi, type AgentUser } from "@/lib/ticket-api";
+import { userApi, type AgentUser } from "@/lib/users-api";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";

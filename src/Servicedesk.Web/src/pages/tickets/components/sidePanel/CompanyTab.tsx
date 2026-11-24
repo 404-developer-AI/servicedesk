@@ -5,14 +5,9 @@ import { AddCompanyContactDialog } from "@/components/AddCompanyContactDialog";
 import { CompanyEditDialog } from "@/components/CompanyEditDialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type {
-  Ticket,
-  Contact,
-  CompanyDetail,
-  ContactCompanyLink,
-  ContactCompanyRole,
-} from "@/lib/ticket-api";
-import { companyApi } from "@/lib/ticket-api";
+import type { Ticket, ContactCompanyRole } from "@/lib/ticket-api";
+import type { Contact, CompanyDetail, ContactCompanyLink } from "@/lib/companies-api";
+import { companyApi } from "@/lib/companies-api";
 import { Building2, Globe, Mail, Phone, MapPin, Pencil, Plus, User } from "lucide-react";
 import { FieldLabel, FieldRow, EmptyState } from "./fields";
 import { LINK_ROLE_BADGE } from "./linkRoleBadge";

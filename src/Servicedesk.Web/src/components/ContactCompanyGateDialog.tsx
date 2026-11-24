@@ -11,10 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { CompanyPicker } from "@/components/CompanyPicker";
 import { cn } from "@/lib/utils";
-import type {
-  ContactCompanyRole,
-  StatusGateContactCompanyLink,
-} from "@/lib/ticket-api";
+import type { ContactCompanyRole, StatusGateContactCompanyLink } from "@/lib/ticket-api";
 
 type Props = {
   /// Null hides the dialog. The parent passes the next gate in the

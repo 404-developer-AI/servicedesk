@@ -13,11 +13,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ApiError, contactApi, companyApi, ticketApi } from "@/lib/ticket-api";
+import { ApiError, ticketApi } from "@/lib/ticket-api";
+import { contactApi, companyApi } from "@/lib/companies-api";
 import type { Ticket, TicketPickerItem } from "@/lib/ticket-api";
 import { taxonomyApi, type Status } from "@/lib/taxonomy-api";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/http";
 
 type Props = {
   open: boolean;
@@ -85,7 +87,7 @@ export function MergeTicketDialog({
         const response = await ticketApi.picker(query.trim() || undefined, source.id, 20);
         setResults(response.items);
       } catch (err) {
-        setSearchError(err instanceof Error ? err.message : "Search failed");
+        setSearchError(errorMessage(err, "Search failed"));
         setResults([]);
       } finally {
         setSearching(false);

@@ -25,8 +25,14 @@ import {
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { adminUserApi, type UserAdminRow, type FeatureFlagsUpdate, type UserCalendarsResponse } from "@/lib/ticket-api";
+import {
+  adminUserApi,
+  type UserAdminRow,
+  type FeatureFlagsUpdate,
+  type UserCalendarsResponse,
+} from "@/lib/admin-users-api";
 import { DASHBOARD_TILES, roleSatisfies } from "@/lib/dashboardTiles";
+import { errorMessage } from "@/lib/http";
 
 type FlagKey = keyof FeatureFlagsUpdate;
 
@@ -313,7 +319,7 @@ function CalendarSelect({
       })
       .catch((e: unknown) => {
         if (!cancelled)
-          setLoadError(e instanceof Error ? e.message : "Could not load calendars.");
+          setLoadError(errorMessage(e, "Could not load calendars."));
       });
     return () => {
       cancelled = true;

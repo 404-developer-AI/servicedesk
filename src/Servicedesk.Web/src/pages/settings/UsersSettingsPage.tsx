@@ -20,7 +20,7 @@ import {
   Mail,
   Clock,
 } from "lucide-react";
-import { adminUserApi, type UserAdminRow, type M365PickerUser } from "@/lib/ticket-api";
+import { adminUserApi, type UserAdminRow, type M365PickerUser } from "@/lib/admin-users-api";
 import { TimesheetOverridesDialog } from "@/pages/settings/TimesheetOverridesDialog";
 import { FeatureFlagsDropdown } from "@/pages/settings/FeatureFlagsDropdown";
 import { TaggingMailboxesCard } from "@/pages/settings/TaggingMailboxesCard";
@@ -49,6 +49,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatTimeAgo } from "@/lib/format";
 import { useDebounced } from "@/hooks/useDebounced";
+import { errorMessage } from "@/lib/http";
 
 type Role = "Agent" | "Admin";
 
@@ -320,8 +321,7 @@ function UserRow({
       toast.success(successMessage);
       onChanged();
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Something went wrong.";
+      const message = errorMessage(err, "Something went wrong.");
       toast.error(message);
     } finally {
       setMutationPending(false);
@@ -548,7 +548,7 @@ function ResetPasswordDialog({
       close(false);
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not reset the password.");
+      setError(errorMessage(err, "Could not reset the password."));
     } finally {
       setPending(false);
     }
@@ -731,7 +731,7 @@ function AddFromM365Dialog({
       onOpenChange(false);
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Failed to add user");
+      toast.error(errorMessage(err, "Failed to add user"));
     },
   });
 
@@ -900,7 +900,7 @@ function UpgradeToM365Dialog({
       onUpgraded();
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Upgrade failed");
+      toast.error(errorMessage(err, "Upgrade failed"));
     },
   });
 
@@ -1021,7 +1021,7 @@ function DeleteConfirmDialog({
       onDeleted();
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Delete failed");
+      toast.error(errorMessage(err, "Delete failed"));
     },
   });
 
@@ -1098,7 +1098,7 @@ function AddLocalDialog({
       onOpenChange(false);
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Failed to add user");
+      toast.error(errorMessage(err, "Failed to add user"));
     },
   });
 

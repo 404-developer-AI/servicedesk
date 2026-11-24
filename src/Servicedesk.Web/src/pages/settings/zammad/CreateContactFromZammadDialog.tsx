@@ -4,12 +4,8 @@ import { toast } from "sonner";
 import { Loader2, Search, X } from "lucide-react";
 import { apiErrorMessage } from "@/lib/http";
 import { zammadAdminApi, zammadDryRunApi } from "@/lib/zammad-api";
-import {
-  contactApi,
-  companyApi,
-  type CompanyPickerItem,
-  type ContactCompanyRole,
-} from "@/lib/ticket-api";
+import { contactApi, companyApi, type CompanyPickerItem } from "@/lib/companies-api";
+import { type ContactCompanyRole } from "@/lib/ticket-api";
 import {
   Select,
   SelectContent,

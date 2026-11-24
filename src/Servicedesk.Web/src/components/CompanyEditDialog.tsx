@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/http";
-import { companyApi, type Company, type CompanyInput } from "@/lib/ticket-api";
+import { companyApi, type CompanyInput } from "@/lib/companies-api";
+import { type Company } from "@/lib/ticket-api";
 import { CompanyFormFields, companyToInput } from "@/components/CompanyFormFields";
 
 type Props = {

@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { CompanyPicker } from "@/components/CompanyPicker";
 import { apiErrorMessage } from "@/lib/http";
 import { portalAdminApi, type PortalAccount, type PortalAccountStatus, type PortalCompanyLinkInput } from "@/lib/portal-api";
-import { contactApi } from "@/lib/ticket-api";
+import { contactApi } from "@/lib/companies-api";
 import { Eye, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConfirm } from "@/components/ConfirmDialog";

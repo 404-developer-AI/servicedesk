@@ -21,11 +21,10 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   statisticsApi,
-  userApi,
   type StatisticMetricDescriptor,
   type StatisticTileInput,
-  type AgentUser,
-} from "@/lib/ticket-api";
+} from "@/lib/statistics-api";
+import { userApi, type AgentUser } from "@/lib/users-api";
 import { useConfirm } from "@/components/ConfirmDialog";
 
 const PERIODS = [
@@ -272,7 +271,7 @@ function TileList({
   onDelete,
 }: {
   loading: boolean;
-  tiles: import("@/lib/ticket-api").StatisticTileSummary[];
+  tiles: import("@/lib/statistics-api").StatisticTileSummary[];
   onCreate: () => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;

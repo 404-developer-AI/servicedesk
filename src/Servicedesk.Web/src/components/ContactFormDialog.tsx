@@ -14,13 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/http";
-import { companyApi, contactApi } from "@/lib/ticket-api";
-import type {
-  CompanyPickerItem,
-  Contact,
-  ContactCompanyRole,
-  ContactInput,
-} from "@/lib/ticket-api";
+import { companyApi, contactApi } from "@/lib/companies-api";
+import type { CompanyPickerItem, Contact, ContactInput } from "@/lib/companies-api";
+import type { ContactCompanyRole } from "@/lib/ticket-api";
 import { useDebounced } from "@/hooks/useDebounced";
 
 type Props = {

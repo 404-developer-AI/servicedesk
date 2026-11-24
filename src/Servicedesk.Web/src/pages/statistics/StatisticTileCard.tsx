@@ -8,7 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { statisticsApi, type StatisticTileDto } from "@/lib/ticket-api";
+import { statisticsApi, type StatisticTileDto } from "@/lib/statistics-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
