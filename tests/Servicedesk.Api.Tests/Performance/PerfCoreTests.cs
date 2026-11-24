@@ -205,25 +205,20 @@ public sealed class PerfRedactorTests
 
 public sealed class PerfSettingsTests
 {
-    private sealed class ManualTime : TimeProvider
-    {
-        public DateTimeOffset Now { get; set; } = new(2026, 10, 7, 9, 0, 0, TimeSpan.Zero);
-        public override DateTimeOffset GetUtcNow() => Now;
-    }
 
     [Fact]
     public async Task Diagnose_ExpiresOnServerTime_BackToBasic()
     {
         var store = new InMemorySettingsService();
-        var time = new ManualTime();
-        store.Set(SettingKeys.Performance.DiagnoseUntilUtc, PerfSettingsProvider.FormatUtc(time.Now.AddMinutes(60)));
+        var time = new ManualClock(new DateTimeOffset(2026, 10, 7, 9, 0, 0, TimeSpan.Zero));
+        store.Set(SettingKeys.Performance.DiagnoseUntilUtc, PerfSettingsProvider.FormatUtc(time.UtcNow.AddMinutes(60)));
         var perf = new PerfSettingsProvider(store, time, Microsoft.Extensions.Logging.Abstractions.NullLogger<PerfSettingsProvider>.Instance);
         await perf.RefreshAsync(default);
 
         Assert.Equal(PerfLevel.Diagnose, perf.Level);
-        time.Now = time.Now.AddMinutes(59);
+        time.UtcNow = time.UtcNow.AddMinutes(59);
         Assert.Equal(PerfLevel.Diagnose, perf.Level);
-        time.Now = time.Now.AddMinutes(2);
+        time.UtcNow = time.UtcNow.AddMinutes(2);
         Assert.Equal(PerfLevel.Basic, perf.Level);
     }
 
@@ -231,9 +226,9 @@ public sealed class PerfSettingsTests
     public async Task Off_DisablesEveryCollector_AndDiagnose()
     {
         var store = new InMemorySettingsService();
-        var time = new ManualTime();
+        var time = new ManualClock(new DateTimeOffset(2026, 10, 7, 9, 0, 0, TimeSpan.Zero));
         store.Set(SettingKeys.Performance.Level, "off");
-        store.Set(SettingKeys.Performance.DiagnoseUntilUtc, PerfSettingsProvider.FormatUtc(time.Now.AddHours(1)));
+        store.Set(SettingKeys.Performance.DiagnoseUntilUtc, PerfSettingsProvider.FormatUtc(time.UtcNow.AddHours(1)));
         var perf = new PerfSettingsProvider(store, time, Microsoft.Extensions.Logging.Abstractions.NullLogger<PerfSettingsProvider>.Instance);
         await perf.RefreshAsync(default);
 
@@ -247,7 +242,7 @@ public sealed class PerfSettingsTests
     {
         var store = new InMemorySettingsService();
         store.Set(SettingKeys.Performance.CollectorFrontend, "false");
-        var perf = new PerfSettingsProvider(store, new ManualTime(), Microsoft.Extensions.Logging.Abstractions.NullLogger<PerfSettingsProvider>.Instance);
+        var perf = new PerfSettingsProvider(store, new ManualClock(new DateTimeOffset(2026, 10, 7, 9, 0, 0, TimeSpan.Zero)), Microsoft.Extensions.Logging.Abstractions.NullLogger<PerfSettingsProvider>.Instance);
         await perf.RefreshAsync(default);
 
         Assert.True(perf.IsEnabled(PerfCollector.Http));

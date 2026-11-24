@@ -171,16 +171,11 @@ public sealed class TicketBulkActionServiceTests
         => new(mutations, new InMemorySettingsService()
             .With(SettingKeys.Tickets.BulkActionsEnabled, enabled)
             .With(SettingKeys.Tickets.BulkActionsMaxSelection, maxSelection), audit, NullLogger<TicketBulkActionService>.Instance,
-            new FixedClock(Now));
+            new ManualClock(Now));
 
     // Fixed server clock so pending-till values in these tests never age
     // into the past.
     private static readonly DateTimeOffset Now = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
-
-    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
-    }
 
     private static TicketBulkActionRequest Request(
         IReadOnlyList<Guid> ids, Guid? statusId = null, string? message = null, bool isInternal = true, DateTime? pendingTillUtc = null)

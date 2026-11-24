@@ -523,7 +523,7 @@ public sealed class TicketMutationServiceTests
                 return Task.FromResult(Users.GetValueOrDefault((Guid)a![0]!));
             });
 
-            return new TicketMutationService(tickets, Access, new TicketFieldRules(scope, guard, Settings, new FixedClock(Now), users),
+            return new TicketMutationService(tickets, Access, new TicketFieldRules(scope, guard, Settings, new ManualClock(Now), users),
                 gates, Audit, notifier, sla, triggers);
         }
 
@@ -532,10 +532,5 @@ public sealed class TicketMutationServiceTests
             AddedEvent = input;
             return Task.FromResult<TicketEvent?>(Event(1, input.EventType));
         }
-    }
-
-    private sealed class FixedClock(DateTime now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => new(now, TimeSpan.Zero);
     }
 }

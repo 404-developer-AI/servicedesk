@@ -46,6 +46,20 @@ public sealed class PeriodicWorkerTests
     }
 
     [Fact]
+    public async Task A_non_positive_interval_falls_back_instead_of_spinning()
+    {
+        // Schedule says zero; the fallback is an hour. Without the guard the
+        // loop runs back to back.
+        var worker = new ProbeWorker(TimeSpan.FromHours(1)) { ScheduledInterval = TimeSpan.Zero };
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForAsync(() => worker.Runs >= 1);
+        await Task.Delay(200);
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.Equal(1, worker.Runs);
+    }
+
+    [Fact]
     public async Task Stopping_ends_the_loop_during_the_wait()
     {
         var worker = new ProbeWorker(TimeSpan.FromHours(1));
@@ -85,6 +99,8 @@ public sealed class PeriodicWorkerTests
         private readonly IWorkerWakeSignal? _signal;
         public bool Enabled { get; init; } = true;
         public bool ThrowOnRun { get; init; }
+        /// What the schedule reports; defaults to the fallback interval.
+        public TimeSpan? ScheduledInterval { get; init; }
         public int Runs;
         public int ScheduleReads;
 
@@ -95,7 +111,7 @@ public sealed class PeriodicWorkerTests
         protected override Task<WorkerSchedule> GetScheduleAsync(IServiceProvider services, CancellationToken ct)
         {
             Interlocked.Increment(ref ScheduleReads);
-            return Task.FromResult(new WorkerSchedule(_interval, Enabled));
+            return Task.FromResult(new WorkerSchedule(ScheduledInterval ?? _interval, Enabled));
         }
 
         protected override Task RunAsync(IServiceProvider services, PerfWorkerRun run, CancellationToken ct)

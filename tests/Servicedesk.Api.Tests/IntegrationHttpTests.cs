@@ -1,3 +1,4 @@
+using Servicedesk.Api.Tests.TestInfrastructure;
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -10,11 +11,6 @@ namespace Servicedesk.Api.Tests;
 /// retry policy and the credential-keyed bearer-token cache.
 public sealed class IntegrationHttpTests
 {
-    private sealed class FakeClock(DateTimeOffset now) : TimeProvider
-    {
-        public DateTimeOffset Now { get; set; } = now;
-        public override DateTimeOffset GetUtcNow() => Now;
-    }
 
     private sealed class ScriptedHandler(params HttpStatusCode[] codes) : HttpMessageHandler
     {
@@ -75,23 +71,23 @@ public sealed class IntegrationHttpTests
     [Fact]
     public async Task Token_is_reused_until_shortly_before_expiry()
     {
-        var clock = new FakeClock(T0);
+        var clock = new ManualClock(T0);
         var cache = new BearerTokenCache(clock);
         var fetches = 0;
         Task<(string, int)> Fetch(CancellationToken _) => Task.FromResult(($"token-{++fetches}", 3600));
         var key = BearerTokenCache.KeyFor("client-a", "secret-a");
 
         Assert.Equal("token-1", await cache.GetAsync(key, Fetch, default));
-        clock.Now = T0.AddMinutes(58);
+        clock.UtcNow = T0.AddMinutes(58);
         Assert.Equal("token-1", await cache.GetAsync(key, Fetch, default));
-        clock.Now = T0.AddMinutes(59).AddSeconds(1); // past expires_in − 60 s
+        clock.UtcNow = T0.AddMinutes(59).AddSeconds(1); // past expires_in − 60 s
         Assert.Equal("token-2", await cache.GetAsync(key, Fetch, default));
     }
 
     [Fact]
     public async Task Changed_credentials_never_reuse_the_previous_token()
     {
-        var cache = new BearerTokenCache(new FakeClock(T0));
+        var cache = new BearerTokenCache(new ManualClock(T0));
         var fetches = 0;
         Task<(string, int)> Fetch(CancellationToken _) => Task.FromResult(($"token-{++fetches}", 3600));
 

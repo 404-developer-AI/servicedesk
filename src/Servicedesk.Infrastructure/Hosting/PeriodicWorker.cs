@@ -84,6 +84,14 @@ public abstract class PeriodicWorker : BackgroundService
                 using var scope = _services.CreateScope();
                 var schedule = await GetScheduleAsync(scope.ServiceProvider, stoppingToken);
                 interval = schedule.Interval;
+                // A zero or negative interval (a mistyped setting) would spin
+                // the loop without pause: fall back to the worker's default.
+                if (interval <= TimeSpan.Zero)
+                {
+                    Logger.LogWarning("{Worker} schedule interval {Interval} is not positive; using {Fallback}.",
+                        WorkerName, interval, FallbackInterval);
+                    interval = FallbackInterval;
+                }
                 if (schedule.Enabled)
                 {
                     using var run = PerfWorkerRun.Start(WorkerName);

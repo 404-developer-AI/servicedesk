@@ -225,7 +225,7 @@ public sealed class PendingTillInPastTests : IClassFixture<SharedHostFixture>
                     : Unexpected(m, a)),
                 Fake<IChecklistCloseGuard>.Create(Unexpected),
                 Fake<ISettingsService>.Create(Unexpected),
-                new FixedClock(Now),
+                new ManualClock(Now),
                 Fake<Servicedesk.Infrastructure.Auth.IUserService>.Create(Unexpected)),
             Fake<IStatusGateService>.Create(Unexpected),
             Fake<IAuditLogger>.Create(Unexpected),
@@ -274,10 +274,5 @@ public sealed class PendingTillInPastTests : IClassFixture<SharedHostFixture>
             var create = typeof(Fake<>).MakeGenericType(type).GetMethod(nameof(Fake<object>.Create))!;
             services.AddSingleton(type, create.Invoke(null, new object[] { (Func<MethodInfo, object?[]?, object?>)Unexpected })!);
         }
-    }
-
-    private sealed class FixedClock(DateTime now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => new(now, TimeSpan.Zero);
     }
 }
