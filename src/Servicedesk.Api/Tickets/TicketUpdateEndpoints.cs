@@ -151,6 +151,8 @@ public static partial class TicketEndpoints
                     // v0.1.44 — the picker disables past moments, so this
                     // only catches a stale tab or a hand-rolled call.
                     return Results.BadRequest(new { error = PendingTillRules.PastMessage, code = PendingTillRules.PastCode });
+                case TicketMutationCheck.PendingTillNotPending:
+                    return Results.BadRequest(new { error = PendingTillRules.NotPendingMessage, code = PendingTillRules.NotPendingCode });
                 case TicketMutationCheck.AssigneeNotAssignable:
                     return Results.BadRequest(new { error = TicketAssigneeRule.Message, code = TicketAssigneeRule.Code });
                 case TicketMutationCheck.ChecklistIncomplete:

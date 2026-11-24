@@ -47,6 +47,8 @@ public static class TicketBulkSkipReason
     public const string PendingTillInPast = PendingTillRules.PastCode;
     /// The new assignee is not an active agent or admin.
     public const string AssigneeNotAssignable = TicketAssigneeRule.Code;
+    /// A new pending-till on a ticket that stays non-Pending.
+    public const string PendingTillNotPending = PendingTillRules.NotPendingCode;
     public const string Failed = "failed";
 }
 
@@ -177,6 +179,7 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
                     TicketMutationCheck.ProjectQueueLocked => TicketBulkSkipReason.ProjectQueueLocked,
                     TicketMutationCheck.PendingTillInPast => TicketBulkSkipReason.PendingTillInPast,
                     TicketMutationCheck.AssigneeNotAssignable => TicketBulkSkipReason.AssigneeNotAssignable,
+                    TicketMutationCheck.PendingTillNotPending => TicketBulkSkipReason.PendingTillNotPending,
                     _ => TicketBulkSkipReason.Failed,
                 };
                 if (reason is not null)

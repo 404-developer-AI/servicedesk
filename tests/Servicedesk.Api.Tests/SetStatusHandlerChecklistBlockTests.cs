@@ -135,6 +135,8 @@ public sealed class SetStatusHandlerChecklistBlockTests
             Calls++;
             return Task.FromResult(_allowed);
         }
+        public Task<bool> IsPendingStatusAsync(Guid statusId, CancellationToken ct) =>
+            throw new InvalidOperationException("Unexpected: Set status never sends a pending-till.");
     }
 
     private sealed class FakeGuard : IChecklistCloseGuard

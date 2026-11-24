@@ -219,7 +219,10 @@ public sealed class PendingTillInPastTests : IClassFixture<SharedHostFixture>
             Fake<ITicketRepository>.Create(TicketRepoHandler(ticket)),
             Fake<IQueueAccessService>.Create(QueueAccessHandler(hasQueueAccess)),
             new TicketFieldRules(
-                Fake<IQueueStatusScope>.Create(Unexpected),
+                // The ticket is in a Pending status; nothing else is asked.
+                Fake<IQueueStatusScope>.Create((m, a) => m.Name == nameof(IQueueStatusScope.IsPendingStatusAsync)
+                    ? Task.FromResult(true)
+                    : Unexpected(m, a)),
                 Fake<IChecklistCloseGuard>.Create(Unexpected),
                 Fake<ISettingsService>.Create(Unexpected),
                 new FixedClock(Now),

@@ -55,6 +55,9 @@ public enum TicketMutationCheck
     /// The new assignee is not an active Agent or Admin (or does not
     /// exist). See <see cref="TicketAssigneeRule"/>.
     AssigneeNotAssignable,
+    /// The update sets a new pending-till while the ticket stays in a
+    /// non-Pending status. See <see cref="PendingTillRules.NotPendingCode"/>.
+    PendingTillNotPending,
 }
 
 /// Result of <see cref="ITicketMutationService.PrecheckFieldUpdateAsync"/>.

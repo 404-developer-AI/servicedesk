@@ -184,14 +184,15 @@ public sealed class TicketFieldWriter
         var bodyChanged = update.BodyText is not null || update.BodyHtml is not null;
 
         // v0.0.37 — gate pending-till writes against the *effective* status
-        // (after a same-update flip): a value sent alongside a move out of
-        // Pending is ignored (the auto-clear below wipes the column). Runs
-        // before the no-op short-circuit so a pending-till-only update works.
+        // (after a same-update flip): only a ticket that is, or ends up, in a
+        // Pending status gets the value. A value sent alongside a move out of
+        // Pending is ignored (the auto-clear below wipes the column), and so
+        // is one on a ticket that stays non-Pending (the rules refuse that
+        // first; this keeps the invariant inside the row lock). Runs before
+        // the no-op short-circuit so a pending-till-only update works.
         var writePendingTill =
             update.PendingTillUtc.HasValue
-            && (current.StatusId == update.StatusId
-                || !update.StatusId.HasValue
-                || toCategory == "Pending");
+            && (toCategory ?? current.StatusCategory) == "Pending";
         if (writePendingTill) sets.Add("pending_till_utc = @NewPendingTillUtc");
         // v0.1.44 — leave a trace: who moved the reminder, from when to when.
         if (writePendingTill && !PendingTillRules.SameInstant(current.PendingTillUtc, update.PendingTillUtc))

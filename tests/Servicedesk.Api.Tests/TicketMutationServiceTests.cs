@@ -107,6 +107,43 @@ public sealed class TicketMutationServiceTests
         Assert.Equal(TicketMutationCheck.Ok, result.Check);
     }
 
+    [Fact]
+    public async Task A_new_pending_till_on_a_ticket_that_stays_non_pending_is_refused()
+    {
+        var h = new Harness { IsPending = _ => false };
+
+        var result = await h.Service.PrecheckFieldUpdateAsync(Actor, TicketId,
+            new TicketFieldUpdate(PendingTillUtc: Now.AddDays(1)), default);
+
+        Assert.Equal(TicketMutationCheck.PendingTillNotPending, result.Check);
+    }
+
+    [Fact]
+    public async Task Re_sending_the_held_pending_till_on_a_non_pending_ticket_passes()
+    {
+        var held = Now.AddDays(1);
+        var h = new Harness { Ticket = Ticket() with { PendingTillUtc = held }, IsPending = _ => false };
+
+        var result = await h.Service.PrecheckFieldUpdateAsync(Actor, TicketId,
+            new TicketFieldUpdate(PendingTillUtc: held, Subject: "unrelated edit"), default);
+
+        Assert.Equal(TicketMutationCheck.Ok, result.Check);
+    }
+
+    [Fact]
+    public async Task A_pending_till_with_a_status_change_is_left_to_the_writer()
+    {
+        // The writer writes it on a move into Pending and drops it on a move
+        // out; the rules do not judge the current status then.
+        var h = new Harness { IsPending = _ => false };
+
+        var result = await h.Service.PrecheckFieldUpdateAsync(Actor, TicketId,
+            new TicketFieldUpdate(StatusId: Closed, PendingTillUtc: Now.AddDays(1)), default);
+
+        Assert.Equal(TicketMutationCheck.Ok, result.Check);
+        Assert.DoesNotContain("scope." + nameof(IQueueStatusScope.IsPendingStatusAsync), h.Calls);
+    }
+
     // ---- precheck: assignee -------------------------------------------------
 
     [Theory]
@@ -406,6 +443,8 @@ public sealed class TicketMutationServiceTests
         public Ticket? Ticket { get; init; } = TicketMutationServiceTests.Ticket();
         public FakeQueueAccess Access { get; init; } = FakeQueueAccess.All();
         public Func<Guid, Guid, bool> StatusAllowed { get; init; } = (_, _) => true;
+        /// Whether a status is Pending-category; by default every status is.
+        public Func<Guid, bool> IsPending { get; init; } = _ => true;
         public IReadOnlyList<ChecklistBlocker> Blockers { get; init; } = Array.Empty<ChecklistBlocker>();
         /// The gates the probe "matches" — content is irrelevant to the
         /// service, it passes the list through.
@@ -446,7 +485,9 @@ public sealed class TicketMutationServiceTests
             var scope = Fake<IQueueStatusScope>.Create((m, a) =>
             {
                 Calls.Add("scope." + m.Name);
-                return Task.FromResult(StatusAllowed((Guid)a![0]!, (Guid)a[1]!));
+                return m.Name == nameof(IQueueStatusScope.IsPendingStatusAsync)
+                    ? Task.FromResult(IsPending((Guid)a![0]!))
+                    : Task.FromResult(StatusAllowed((Guid)a![0]!, (Guid)a[1]!));
             });
             var gates = Fake<IStatusGateService>.Create((m, _) =>
             {

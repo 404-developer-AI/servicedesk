@@ -23,8 +23,8 @@ public sealed record TicketFieldRuleVerdict(TicketMutationCheck Check, IReadOnly
 /// Who may act (queue access on the current and the target queue) is not
 /// here: that depends on an actor, and a trigger runs as the system. The
 /// status gates are not here either — they are a confirmation dialog for an
-/// agent, not a rule. Order: pending-till, assignee, project pin, status
-/// scope, checklist block.
+/// agent, not a rule. Order: pending-till (future, Pending status),
+/// assignee, project pin, status scope, checklist block.
 public interface ITicketFieldRules
 {
     Task<TicketFieldRuleVerdict> CheckAsync(Ticket current, TicketFieldUpdate update, CancellationToken ct);
@@ -58,6 +58,15 @@ public sealed class TicketFieldRules : ITicketFieldRules
             && !PendingTillRules.SameInstant(update.PendingTillUtc, current.PendingTillUtc)
             && PendingTillRules.IsInPast(update.PendingTillUtc, _clock.GetUtcNow().UtcDateTime))
             return new(TicketMutationCheck.PendingTillInPast);
+
+        // A new pending-till on a ticket that keeps a non-Pending status is
+        // refused. With a status change the writer decides on the target
+        // status (a move out of Pending drops the value and clears the column).
+        if (update.PendingTillUtc.HasValue
+            && !PendingTillRules.SameInstant(update.PendingTillUtc, current.PendingTillUtc)
+            && (update.StatusId is null || update.StatusId == current.StatusId)
+            && !await _statusScope.IsPendingStatusAsync(current.StatusId, ct))
+            return new(TicketMutationCheck.PendingTillNotPending);
 
         // A new assignee must be an active agent or admin. Keeping the one
         // the ticket already has passes, so a deactivated owner never blocks

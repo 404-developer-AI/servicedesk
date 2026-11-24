@@ -13,6 +13,10 @@ public interface IQueueStatusScope
     /// contains it. An unknown queue is not judged here (callers already
     /// handle missing tickets/queues) and returns true.
     Task<bool> IsStatusAllowedAsync(Guid queueId, Guid statusId, CancellationToken ct);
+
+    /// True when <paramref name="statusId"/> is a Pending-category status —
+    /// the only kind of status a pending-till may live on.
+    Task<bool> IsPendingStatusAsync(Guid statusId, CancellationToken ct);
 }
 
 internal sealed class QueueStatusScope : IQueueStatusScope
@@ -26,4 +30,7 @@ internal sealed class QueueStatusScope : IQueueStatusScope
         var queue = await _taxonomy.GetQueueAsync(queueId, ct);
         return queue?.AllowedStatusIds is not { Count: > 0 } allowed || allowed.Contains(statusId);
     }
+
+    public async Task<bool> IsPendingStatusAsync(Guid statusId, CancellationToken ct) =>
+        string.Equals((await _taxonomy.GetStatusAsync(statusId, ct))?.StateCategory, "Pending", StringComparison.OrdinalIgnoreCase);
 }

@@ -10,10 +10,21 @@ namespace Servicedesk.Infrastructure.Tickets;
 /// Writers: side-panel PATCH + bulk (`TicketMutationService` precheck),
 /// ticket create (endpoint), trigger `set_pending_till` (handler → failed
 /// action), Zammad import (elapsed value → left empty).
+///
+/// Second rule, same writers except the fixed-value trigger action: a new
+/// value needs a Pending status (<see cref="NotPendingCode"/>). The field
+/// writer also only writes the column when the effective status is Pending,
+/// so a value sent with a move out of Pending is dropped, not refused.
 public static class PendingTillRules
 {
     public const string PastCode = "pending_till_in_past";
     public const string PastMessage = "Pending till must be in the future.";
+
+    /// A pending-till only ever lives on a Pending-category ticket (v0.0.100:
+    /// a leaked value made the scheduler re-evaluate the ticket every tick,
+    /// and a chained reminder fires whatever the status).
+    public const string NotPendingCode = "pending_till_not_pending";
+    public const string NotPendingMessage = "Pending till can only be set on a ticket in a Pending status.";
 
     /// True when <paramref name="valueUtc"/> is set and not after
     /// <paramref name="nowUtc"/>. A null value (no reminder) is never past.
