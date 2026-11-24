@@ -1,3 +1,4 @@
+using Servicedesk.Api.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -34,7 +35,7 @@ public sealed class FileSizeBudgetTests
     [Fact]
     public void Source_files_stay_within_the_line_budget()
     {
-        var root = RepoRoot();
+        var root = RepoFiles.Root();
         var current = ScanSourceFiles(root);
         var baseline = ReadBaseline(root);
 
@@ -79,17 +80,6 @@ public sealed class FileSizeBudgetTests
         }
 
         Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Servicedesk.slnx")))
-        {
-            dir = dir.Parent;
-        }
-        Assert.NotNull(dir);
-        return dir!.FullName;
     }
 
     private static Dictionary<string, int> ScanSourceFiles(string root)

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Servicedesk.Api.Auth;
+using Servicedesk.Api.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -17,14 +18,10 @@ public sealed class ActorContextUsageTests
     [Fact]
     public void Only_ActorContext_reads_the_user_id_claim()
     {
-        var root = RepoRoot();
-        var offenders = Directory
-            .EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories)
-            .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
-                        && !p.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+        var offenders = RepoFiles.Enumerate("src", "*.cs")
             .Where(p => !p.EndsWith($"Auth{Path.DirectorySeparatorChar}ActorContext.cs", StringComparison.Ordinal))
             .Where(p => ClaimRead.IsMatch(File.ReadAllText(p)))
-            .Select(p => Path.GetRelativePath(root, p).Replace('\\', '/'))
+            .Select(RepoFiles.Relative)
             .ToList();
 
         Assert.True(offenders.Count == 0,
@@ -59,16 +56,5 @@ public sealed class ActorContextUsageTests
             [new Claim(ClaimTypes.NameIdentifier, claim)], "test"));
         Assert.Null(ActorContext.TryGetUserId(user));
         Assert.Throws<InvalidOperationException>(() => ActorContext.GetUserId(user));
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Servicedesk.slnx")))
-        {
-            dir = dir.Parent;
-        }
-        Assert.NotNull(dir);
-        return dir!.FullName;
     }
 }
