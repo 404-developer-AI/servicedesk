@@ -125,32 +125,32 @@ public sealed class NotificationMailer : INotificationMailer
             noMail = preference.DefaultOn ? new HashSet<Guid>() : rows.Select(r => r.UserId).ToHashSet();
         }
 
-        foreach (var row in rows)
+        await Parallel.ForEachAsync(rows, SendOptions(ct), async (row, token) =>
         {
             if (noMail.Contains(row.UserId))
             {
-                await _repo.MarkEmailSentAsync(row.Id, null, "mail turned off in profile", ct);
-                continue;
+                await _repo.MarkEmailSentAsync(row.Id, null, "mail turned off in profile", token);
+                return;
             }
-            var recipient = await _users.FindByIdAsync(row.UserId, ct);
+            var recipient = await _users.FindByIdAsync(row.UserId, token);
             if (recipient is null || string.IsNullOrWhiteSpace(recipient.Email))
             {
-                await _repo.MarkEmailSentAsync(row.Id, null, "recipient user not found", ct);
-                continue;
+                await _repo.MarkEmailSentAsync(row.Id, null, "recipient user not found", token);
+                return;
             }
             try
             {
-                var result = await _graph.SendMailAsync(BuildMessage(channel, content, recipient.Email), ct);
-                await _repo.MarkEmailSentAsync(row.Id, result.SentUtc.UtcDateTime, null, ct);
+                var result = await _graph.SendMailAsync(BuildMessage(channel, content, recipient.Email), token);
+                await _repo.MarkEmailSentAsync(row.Id, result.SentUtc.UtcDateTime, null, token);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!token.IsCancellationRequested)
             {
                 _logger.LogWarning(ex,
                     "Failed to send notification mail for notification {NotificationId} (user {UserId}, ticket {TicketId}).",
                     row.Id, row.UserId, content.TicketId);
-                await _repo.MarkEmailSentAsync(row.Id, null, Truncate(ex.Message, 400), ct);
+                await _repo.MarkEmailSentAsync(row.Id, null, Truncate(ex.Message, 400), token);
             }
-        }
+        });
     }
 
     public async Task SendToAddressesAsync(IReadOnlyList<string> addresses, NotificationMailContent content, CancellationToken ct)
@@ -158,19 +158,28 @@ public sealed class NotificationMailer : INotificationMailer
         if (addresses.Count == 0) return;
         var (channel, _) = await ResolveChannelAsync(content.QueueId, content.TicketId, ct);
         if (channel is null) return;
-        foreach (var address in addresses)
+        await Parallel.ForEachAsync(addresses, SendOptions(ct), async (address, token) =>
         {
             try
             {
-                await _graph.SendMailAsync(BuildMessage(channel, content, address), ct);
+                await _graph.SendMailAsync(BuildMessage(channel, content, address), token);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!token.IsCancellationRequested)
             {
                 _logger.LogWarning(ex, "Failed to send notification mail to {Email} for ticket {TicketId}.",
                     address, content.TicketId);
             }
-        }
+        });
     }
+
+    /// One mail per recipient, sent side by side: a tag to five people costs
+    /// about one Graph round trip instead of five, while the agent's request
+    /// waits (Logs10, 2026-11-24: ~115 ms per send). Four at a time is
+    /// Exchange Online's concurrent-request limit per mailbox — every send
+    /// here goes out of the same queue mailbox, so going higher only buys
+    /// throttled (429) requests.
+    private static ParallelOptions SendOptions(CancellationToken ct) =>
+        new() { MaxDegreeOfParallelism = 4, CancellationToken = ct };
 
     private static GraphOutboundMessage BuildMessage(Channel channel, NotificationMailContent c, string recipientEmail)
         => new(
