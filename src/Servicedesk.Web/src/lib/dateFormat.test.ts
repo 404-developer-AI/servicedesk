@@ -105,4 +105,10 @@ describe("shiftMonth", () => {
     expect(shiftMonth({ year: 2026, month: 12 }, 1)).toEqual({ year: 2027, month: 1 });
     expect(shiftMonth({ year: 2026, month: 1 }, -1)).toEqual({ year: 2025, month: 12 });
   });
+
+  it("handles steps of more than one month", () => {
+    expect(shiftMonth({ year: 2027, month: 1 }, -2)).toEqual({ year: 2026, month: 11 });
+    expect(shiftMonth({ year: 2026, month: 11 }, 14)).toEqual({ year: 2028, month: 1 });
+    expect(shiftMonth({ year: 2026, month: 3 }, -27)).toEqual({ year: 2023, month: 12 });
+  });
 });

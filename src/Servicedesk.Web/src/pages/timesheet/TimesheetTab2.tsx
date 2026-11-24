@@ -1,3 +1,4 @@
+import { serverWallClockParts, serverWallClockToUtcMs } from "@/lib/dateFormat";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1017,20 +1018,19 @@ function LogTimeCell({
   entryDate: string;
   endMinutes: number;
 }) {
-  const created = new Date(createdUtc);
-  // Build the entry's end as a local-time Date — `entry_date + end_minutes`
-  // is a local-day concept; the server stores `end_minutes` as minutes
-  // since midnight without a timezone. We construct the same local moment
-  // in the browser so the comparison happens against the manager's clock.
-  const endLocal = new Date(entryDate.slice(0, 10) + "T00:00:00");
-  endLocal.setMinutes(endLocal.getMinutes() + endMinutes);
+  const createdMs = new Date(createdUtc).getTime();
+  // `entry_date + end_minutes` is a wall-clock moment in the app time zone
+  // (minutes since midnight, no zone stored) — resolve it in the server
+  // zone, never the browser's, so a manager abroad sees the same verdict.
+  const [y, mo, d] = entryDate.slice(0, 10).split("-").map(Number);
+  const endMs = serverWallClockToUtcMs(y, mo, d, Math.floor(endMinutes / 60), endMinutes % 60);
 
-  const diffMinutes = Math.abs(created.getTime() - endLocal.getTime()) / 60000;
+  const diffMinutes = Math.abs(createdMs - endMs) / 60000;
   const mismatch = diffMinutes > LOG_TIME_MISMATCH_THRESHOLD_MINUTES;
 
-  const label = formatLogTime(created);
+  const label = formatLogTime(createdUtc);
   const title = mismatch
-    ? `Logged ${formatLogDelta(diffMinutes)} ${created > endLocal ? "after" : "before"} the entry's end time.`
+    ? `Logged ${formatLogDelta(diffMinutes)} ${createdMs > endMs ? "after" : "before"} the entry's end time.`
     : "Logged within tolerance of the entry's end time.";
 
   return (
@@ -1047,12 +1047,12 @@ function LogTimeCell({
   );
 }
 
-function formatLogTime(d: Date): string {
-  const m = (d.getMonth() + 1).toString().padStart(2, "0");
-  const day = d.getDate().toString().padStart(2, "0");
-  const hh = d.getHours().toString().padStart(2, "0");
-  const mm = d.getMinutes().toString().padStart(2, "0");
-  return `${m}-${day} ${hh}:${mm}`;
+/** "MM-dd HH:mm" of an instant, in the server zone. */
+function formatLogTime(utc: string): string {
+  const p = serverWallClockParts(utc);
+  if (!p) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(p.m)}-${pad(p.d)} ${pad(p.hh)}:${pad(p.mi)}`;
 }
 
 function formatLogDelta(minutes: number): string {

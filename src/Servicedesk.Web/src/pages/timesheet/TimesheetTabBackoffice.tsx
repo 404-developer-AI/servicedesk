@@ -1,4 +1,5 @@
-import { formatDateTimeMedium, shiftMonth } from "@/lib/dateFormat";
+import { formatDateTimeMedium } from "@/lib/dateFormat";
+import { useMonthCursor } from "@/hooks/useServerMonth";
 import { MonthLabel } from "@/components/MonthLabel";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -101,10 +102,11 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
   const prefKey = `workspace:backoffice-${context}-columns`;
   const listKey = ["timesheet", "backoffice", context] as const;
 
-  const [{ year, month }, setYM] = useState(() => {
-    const d = new Date();
-    return { year: d.getFullYear(), month: d.getMonth() + 1 };
-  });
+  // The current month comes from the server clock (null before the first
+  // time sync, when the list waits).
+  const { ym, step, reset } = useMonthCursor();
+  const year = ym?.year ?? 0;
+  const month = ym?.month ?? 0;
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // The ticket last opened from this list; its row stays highlighted.
   const [openedTicketId, setOpenedTicketId] = useState<string | null>(null);
@@ -156,6 +158,7 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
       context === "resolved"
         ? backofficeTimesheetApi.listResolved(year, month)
         : backofficeTimesheetApi.listCwi(year, month),
+    enabled: ym !== null,
   });
 
   // Reset the selection (and its anchor) whenever the underlying set of rows
@@ -234,9 +237,7 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
     );
   };
 
-  const goMonth = (delta: number) => {
-    setYM(shiftMonth({ year, month }, delta));
-  };
+  const goMonth = step;
 
   // Checkbox-driven selection. A plain click toggles the row and sets the
   // anchor; a shift-click selects the whole range from the anchor to the
@@ -310,7 +311,7 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <MonthLabel ym={{ year, month }} />
+            <MonthLabel ym={ym} />
             <Button
               size="sm"
               variant="ghost"
@@ -323,10 +324,7 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => {
-                const d = new Date();
-                setYM({ year: d.getFullYear(), month: d.getMonth() + 1 });
-              }}
+              onClick={reset}
               className="h-8 px-2 text-xs"
             >
               This month

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { slaApi } from "@/lib/sla-api";
+import { useServerYearMonth } from "@/hooks/useServerMonth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,7 +14,11 @@ export function HolidaysTab() {
   const countries = useQuery({ queryKey: ["sla", "countries"], queryFn: () => slaApi.listCountries() });
 
   const [schemaId, setSchemaId] = useState<string | null>(null);
-  const [year, setYear] = useState<number>(new Date().getFullYear());
+  // Defaults to the server's current year (never the browser clock); null
+  // only before the first time sync.
+  const serverYear = useServerYearMonth()?.year ?? null;
+  const [pickedYear, setYear] = useState<number | null>(null);
+  const year = pickedYear ?? serverYear;
   const [newDate, setNewDate] = useState("");
   const [newName, setNewName] = useState("");
 
@@ -24,12 +29,12 @@ export function HolidaysTab() {
 
   const holidays = useQuery({
     queryKey: ["sla", "holidays", active?.id, year],
-    queryFn: () => slaApi.listHolidays(active!.id, year),
-    enabled: !!active,
+    queryFn: () => slaApi.listHolidays(active!.id, year!),
+    enabled: !!active && year !== null,
   });
 
   const sync = useMutation({
-    mutationFn: (countryCode: string) => slaApi.syncHolidays(active!.id, countryCode, year),
+    mutationFn: (countryCode: string) => slaApi.syncHolidays(active!.id, countryCode, year!),
     onSuccess: () => {
       toast.success("Holidays synced");
       qc.invalidateQueries({ queryKey: ["sla", "holidays"] });
@@ -74,7 +79,7 @@ export function HolidaysTab() {
         </label>
         <label className="space-y-1 text-xs text-muted-foreground">
           Year
-          <Input type="number" value={year} onChange={(e) => setYear(parseInt(e.target.value, 10))} />
+          <Input type="number" value={year ?? ""} onChange={(e) => setYear(parseInt(e.target.value, 10))} />
         </label>
         <label className="space-y-1 text-xs text-muted-foreground">
           Country (auto-sync)

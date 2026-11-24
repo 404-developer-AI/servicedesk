@@ -1,4 +1,5 @@
-import { formatDateMedium, formatDateTimeMedium, shiftMonth } from "@/lib/dateFormat";
+import { formatDateMedium, formatDateTimeMedium } from "@/lib/dateFormat";
+import { useMonthCursor } from "@/hooks/useServerMonth";
 import { MonthLabel } from "@/components/MonthLabel";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -257,21 +258,19 @@ export function TimesheetTabAdsolut() {
   // prev/next stepping and a "This month" reset. Defaults to the current month.
   // "All" lifts the month scope entirely (every mirrored receipt) — stepping a
   // month or "This month" re-enables scoping from the last selected month.
-  const [{ year, month }, setYM] = useState(() => {
-    const d = new Date();
-    return { year: d.getFullYear(), month: d.getMonth() + 1 };
-  });
+  // The current month comes from the server clock (null before the first
+  // time sync, when the list waits).
+  const { ym, step, reset } = useMonthCursor();
   const [allMonths, setAllMonths] = useState(false);
   const goMonth = (delta: number) => {
     setPage(1);
     setAllMonths(false);
-    setYM((cur) => shiftMonth(cur, delta));
+    step(delta);
   };
   const thisMonth = () => {
-    const d = new Date();
     setPage(1);
     setAllMonths(false);
-    setYM({ year: d.getFullYear(), month: d.getMonth() + 1 });
+    reset();
   };
   const showAll = () => {
     setPage(1);
@@ -317,12 +316,13 @@ export function TimesheetTabAdsolut() {
     [effectiveConfig],
   );
 
-  const scopeYear = allMonths ? undefined : year;
-  const scopeMonth = allMonths ? undefined : month;
+  const scopeYear = allMonths ? undefined : ym?.year;
+  const scopeMonth = allMonths ? undefined : ym?.month;
   const list = useQuery({
     queryKey: [...RECEIPTS_KEY, search, page, sortKey, sortDir, boFilter, scopeYear, scopeMonth, commentsOnly],
     queryFn: () =>
       adsolutTimesheetApi.listReceipts(search, page, PAGE_SIZE, sortKey, sortDir, boFilter, scopeYear, scopeMonth, commentsOnly),
+    enabled: allMonths || ym !== null,
   });
 
   const total = list.data?.total ?? 0;
@@ -407,7 +407,7 @@ export function TimesheetTabAdsolut() {
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <MonthLabel ym={{ year, month }} label={allMonths ? "All months" : undefined} narrow />
+          <MonthLabel ym={ym} label={allMonths ? "All months" : undefined} narrow />
           <Button
             size="sm"
             variant="ghost"
