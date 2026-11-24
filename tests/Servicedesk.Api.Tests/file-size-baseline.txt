@@ -62,7 +62,7 @@
 729 src/Servicedesk.Infrastructure/Integrations/Adsolut/AdsolutSalesReceiptRepository.cs
 729 src/Servicedesk.Infrastructure/Integrations/Adsolut/AdsolutSyncWorker.cs
 726 src/Servicedesk.Web/src/pages/settings/zammad/ZammadImportRunDetailPage.tsx
-716 tests/Servicedesk.Api.Tests/MailIngestServiceTests.cs
+714 tests/Servicedesk.Api.Tests/MailIngestServiceTests.cs
 696 src/Servicedesk.Web/src/pages/tickets/components/SendMailForm.tsx
 695 src/Servicedesk.Web/src/components/dashboard/IntegrationsHealthTile.tsx
 690 src/Servicedesk.Web/src/components/integrations/IncomingCallPopup.tsx

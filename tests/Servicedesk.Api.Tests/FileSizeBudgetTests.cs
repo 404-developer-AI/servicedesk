@@ -110,10 +110,22 @@ public sealed class FileSizeBudgetTests
                 if (counted)
                 {
                     var relative = Path.GetRelativePath(root, file.FullName).Replace('\\', '/');
-                    result[relative] = File.ReadLines(file.FullName).Count();
+                    result[relative] = CountLines(file.FullName);
                 }
             }
         }
+    }
+
+    /// Lines as git sees them: the number of \n line ends, plus a last line
+    /// without one. File.ReadLines also breaks on a lone \r, which made a
+    /// file with stray carriage returns count differently on a Windows
+    /// checkout (CRLF) than on the Linux CI runner (LF).
+    private static int CountLines(string path)
+    {
+        var text = File.ReadAllText(path);
+        if (text.Length == 0) return 0;
+        var lines = text.Count(c => c == '\n');
+        return text[^1] == '\n' ? lines : lines + 1;
     }
 
     private static Dictionary<string, int> ReadBaseline(string root)
