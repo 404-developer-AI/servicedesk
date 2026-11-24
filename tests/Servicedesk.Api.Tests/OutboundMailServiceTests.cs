@@ -806,6 +806,7 @@ public sealed class OutboundMailServiceTests
 
         public Task<IReadOnlyList<AttachmentRow>> ListByMailAsync(Guid mailId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<AttachmentRow>>(Array.Empty<AttachmentRow>());
+        public Task<IReadOnlyList<AttachmentRow>> ListTicketImagesAsync(Guid ticketId, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<AttachmentRow>> ListByEventAsync(long eventId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<AttachmentRow>>(Array.Empty<AttachmentRow>());
         public Task<bool> MarkReadyAsync(Guid id, string h, long s, string m, CancellationToken ct) => Task.FromResult(true);

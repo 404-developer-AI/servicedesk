@@ -91,6 +91,28 @@ public sealed class AttachmentRepository : IAttachmentRepository
         return rows.ToList();
     }
 
+    public async Task<IReadOnlyList<AttachmentRow>> ListTicketImagesAsync(Guid ticketId, CancellationToken ct)
+    {
+        var sql = SelectColumns + """
+             FROM attachments
+            WHERE id IN (
+                SELECT a.id
+                  FROM attachments a
+                  LEFT JOIN ticket_events e ON e.id = a.event_id
+                  LEFT JOIN mail_messages m ON a.owner_kind = 'Mail' AND m.id = a.owner_id
+                 WHERE a.mime_type ILIKE 'image/%'
+                   AND a.processing_state = 'Ready'
+                   AND ((a.owner_kind = 'Ticket' AND a.owner_id = @ticketId AND a.event_id IS NULL)
+                     OR (a.event_id IS NOT NULL AND e.ticket_id = @ticketId)
+                     OR (a.owner_kind = 'Mail' AND m.ticket_id = @ticketId)))
+            ORDER BY created_utc, id
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<AttachmentRow>(
+            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
     public async Task<IReadOnlyList<AttachmentRow>> ListByEventAsync(long eventId, CancellationToken ct)
     {
         var sql = SelectColumns + " FROM attachments WHERE event_id = @eventId ORDER BY created_utc, id";

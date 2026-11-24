@@ -282,7 +282,7 @@ public static class OrderManagementEndpoints
 
     private static (Guid UserId, string Role) Caller(HttpContext http) =>
         (ActorContext.GetUserId(http),
-         http.User.FindFirst(ClaimTypes.Role)!.Value);
+         ActorContext.GetRole(http.User));
 
     private static Task LogLinkAsync(
         HttpContext http, IAuditLogger audit, string eventType, Guid ticketId, string? orderNumber, Guid orderId, CancellationToken ct)

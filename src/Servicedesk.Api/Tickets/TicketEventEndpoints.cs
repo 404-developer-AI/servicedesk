@@ -203,7 +203,7 @@ public static partial class TicketEndpoints
         {
             req = req with { BodyHtml = htmlSanitizer.Sanitize(req.BodyHtml) };
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             // Images pasted while editing arrive as staged uploads. An edit
             // touches one note, so a handful is plenty; anything larger is a
@@ -252,7 +252,7 @@ public static partial class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
 
             // Queue-access check via parent ticket
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
@@ -272,7 +272,7 @@ public static partial class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
             if (ticket is null) return Results.NotFound();
@@ -305,7 +305,7 @@ public static partial class TicketEndpoints
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (ticket is null) return Results.NotFound();
@@ -333,7 +333,7 @@ public static partial class TicketEndpoints
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (ticket is null) return Results.NotFound();
@@ -361,7 +361,7 @@ public static partial class TicketEndpoints
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (ticket is null) return Results.NotFound();

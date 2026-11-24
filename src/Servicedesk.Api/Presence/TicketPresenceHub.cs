@@ -156,7 +156,7 @@ public sealed class TicketPresenceHub : Hub
     /// </summary>
     public async Task JoinAgentActivity()
     {
-        var role = Context.User?.FindFirstValue(ClaimTypes.Role);
+        var role = ActorContext.TryGetRole(Context.User);
         if (!string.Equals(role, "Agent", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
         {

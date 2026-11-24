@@ -190,7 +190,7 @@ public static class SlaEndpoints
     private static async Task LogAsync(IAuditLogger audit, HttpContext http, string eventType, string? target, object? payload)
     {
         var actor = http.User.FindFirst(ClaimTypes.Email)?.Value ?? "unknown";
-        var role = http.User.FindFirst(ClaimTypes.Role)?.Value ?? "unknown";
+        var role = ActorContext.TryGetRole(http.User) ?? "unknown";
         await audit.LogAsync(new AuditEvent(
             EventType: eventType,
             Actor: actor,

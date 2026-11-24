@@ -70,7 +70,7 @@ public static partial class TicketEndpoints
                 return Results.BadRequest(new { error = TicketAssigneeRule.Message, code = TicketAssigneeRule.Code });
 
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             // v0.0.105 — project tickets are pinned to the configured project
             // queue: a project create lands there regardless of the queue the

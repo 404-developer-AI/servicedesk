@@ -7,8 +7,8 @@ using Xunit;
 
 namespace Servicedesk.Api.Tests;
 
-/// The signed-in user's id is read in one place only (ActorContext), so
-/// "who is calling" cannot drift between endpoints (CLAUDE.md → Code structure;
+/// The signed-in user's id and role are read in one place only
+/// (ActorContext), so "who is calling" cannot drift between endpoints (CLAUDE.md → Code structure;
 /// ROADMAP #21).
 public sealed class ActorContextUsageTests
 {
@@ -27,6 +27,35 @@ public sealed class ActorContextUsageTests
         Assert.True(offenders.Count == 0,
             "Read the user id via ActorContext.GetUserId / TryGetUserId instead of the claim: "
             + string.Join(", ", offenders));
+    }
+
+    private static readonly Regex RoleRead = new(
+        @"FindFirst(Value)?\s*\(\s*ClaimTypes\.Role", RegexOptions.Compiled);
+
+    [Fact]
+    public void Only_ActorContext_reads_the_role_claim()
+    {
+        var offenders = RepoFiles.Enumerate("src", "*.cs")
+            .Where(p => !p.EndsWith($"Auth{Path.DirectorySeparatorChar}ActorContext.cs", StringComparison.Ordinal))
+            .Where(p => RoleRead.IsMatch(File.ReadAllText(p)))
+            .Select(RepoFiles.Relative)
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "Read the role via ActorContext.GetRole / TryGetRole instead of the claim: "
+            + string.Join(", ", offenders));
+    }
+
+    [Fact]
+    public void GetRole_returns_the_claim_and_throws_without_one()
+    {
+        var agent = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "Agent")], "test"));
+        Assert.Equal("Agent", ActorContext.GetRole(agent));
+        Assert.Equal("Agent", ActorContext.TryGetRole(agent));
+
+        var anonymous = new ClaimsPrincipal(new ClaimsIdentity());
+        Assert.Null(ActorContext.TryGetRole(anonymous));
+        Assert.Throws<InvalidOperationException>(() => ActorContext.GetRole(anonymous));
     }
 
     [Fact]

@@ -24,6 +24,9 @@ public static class UiThemes
     /// default yields a valid value.
     public const string Factory = Steaan;
 
+    /// The <c>user_preferences</c> key of a user's own choice.
+    public const string PreferenceKey = "ui:theme";
+
     public static readonly IReadOnlyList<string> All = new[] { Steaan, Light, Dark };
 
     /// Returns the canonical lowercase identifier when <paramref name="raw"/>

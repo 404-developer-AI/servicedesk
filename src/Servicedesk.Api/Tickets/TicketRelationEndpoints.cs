@@ -52,7 +52,7 @@ public static partial class TicketEndpoints
             ISettingsService settings, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
 
             IReadOnlyList<Guid>? accessibleQueueIds = null;
             if (!string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
@@ -97,7 +97,7 @@ public static partial class TicketEndpoints
                 return Results.BadRequest(new { error = "A ticket cannot be merged into itself." });
 
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             // Both tickets must be visible to the actor through queue-access.
             // Admins bypass; agents who can't see one side get a 404 so we
@@ -209,7 +209,7 @@ public static partial class TicketEndpoints
                 return Results.BadRequest(new { error = "A ticket cannot be its own parent." });
 
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var source = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (source is null) return Results.NotFound();
@@ -284,7 +284,7 @@ public static partial class TicketEndpoints
             CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var source = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (source is null) return Results.NotFound();
@@ -325,7 +325,7 @@ public static partial class TicketEndpoints
             ILinkedTicketPresetService presets, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var source = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (source is null) return Results.NotFound();
@@ -351,7 +351,7 @@ public static partial class TicketEndpoints
             ILinkedTicketPresetService presets, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var source = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (source is null) return Results.NotFound();
@@ -380,7 +380,7 @@ public static partial class TicketEndpoints
                 return Results.BadRequest(new { error = "newSubject is required." });
 
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var source = await tickets.GetAccessibleDetailAsync(queueAccess, userId, userRole, id, ct);
             if (source is null) return Results.NotFound();

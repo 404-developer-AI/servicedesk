@@ -55,7 +55,7 @@ public sealed class ActivityFeedHub : Hub
             if (enabled)
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, ViewersGroup);
-                var role = Context.User?.FindFirstValue(ClaimTypes.Role) ?? "Agent";
+                var role = ActorContext.GetRole(Context.User);
                 Subscribers[Context.ConnectionId] = new Subscriber(userId, role);
             }
         }

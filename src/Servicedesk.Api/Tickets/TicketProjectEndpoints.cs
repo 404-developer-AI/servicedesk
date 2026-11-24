@@ -216,7 +216,7 @@ public static class TicketProjectEndpoints
         IQueueAccessService queueAccess, CancellationToken ct)
     {
         var userId = ActorContext.GetUserId(http);
-        var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+        var role = ActorContext.GetRole(http.User);
 
         var detail = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, ticketId, ct);
         if (detail is null) return new AccessCheck(userId, role, null, Results.NotFound());

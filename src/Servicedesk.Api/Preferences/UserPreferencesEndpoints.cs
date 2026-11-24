@@ -1,9 +1,10 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using Dapper;
-using Npgsql;
 using Servicedesk.Api.Auth;
+using Servicedesk.Domain.Views;
 using Servicedesk.Infrastructure.Notifications;
+using Servicedesk.Infrastructure.Persistence.Views;
+using Servicedesk.Infrastructure.Preferences;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Api.Preferences;
@@ -25,29 +26,20 @@ public static class UserPreferencesEndpoints
         // unlocking the view brings each agent's own layout back.
         group.MapGet("/columns", async (
             Guid? viewId,
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, [FromServices] ISettingsService settings, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, [FromServices] IViewRepository views,
+            [FromServices] ISettingsService settings, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
 
             string? perView = null;
-            ViewColumnRow? view = null;
-            if (viewId.HasValue)
+            View? view = null;
+            if (viewId is Guid id)
             {
-                perView = await conn.ExecuteScalarAsync<string?>(
-                    new CommandDefinition(
-                        "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = @key",
-                        new { userId, key = $"columns:view:{viewId}" }, cancellationToken: ct));
-                view = await conn.QueryFirstOrDefaultAsync<ViewColumnRow>(
-                    new CommandDefinition(
-                        "SELECT columns AS Columns, allow_user_columns AS AllowUserColumns FROM views WHERE id = @viewId",
-                        new { viewId }, cancellationToken: ct));
+                perView = await prefs.GetAsync(userId, $"columns:view:{id}", ct);
+                view = await views.GetAsync(id, ct);
             }
 
-            var userDefault = await conn.ExecuteScalarAsync<string?>(
-                new CommandDefinition(
-                    "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'columns'",
-                    new { userId }, cancellationToken: ct));
+            var userDefault = await prefs.GetAsync(userId, "columns", ct);
             var adminDefault = await settings.GetAsync<string>(SettingKeys.Tickets.DefaultColumnLayout, ct);
 
             return Results.Ok(ColumnPreferenceResolver.Resolve(
@@ -60,7 +52,7 @@ public static class UserPreferencesEndpoints
         group.MapPut("/columns", async (
             Guid? viewId,
             [FromBody] UpdateColumnPreferenceRequest req,
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, [FromServices] IViewRepository views, CancellationToken ct) =>
         {
             if (!ColumnPreferenceResolver.IsValidLayout(req.Columns))
                 return Results.BadRequest(new { error = "Columns must be a comma-separated list of column ids." });
@@ -68,25 +60,10 @@ public static class UserPreferencesEndpoints
             var userId = ActorContext.GetUserId(http);
             var key = viewId.HasValue ? $"columns:view:{viewId}" : "columns";
 
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            if (viewId.HasValue)
-            {
-                var allow = await conn.ExecuteScalarAsync<bool?>(new CommandDefinition(
-                    "SELECT allow_user_columns FROM views WHERE id = @viewId",
-                    new { viewId }, cancellationToken: ct));
-                if (allow == false)
-                    return Results.Conflict(new { error = "Columns are set by this view." });
-            }
+            if (viewId is Guid id && await views.GetAsync(id, ct) is { AllowUserColumns: false })
+                return Results.Conflict(new { error = "Columns are set by this view." });
 
-            await conn.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO user_preferences (user_id, pref_key, pref_value)
-                VALUES (@userId, @key, @columns)
-                ON CONFLICT (user_id, pref_key) DO UPDATE
-                    SET pref_value = @columns, updated_utc = now()
-                """,
-                new { userId, key, columns = req.Columns }, cancellationToken: ct));
-
+            await prefs.SetAsync(userId, key, req.Columns, ct);
             return Results.NoContent();
         }).WithName("UpdateColumnPreference");
 
@@ -94,16 +71,11 @@ public static class UserPreferencesEndpoints
         // If viewId is provided, removes only the per-view override; otherwise removes the general default.
         group.MapDelete("/columns", async (
             Guid? viewId,
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
             var key = viewId.HasValue ? $"columns:view:{viewId}" : "columns";
-
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(
-                "DELETE FROM user_preferences WHERE user_id = @userId AND pref_key = @key",
-                new { userId, key }, cancellationToken: ct));
-
+            await prefs.DeleteAsync(userId, key, ct);
             return Results.NoContent();
         }).WithName("ResetColumnPreference");
 
@@ -111,24 +83,16 @@ public static class UserPreferencesEndpoints
 
         // GET /api/preferences/workspace — all workspace keys for the current user.
         group.MapGet("/workspace", async (
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-
-            var rows = await conn.QueryAsync<(string pref_key, string pref_value)>(
-                new CommandDefinition(
-                    "SELECT pref_key, pref_value FROM user_preferences WHERE user_id = @userId AND pref_key LIKE 'workspace:%'",
-                    new { userId }, cancellationToken: ct));
-
-            var dict = rows.ToDictionary(r => r.pref_key, r => r.pref_value);
-            return Results.Ok(dict);
+            return Results.Ok(await prefs.GetByPrefixAsync(userId, "workspace:", ct));
         }).WithName("GetWorkspacePreferences");
 
         // PUT /api/preferences/workspace — batch upsert workspace keys.
         group.MapPut("/workspace", async (
             [FromBody] SaveWorkspaceRequest req,
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
             if (req.Entries is not { Length: > 0 })
                 return Results.BadRequest("Entries must not be empty.");
@@ -138,43 +102,25 @@ public static class UserPreferencesEndpoints
 
             var userId = ActorContext.GetUserId(http);
 
-            // v0.1.25 — one statement for the whole snapshot instead of one
-            // upsert per key (up to 154 per save in the Performance monitor).
-            // Last value wins for a key sent twice (ON CONFLICT cannot touch
-            // the same row twice in one statement), and unchanged values are
-            // not rewritten, so a save with nothing new produces no dead rows.
+            // v0.1.25 — one statement for the whole snapshot. Last value wins
+            // for a key sent twice (ON CONFLICT cannot touch the same row
+            // twice in one statement).
             var latest = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var entry in req.Entries) latest[entry.Key] = entry.Value;
 
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO user_preferences (user_id, pref_key, pref_value)
-                SELECT @userId, k, v FROM unnest(@keys::text[], @values::text[]) AS e(k, v)
-                ON CONFLICT (user_id, pref_key) DO UPDATE
-                    SET pref_value = EXCLUDED.pref_value, updated_utc = now()
-                    WHERE user_preferences.pref_value IS DISTINCT FROM EXCLUDED.pref_value
-                """,
-                new { userId, keys = latest.Keys.ToArray(), values = latest.Values.ToArray() },
-                cancellationToken: ct));
+            await prefs.SetManyAsync(userId, latest, ct);
             return Results.NoContent();
         }).WithName("SaveWorkspacePreferences");
 
         // DELETE /api/preferences/workspace/{key} — remove one workspace key.
         group.MapDelete("/workspace/{key}", async (
             string key,
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
             if (!key.StartsWith("workspace:"))
                 return Results.BadRequest("Key must start with 'workspace:'.");
 
-            var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-
-            await conn.ExecuteAsync(new CommandDefinition(
-                "DELETE FROM user_preferences WHERE user_id = @userId AND pref_key = @key",
-                new { userId, key }, cancellationToken: ct));
-
+            await prefs.DeleteAsync(ActorContext.GetUserId(http), key, ct);
             return Results.NoContent();
         }).WithName("DeleteWorkspacePreference");
 
@@ -191,14 +137,9 @@ public static class UserPreferencesEndpoints
         // RequireCustomer when it lands.
 
         group.MapGet("/ui-theme", async (
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, [FromServices] ISettingsService settings, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, [FromServices] ISettingsService settings, CancellationToken ct) =>
         {
-            var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-
-            var userPref = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
-                new { userId }, cancellationToken: ct));
+            var userPref = await prefs.GetAsync(ActorContext.GetUserId(http), ThemeKey, ct);
             if (UiThemes.Normalize(userPref) is { } user)
                 return Results.Ok(new ThemePreference(user, "user"));
 
@@ -208,34 +149,20 @@ public static class UserPreferencesEndpoints
 
         group.MapPut("/ui-theme", async (
             [FromBody] UpdateUiThemeRequest req,
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
             var normalized = UiThemes.Normalize(req.Theme);
             if (normalized is null)
                 return Results.BadRequest(new { error = "Theme must be 'steaan', 'light' or 'dark'." });
 
-            var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO user_preferences (user_id, pref_key, pref_value)
-                VALUES (@userId, 'ui:theme', @value)
-                ON CONFLICT (user_id, pref_key) DO UPDATE
-                    SET pref_value = @value, updated_utc = now()
-                """,
-                new { userId, value = normalized }, cancellationToken: ct));
-
+            await prefs.SetAsync(ActorContext.GetUserId(http), ThemeKey, normalized, ct);
             return Results.NoContent();
         }).WithName("UpdateUiThemePreference");
 
         group.MapDelete("/ui-theme", async (
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
-            var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(
-                "DELETE FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
-                new { userId }, cancellationToken: ct));
+            await prefs.DeleteAsync(ActorContext.GetUserId(http), ThemeKey, ct);
             return Results.NoContent();
         }).WithName("ResetUiThemePreference");
 
@@ -249,36 +176,21 @@ public static class UserPreferencesEndpoints
         // stale path simply has no effect.
 
         group.MapGet("/pinned-features", async (
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
-            var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:pinned-features'",
-                new { userId }, cancellationToken: ct));
+            var raw = await prefs.GetAsync(ActorContext.GetUserId(http), PinnedFeaturesKey, ct);
             return Results.Ok(new PinnedFeaturesPreference(ParsePinnedPaths(raw)));
         }).WithName("GetPinnedFeatures");
 
         group.MapPut("/pinned-features", async (
             [FromBody] UpdatePinnedFeaturesRequest req,
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
             var clean = NormalizePinnedPaths(req.Paths);
             if (clean is null)
                 return Results.BadRequest(new { error = "Invalid pinned-features payload." });
 
-            var userId = ActorContext.GetUserId(http);
-            var value = JsonSerializer.Serialize(clean);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO user_preferences (user_id, pref_key, pref_value)
-                VALUES (@userId, 'nav:pinned-features', @value)
-                ON CONFLICT (user_id, pref_key) DO UPDATE
-                    SET pref_value = @value, updated_utc = now()
-                """,
-                new { userId, value }, cancellationToken: ct));
-
+            await prefs.SetAsync(ActorContext.GetUserId(http), PinnedFeaturesKey, JsonSerializer.Serialize(clean), ct);
             return Results.Ok(new PinnedFeaturesPreference(clean));
         }).WithName("UpdatePinnedFeatures");
 
@@ -292,36 +204,21 @@ public static class UserPreferencesEndpoints
         // never re-saved.
 
         group.MapGet("/pinned-views", async (
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
-            var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:pinned-views'",
-                new { userId }, cancellationToken: ct));
+            var raw = await prefs.GetAsync(ActorContext.GetUserId(http), PinnedViewsKey, ct);
             return Results.Ok(new PinnedViewsPreference(ParsePinnedViewIds(raw)));
         }).WithName("GetPinnedViews");
 
         group.MapPut("/pinned-views", async (
             [FromBody] UpdatePinnedViewsRequest req,
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
             var clean = NormalizePinnedViewIds(req.Ids);
             if (clean is null)
                 return Results.BadRequest(new { error = "Invalid pinned-views payload." });
 
-            var userId = ActorContext.GetUserId(http);
-            var value = JsonSerializer.Serialize(clean);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO user_preferences (user_id, pref_key, pref_value)
-                VALUES (@userId, 'nav:pinned-views', @value)
-                ON CONFLICT (user_id, pref_key) DO UPDATE
-                    SET pref_value = @value, updated_utc = now()
-                """,
-                new { userId, value }, cancellationToken: ct));
-
+            await prefs.SetAsync(ActorContext.GetUserId(http), PinnedViewsKey, JsonSerializer.Serialize(clean), ct);
             return Results.Ok(new PinnedViewsPreference(clean));
         }).WithName("UpdatePinnedViews");
 
@@ -339,35 +236,21 @@ public static class UserPreferencesEndpoints
         // falls back to the dashboard — no broken navigation.
 
         group.MapGet("/post-close-redirect", async (
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
-            var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:post-close-redirect'",
-                new { userId }, cancellationToken: ct));
+            var raw = await prefs.GetAsync(ActorContext.GetUserId(http), PostCloseRedirectKey, ct);
             return Results.Ok(new PostCloseRedirectPreference(NormalizePostCloseRedirect(raw) ?? "dashboard"));
         }).WithName("GetPostCloseRedirect");
 
         group.MapPut("/post-close-redirect", async (
             [FromBody] UpdatePostCloseRedirectRequest req,
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
             var normalized = NormalizePostCloseRedirect(req.Target);
             if (normalized is null)
                 return Results.BadRequest(new { error = "Target must be 'dashboard', 'timesheet', or 'view:<guid>'." });
 
-            var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO user_preferences (user_id, pref_key, pref_value)
-                VALUES (@userId, 'nav:post-close-redirect', @value)
-                ON CONFLICT (user_id, pref_key) DO UPDATE
-                    SET pref_value = @value, updated_utc = now()
-                """,
-                new { userId, value = normalized }, cancellationToken: ct));
-
+            await prefs.SetAsync(ActorContext.GetUserId(http), PostCloseRedirectKey, normalized, ct);
             return Results.Ok(new PostCloseRedirectPreference(normalized));
         }).WithName("UpdatePostCloseRedirect");
 
@@ -376,14 +259,9 @@ public static class UserPreferencesEndpoints
         // means the switch's default (tags on, replies on, likes off). Only
         // the caller's own rows; the app-wide mail switch still wins.
         group.MapGet("/notification-mail", async (
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
-            var userId = ActorContext.GetUserId(http);
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            var rows = (await conn.QueryAsync<(string Key, string Value)>(new CommandDefinition(
-                "SELECT pref_key, pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = ANY(@keys)",
-                new { userId, keys = MailPrefs.Select(p => p.Key).ToArray() }, cancellationToken: ct)))
-                .ToDictionary(r => r.Key, r => r.Value);
+            var rows = await prefs.GetManyAsync(ActorContext.GetUserId(http), MailPrefs.Select(p => p.Key).ToArray(), ct);
             bool Read(NotificationMailPreference p)
                 => rows.TryGetValue(p.Key, out var v) ? v == "true" || (p.DefaultOn && v != "false") : p.DefaultOn;
             return Results.Ok(new NotificationMailPreferences(
@@ -394,31 +272,24 @@ public static class UserPreferencesEndpoints
 
         group.MapPut("/notification-mail", async (
             [FromBody] UpdateNotificationMailPreferences req,
-            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] IUserPreferenceStore prefs, CancellationToken ct) =>
         {
             if (req is null) return Results.BadRequest(new { error = "Body is required." });
-            var userId = ActorContext.GetUserId(http);
-            var changes = new List<(string Key, bool On)>();
-            if (req.Tags is { } t) changes.Add((NotificationPreferenceKeys.MentionEmail, t));
-            if (req.Replies is { } r) changes.Add((NotificationPreferenceKeys.ReplyEmail, r));
-            if (req.Likes is { } l) changes.Add((NotificationPreferenceKeys.LikeEmail, l));
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            foreach (var (key, on) in changes)
-            {
-                await conn.ExecuteAsync(new CommandDefinition(
-                    """
-                    INSERT INTO user_preferences (user_id, pref_key, pref_value)
-                    VALUES (@userId, @key, @value)
-                    ON CONFLICT (user_id, pref_key) DO UPDATE
-                        SET pref_value = @value, updated_utc = now()
-                    """,
-                    new { userId, key, value = on ? "true" : "false" }, cancellationToken: ct));
-            }
+            var changes = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (req.Tags is { } t) changes[NotificationPreferenceKeys.MentionEmail] = t ? "true" : "false";
+            if (req.Replies is { } r) changes[NotificationPreferenceKeys.ReplyEmail] = r ? "true" : "false";
+            if (req.Likes is { } l) changes[NotificationPreferenceKeys.LikeEmail] = l ? "true" : "false";
+            await prefs.SetManyAsync(ActorContext.GetUserId(http), changes, ct);
             return Results.NoContent();
         }).WithName("UpdateNotificationMailPreferences");
 
         return app;
     }
+
+    private const string ThemeKey = UiThemes.PreferenceKey;
+    private const string PinnedFeaturesKey = "nav:pinned-features";
+    private const string PinnedViewsKey = "nav:pinned-views";
+    private const string PostCloseRedirectKey = "nav:post-close-redirect";
 
     private static readonly NotificationMailPreference[] MailPrefs =
     {
@@ -516,11 +387,6 @@ public static class UserPreferencesEndpoints
     }
 
     public sealed record ColumnPreference(string Columns, string Source, bool Locked = false);
-    public sealed class ViewColumnRow
-    {
-        public string? Columns { get; init; }
-        public bool AllowUserColumns { get; init; }
-    }
     public sealed record UpdateColumnPreferenceRequest(string Columns);
     public sealed record WorkspaceEntry(string Key, string Value);
     public sealed record SaveWorkspaceRequest(WorkspaceEntry[] Entries);

@@ -30,7 +30,7 @@ public static class TicketExportEndpoints
             [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
             var detail = await repo.GetAccessibleDetailAsync(queueAccess, userId, role, id, ct);
             if (detail is null) return Results.NotFound();
 

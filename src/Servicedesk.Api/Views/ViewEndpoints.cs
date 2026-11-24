@@ -27,7 +27,7 @@ public static class ViewEndpoints
         group.MapGet("/", async (HttpContext http, IViewAccessService viewAccess, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
             return Results.Ok(await viewAccess.GetAccessibleViewsAsync(userId, role, ct));
         }).WithName("ListViews")
           .RequireAuthorization(AuthorizationPolicies.RequireAgent);
@@ -48,7 +48,7 @@ public static class ViewEndpoints
             if (view is null) return Results.NotFound();
 
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
             if (!await viewAccess.HasViewAccessAsync(userId, role, id, ct))
                 return Results.NotFound();
 

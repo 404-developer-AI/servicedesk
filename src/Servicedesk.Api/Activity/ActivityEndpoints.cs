@@ -84,5 +84,5 @@ public static class ActivityEndpoints
     }
 
     private static string ResolveRole(HttpContext httpContext)
-        => httpContext.User?.FindFirstValue(ClaimTypes.Role) ?? "Agent";
+        => ActorContext.GetRole(httpContext.User);
 }

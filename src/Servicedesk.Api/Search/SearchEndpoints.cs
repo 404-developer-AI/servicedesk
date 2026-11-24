@@ -142,7 +142,7 @@ public static class SearchEndpoints
         HttpContext http, IQueueAccessService queueAccess, IUserService users, CancellationToken ct)
     {
         var userId = ActorContext.GetUserId(http);
-        var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+        var role = ActorContext.GetRole(http.User);
 
         // Admins bypass both queue scoping and feature gating — no need to
         // hit the DB for either.

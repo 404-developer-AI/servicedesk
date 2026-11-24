@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using Dapper;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
@@ -287,7 +286,7 @@ public static class TelavoxEndpoints
 
     private static async Task<IResult> ListAgentLinks(
         ITelavoxAgentLinkStore links,
-        [FromServices] Npgsql.NpgsqlDataSource dataSource,
+        Servicedesk.Infrastructure.Auth.IUserService users,
         CancellationToken ct)
     {
         // Two-step read so the SPA doesn't have to chase a second
@@ -301,18 +300,12 @@ public static class TelavoxEndpoints
             return Results.Ok(new { items = Array.Empty<object>() });
         }
 
-        var userIds = rows.Select(r => r.UserId).ToArray();
-        await using var conn = await dataSource.OpenConnectionAsync(ct);
-        const string sql = """
-            SELECT id          AS "Id",
-                   email       AS "Email",
-                   role_name   AS "RoleName"
-              FROM users
-             WHERE id = ANY(@Ids)
-            """;
-        var emails = (await conn.QueryAsync<UserRowDto>(new CommandDefinition(
-                sql, new { Ids = userIds }, cancellationToken: ct)))
-            .ToDictionary(u => u.Id, u => (u.Email, u.RoleName));
+        // One lookup per link: admin-only and bounded by the agent count.
+        var emails = new Dictionary<Guid, (string? Email, string? RoleName)>();
+        foreach (var userId in rows.Select(r => r.UserId).Distinct())
+        {
+            if (await users.FindByIdAsync(userId, ct) is { } u) emails[userId] = (u.Email, u.RoleName);
+        }
 
         return Results.Ok(new
         {
@@ -550,12 +543,5 @@ public static class TelavoxEndpoints
             }
         }
         return true;
-    }
-
-    private sealed class UserRowDto
-    {
-        public Guid Id { get; set; }
-        public string Email { get; set; } = string.Empty;
-        public string RoleName { get; set; } = string.Empty;
     }
 }

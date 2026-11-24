@@ -16,7 +16,7 @@ public static class AgentQueueEndpoints
             HttpContext http, IQueueAccessService svc, ITaxonomyRepository taxonomy, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
 
             var accessibleIds = await svc.GetAccessibleQueueIdsAsync(userId, role, ct);
             if (accessibleIds.Count == 0)

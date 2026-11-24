@@ -29,7 +29,7 @@ public static class SettingEndpoints
             CancellationToken ct) =>
         {
             var actor = http.User.FindFirst(ClaimTypes.Email)?.Value ?? "unknown";
-            var actorRole = http.User.FindFirst(ClaimTypes.Role)?.Value ?? "unknown";
+            var actorRole = ActorContext.TryGetRole(http.User) ?? "unknown";
             try
             {
                 await svc.SetAsync<string>(key, req.Value, actor, actorRole, ct);

@@ -241,6 +241,7 @@ public sealed class KbPublicEndpointsTests : IClassFixture<SharedHostFixture>
 
         public Task<IReadOnlyList<AttachmentRow>> ListByMailAsync(Guid mailId, CancellationToken ct) =>
             throw new NotImplementedException();
+        public Task<IReadOnlyList<AttachmentRow>> ListTicketImagesAsync(Guid ticketId, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<AttachmentRow>> ListByEventAsync(long eventId, CancellationToken ct) =>
             throw new NotImplementedException();
         public Task<bool> MarkReadyAsync(Guid attachmentId, string contentHash, long sizeBytes, string mimeType, CancellationToken ct) =>

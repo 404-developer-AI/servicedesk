@@ -55,7 +55,7 @@ public static partial class TicketEndpoints
             IStatusGateService gates, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var current = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (current is null) return Results.NotFound();
@@ -79,7 +79,7 @@ public static partial class TicketEndpoints
             IFirstOpenGateService gates, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var current = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (current is null) return Results.NotFound();
@@ -101,7 +101,7 @@ public static partial class TicketEndpoints
             IFirstOpenGateService gates, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var current = await tickets.GetAccessibleDetailAsync(queueAccess, userId, userRole, id, ct);
             if (current is null) return Results.NotFound();

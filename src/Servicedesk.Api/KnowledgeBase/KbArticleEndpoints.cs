@@ -129,7 +129,7 @@ public static class KbArticleEndpoints
             // Agents may edit any article that's still in Draft or Internal —
             // collaborative editing is the point of a KB. Once Published or
             // Archived an article is admin-territory until it flips back.
-            var role = http.User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+            var role = ActorContext.GetRole(http.User);
             if (role != "Admin" && !KbArticleStatus.IsAgentReachable(existing.Status))
                 return Results.Forbid();
 
@@ -190,7 +190,7 @@ public static class KbArticleEndpoints
             // Anything that lands on or moves away from Published/Archived
             // requires Admin. The check is server-side; the UI hides the
             // controls but defence-in-depth.
-            var role = http.User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+            var role = ActorContext.GetRole(http.User);
             if (role != "Admin")
             {
                 var bothAgentReachable =

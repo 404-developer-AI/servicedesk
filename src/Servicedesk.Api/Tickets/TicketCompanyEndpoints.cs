@@ -55,7 +55,7 @@ public static partial class TicketEndpoints
                 return Results.BadRequest(new { error = "companyId is required." });
 
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var current = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (current is null) return Results.NotFound();
@@ -141,7 +141,7 @@ public static partial class TicketEndpoints
                 return Results.BadRequest(new { error = "contactId is required." });
 
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var current = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (current is null) return Results.NotFound();

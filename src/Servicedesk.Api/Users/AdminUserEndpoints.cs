@@ -787,7 +787,7 @@ public static class AdminUserEndpoints
         await audit.LogAsync(new AuditEvent(
             EventType: eventType,
             Actor: httpContext.User.Identity?.Name ?? "unknown",
-            ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "Admin",
+            ActorRole: ActorContext.TryGetRole(httpContext.User) ?? "Admin",
             Target: target,
             ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
             UserAgent: httpContext.Request.Headers.UserAgent.ToString(),

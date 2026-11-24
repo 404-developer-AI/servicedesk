@@ -185,6 +185,7 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutContactPusher, AdsolutContactPusher>();
         services.AddSingleton<IAdsolutContactsReconciler, AdsolutContactsReconciler>();
         services.AddSingleton<IAdsolutCoverageQuery, AdsolutCoverageQuery>();
+        services.AddSingleton<IAdsolutCoverageLinks, AdsolutCoverageLinks>();
         services.AddSingleton<IAdsolutSyncWorkerSignal, AdsolutSyncWorkerSignal>();
         services.AddHttpClient(AdsolutHttpInvoker.HttpClientName);
         services.AddHostedService<AdsolutSyncWorker>();
@@ -432,15 +433,7 @@ public static class DependencyInjection
         // settings-resolved default country code, registered as singleton.
         services.AddSingleton<IContactPhoneNormalizer, ContactPhoneNormalizer>();
 
-        services.AddSingleton<ICompanyRepository, CompanyRepository>();
-        services.AddSingleton<ITicketRepository, TicketRepository>();
-        services.AddSingleton<ITicketTimelineReader, TicketTimelineReader>();
-        services.AddSingleton<ITicketProjectRepository, TicketProjectRepository>();
-        services.AddSingleton<IRecentTicketsService, RecentTicketsService>();
-        services.AddSingleton<IViewRepository, ViewRepository>();
-        services.AddSingleton<IViewGroupRepository, ViewGroupRepository>();
-        services.AddSingleton<IQueueAccessService, QueueAccessService>();
-        services.AddSingleton<IViewAccessService, ViewAccessService>();
+        Persistence.CoreRepositories.AddCoreRepositories(services);
 
         services.AddSingleton<IBlobStoreHealth, BlobStoreHealth>();
         services.AddSingleton<LocalFileBlobStore>();

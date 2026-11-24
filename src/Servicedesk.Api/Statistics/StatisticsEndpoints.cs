@@ -185,7 +185,7 @@ public static class StatisticsEndpoints
             await audit.LogAsync(new AuditEvent(
                 EventType: Events.Deleted,
                 Actor: http.User.Identity?.Name ?? "unknown",
-                ActorRole: http.User.FindFirst(ClaimTypes.Role)?.Value ?? "Agent",
+                ActorRole: ActorContext.TryGetRole(http.User) ?? "Agent",
                 Target: id.ToString(),
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
@@ -207,7 +207,7 @@ public static class StatisticsEndpoints
             await audit.LogAsync(new AuditEvent(
                 EventType: Events.Assigned,
                 Actor: http.User.Identity?.Name ?? "unknown",
-                ActorRole: http.User.FindFirst(ClaimTypes.Role)?.Value ?? "Agent",
+                ActorRole: ActorContext.TryGetRole(http.User) ?? "Agent",
                 Target: id.ToString(),
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
@@ -287,7 +287,7 @@ public static class StatisticsEndpoints
         await audit.LogAsync(new AuditEvent(
             EventType: eventType,
             Actor: http.User.Identity?.Name ?? "unknown",
-            ActorRole: http.User.FindFirst(ClaimTypes.Role)?.Value ?? "Agent",
+            ActorRole: ActorContext.TryGetRole(http.User) ?? "Agent",
             Target: tile.Id.ToString(),
             ClientIp: http.Connection.RemoteIpAddress?.ToString(),
             UserAgent: http.Request.Headers.UserAgent.ToString(),

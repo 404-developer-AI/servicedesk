@@ -136,7 +136,7 @@ public static partial class TicketEndpoints
     internal static TicketMutationActor ResolveMutationActor(HttpContext http)
     {
         var userId = ActorContext.GetUserId(http);
-        var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+        var userRole = ActorContext.GetRole(http.User);
         var (actor, role) = ActorContext.Resolve(http);
         return new TicketMutationActor(
             userId, userRole, actor, role,
@@ -333,7 +333,7 @@ public static partial class TicketEndpoints
     /// Returns an empty list for tickets that aren't splits.
     private static async Task<IReadOnlyList<object>> BuildSplitDescriptionAttachmentsAsync(
         Servicedesk.Domain.Tickets.Ticket ticket, string? createdEventMetadataJson,
-        Npgsql.NpgsqlDataSource dataSource, CancellationToken ct)
+        Servicedesk.Infrastructure.Mail.Attachments.IAttachmentRepository attachments, CancellationToken ct)
     {
         if (ticket.SplitFromTicketId is null) return Array.Empty<object>();
 
@@ -358,18 +358,9 @@ public static partial class TicketEndpoints
 
         if (sourceMailMessageId is null) return Array.Empty<object>();
 
-        const string sql = """
-            SELECT a.id, a.original_filename, a.mime_type, a.size_bytes
-            FROM attachments a
-            WHERE a.owner_kind = 'Mail'
-              AND a.owner_id = @mailId
-              AND a.processing_state = 'Ready'
-              AND a.is_inline = FALSE
-            ORDER BY a.created_utc, a.id
-            """;
-        await using var conn = await dataSource.OpenConnectionAsync(ct);
-        var rows = await Dapper.SqlMapper.QueryAsync<(Guid Id, string OriginalFilename, string MimeType, long SizeBytes)>(
-            conn, new Dapper.CommandDefinition(sql, new { mailId = sourceMailMessageId.Value }, cancellationToken: ct));
+        // The mail's ready, non-inline attachments, in arrival order.
+        var rows = (await attachments.ListByMailAsync(sourceMailMessageId.Value, ct))
+            .Where(a => a.ProcessingState == "Ready" && !a.IsInline);
 
         var sourceTicketId = ticket.SplitFromTicketId.Value;
         var mailId = sourceMailMessageId.Value;

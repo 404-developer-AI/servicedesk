@@ -37,6 +37,12 @@ public interface IAttachmentRepository
     /// at post-submit time; nothing else writes to the column.
     Task<IReadOnlyList<AttachmentRow>> ListByEventAsync(long eventId, CancellationToken ct);
 
+    /// Every ready image of a ticket, oldest first, over the three ownership
+    /// paths: uploads staged on the ticket (no event yet), attachments on its
+    /// events, and inbound-mail attachments (inline screenshots included) of
+    /// its mails. Feeds the AI image picker.
+    Task<IReadOnlyList<AttachmentRow>> ListTicketImagesAsync(Guid ticketId, CancellationToken ct);
+
     /// Worker call after a successful blob-write: records the hash + actual
     /// size + sniffed MIME, flips <c>processing_state</c> to Ready in one
     /// shot (6b skips the intermediate 'Stored' step — no async text-extract

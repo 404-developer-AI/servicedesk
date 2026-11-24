@@ -155,7 +155,7 @@ public static class AuthEndpoints
         await audit.LogAsync(new AuditEvent(
             EventType: AuthEventTypes.SessionRevoked,
             Actor: httpContext.User.FindFirst(ClaimTypes.Email)?.Value ?? "unknown",
-            ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "unknown",
+            ActorRole: ActorContext.TryGetRole(httpContext.User) ?? "unknown",
             Target: userId.Value.ToString(),
             ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
             UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
@@ -176,7 +176,7 @@ public static class AuthEndpoints
         await audit.LogAsync(new AuditEvent(
             EventType: AuthEventTypes.SessionRevoked,
             Actor: httpContext.User.FindFirst(ClaimTypes.Email)?.Value ?? "unknown",
-            ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "unknown",
+            ActorRole: ActorContext.TryGetRole(httpContext.User) ?? "unknown",
             Target: userId.Value.ToString(),
             ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
             UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
@@ -421,7 +421,7 @@ public static class AuthEndpoints
             await audit.LogAsync(new AuditEvent(
                 EventType: nowLocked ? AuthEventTypes.LoginLockedOut : AuthEventTypes.TwoFactorChallengeFailed,
                 Actor: httpContext.User.Identity?.Name ?? userId.ToString(),
-                ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+                ActorRole: ActorContext.TryGetRole(httpContext.User) ?? "anon",
                 Target: userId.ToString(),
                 ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
@@ -444,7 +444,7 @@ public static class AuthEndpoints
         await audit.LogAsync(new AuditEvent(
             EventType: AuthEventTypes.TwoFactorChallengeSuccess,
             Actor: httpContext.User.Identity?.Name ?? userId.ToString(),
-            ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+            ActorRole: ActorContext.TryGetRole(httpContext.User) ?? "anon",
             Target: userId.ToString(),
             ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
             UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
@@ -470,7 +470,7 @@ public static class AuthEndpoints
             await audit.LogAsync(new AuditEvent(
                 EventType: AuthEventTypes.Logout,
                 Actor: httpContext.User.Identity?.Name ?? "anon",
-                ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+                ActorRole: ActorContext.TryGetRole(httpContext.User) ?? "anon",
                 Target: sessionId.ToString(),
                 ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: httpContext.Request.Headers.UserAgent.ToString()), ct);
@@ -504,7 +504,7 @@ public static class AuthEndpoints
         // EnsureCsrfCookie) — without this, sign-out itself is unreachable.
         EnsureCsrfCookie(httpContext);
         var email = httpContext.User.FindFirst(ClaimTypes.Email)?.Value ?? "";
-        var role = httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "";
+        var role = ActorContext.TryGetRole(httpContext.User) ?? "";
         var amr = httpContext.User.FindFirst(SessionAuthenticationHandler.AmrClaimType)?.Value ?? AmrPassword;
         var twoFactorEnabled = await totp.IsEnabledAsync(userId, ct);
 
@@ -550,12 +550,11 @@ public static class AuthEndpoints
         // v0.0.44 — Effective theme (steaan | light | dark, v0.0.108)
         // resolved server-side so the first paint after login agrees with
         // the saved preference (or the admin default when the user has not
-        // yet picked). Cascade: user pref → Ui.DefaultTheme → UiThemes.Factory. The NpgsqlDataSource is
-        // resolved lazily off `RequestServices` so test fixtures that
-        // don't register it (the anonymous-/me round-trip never reaches
-        // this branch) still build the endpoint without a DI failure.
-        var dataSource = httpContext.RequestServices.GetService<Npgsql.NpgsqlDataSource>();
-        var effectiveTheme = await ResolveEffectiveThemeAsync(userId, dataSource, settings, ct);
+        // yet picked). Cascade: user pref → Ui.DefaultTheme → UiThemes.Factory. The preference store is
+        // resolved lazily off `RequestServices` so test fixtures without a
+        // database (the anonymous-/me round-trip never reaches this
+        // branch) still build the endpoint without a DI failure.
+        var effectiveTheme = await ResolveEffectiveThemeAsync(userId, httpContext.RequestServices, settings, ct);
 
         // Global SLA switch for the SPA; read directly on purpose, same key/default
         // as SlaEngine.IsEnabledAsync (ARCHITECTURE.md → Settings, exceptions).
@@ -628,24 +627,18 @@ public static class AuthEndpoints
 
     private static async Task<string> ResolveEffectiveThemeAsync(
         Guid userId,
-        Npgsql.NpgsqlDataSource? dataSource,
+        IServiceProvider services,
         ISettingsService settings,
         CancellationToken ct)
     {
         try
         {
-            // Tests can run without a real Postgres registered — in that
-            // case the per-user override lookup is skipped and we fall
-            // straight through to the admin default → factory floor.
-            if (dataSource is not null)
-            {
-                await using var conn = await dataSource.OpenConnectionAsync(ct);
-                var raw = await Dapper.SqlMapper.ExecuteScalarAsync<string?>(conn, new Dapper.CommandDefinition(
-                    "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
-                    new { userId }, cancellationToken: ct));
-                var user = UiThemes.Normalize(raw);
-                if (user is not null) return user;
-            }
+            // Tests can run without a preference store — in that case the
+            // per-user override lookup is skipped and we fall straight
+            // through to the admin default → factory floor.
+            if (services.GetService<Servicedesk.Infrastructure.Preferences.IUserPreferenceStore>() is { } prefs
+                && UiThemes.Normalize(await prefs.GetAsync(userId, UiThemes.PreferenceKey, ct)) is { } user)
+                return user;
 
             return UiThemes.NormalizeOrFactory(await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct));
         }
@@ -681,7 +674,7 @@ public static class AuthEndpoints
         await audit.LogAsync(new AuditEvent(
             EventType: AuthEventTypes.TwoFactorEnrollStarted,
             Actor: httpContext.User.Identity?.Name ?? userId.Value.ToString(),
-            ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+            ActorRole: ActorContext.TryGetRole(httpContext.User) ?? "anon",
             Target: userId.Value.ToString(),
             ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
             UserAgent: httpContext.Request.Headers.UserAgent.ToString()), ct);
@@ -723,7 +716,7 @@ public static class AuthEndpoints
         await audit.LogAsync(new AuditEvent(
             EventType: AuthEventTypes.TwoFactorEnrolled,
             Actor: httpContext.User.Identity?.Name ?? userId.Value.ToString(),
-            ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+            ActorRole: ActorContext.TryGetRole(httpContext.User) ?? "anon",
             Target: userId.Value.ToString(),
             ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
             UserAgent: httpContext.Request.Headers.UserAgent.ToString()), ct);
@@ -763,7 +756,7 @@ public static class AuthEndpoints
             await audit.LogAsync(new AuditEvent(
                 EventType: nowLocked ? AuthEventTypes.LoginLockedOut : AuthEventTypes.TwoFactorChallengeFailed,
                 Actor: httpContext.User.Identity?.Name ?? userId.Value.ToString(),
-                ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+                ActorRole: ActorContext.TryGetRole(httpContext.User) ?? "anon",
                 Target: userId.Value.ToString(),
                 ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
@@ -777,7 +770,7 @@ public static class AuthEndpoints
         await audit.LogAsync(new AuditEvent(
             EventType: AuthEventTypes.TwoFactorDisabled,
             Actor: httpContext.User.Identity?.Name ?? userId.Value.ToString(),
-            ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+            ActorRole: ActorContext.TryGetRole(httpContext.User) ?? "anon",
             Target: userId.Value.ToString(),
             ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
             UserAgent: httpContext.Request.Headers.UserAgent.ToString()), ct);
@@ -861,7 +854,7 @@ public static class AuthEndpoints
     /// never a customer (customers enroll through /api/portal/auth).
     private static bool IsStaffPrincipal(HttpContext httpContext) =>
         httpContext.User.Identity?.IsAuthenticated == true
-        && httpContext.User.FindFirst(ClaimTypes.Role)?.Value is "Agent" or "Admin";
+        && ActorContext.TryGetRole(httpContext.User) is "Agent" or "Admin";
 
     /// Feeds a failed second-factor (or step-up) attempt into the same
     /// lockout counter the password step uses, with the same settings.

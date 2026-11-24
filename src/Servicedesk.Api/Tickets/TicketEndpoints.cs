@@ -94,7 +94,7 @@ public static partial class TicketEndpoints
             }
 
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
 
             // Queue-access enforcement: admins get null (no filter), agents
             // get their assigned queue list. An agent with zero queues gets
@@ -157,10 +157,10 @@ public static partial class TicketEndpoints
             IQueueAccessService queueAccess,
             IMailTimelineEnricher mailEnricher, ISettingsService settings,
             Servicedesk.Infrastructure.Auth.IUserService users,
-            [FromServices] Npgsql.NpgsqlDataSource dataSource, CancellationToken ct) =>
+            Servicedesk.Infrastructure.Mail.Attachments.IAttachmentRepository attachments, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
 
             // v0.1.33 — the latest page of the timeline only (older events via
             // GET /{id}/events), plus what the page used to compute over all
@@ -211,7 +211,7 @@ public static partial class TicketEndpoints
             // source ticket's mail-attachment endpoint, which the agent can
             // already access (split requires queue access on the source).
             var descriptionAttachments = await BuildSplitDescriptionAttachmentsAsync(
-                detail.Ticket, first.CreatedEventMetadataJson, dataSource, ct);
+                detail.Ticket, first.CreatedEventMetadataJson, attachments, ct);
 
             // v0.1.0 — a system ticket opened for a portal registration
             // carries the pending account so the detail page can render the
@@ -292,7 +292,7 @@ public static partial class TicketEndpoints
                 return Results.BadRequest(new { error = "untilId must be a positive event id." });
 
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
             var ticket = await repo.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
             if (ticket is null) return Results.NotFound();
 

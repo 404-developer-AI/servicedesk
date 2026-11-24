@@ -52,7 +52,7 @@ public static partial class TicketEndpoints
         {
             req = req with { BodyHtml = htmlSanitizer.Sanitize(req.BodyHtml) };
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (ticket is null) return Results.NotFound();
@@ -155,7 +155,7 @@ public static partial class TicketEndpoints
             ISettingsService settings, ISignatureComposer signatures, CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, userRole, id, ct);
             if (ticket is null) return Results.NotFound();
@@ -180,7 +180,7 @@ public static partial class TicketEndpoints
             CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var userRole = ActorContext.GetRole(http.User);
 
             var context = await suggestions.GetTicketContextAsync(id, ct);
             if (context is null) return Results.NotFound();

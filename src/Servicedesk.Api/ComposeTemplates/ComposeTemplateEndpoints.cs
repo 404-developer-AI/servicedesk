@@ -296,7 +296,7 @@ public static class ComposeTemplateEndpoints
             if (ticketId is Guid ticketGuid)
             {
                 var userId = ActorContext.GetUserId(http);
-                var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+                var role = ActorContext.GetRole(http.User);
                 var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, ticketGuid, ct);
                 if (ticket is null) return Results.NotFound();
 

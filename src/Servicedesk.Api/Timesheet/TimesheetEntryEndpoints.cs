@@ -231,7 +231,7 @@ public static class TimesheetEntryEndpoints
     /// both come through here).
     private static Task<QueueAccessScope> TicketScopeAsync(
         IQueueAccessService queueAccess, HttpContext http, Guid userId, CancellationToken ct) =>
-        queueAccess.GetScopeAsync(userId, http.User.FindFirst(ClaimTypes.Role)?.Value ?? "", ct);
+        queueAccess.GetScopeAsync(userId, ActorContext.GetRole(http.User), ct);
 
     private static bool TryParseDate(string? raw, out DateOnly date)
     {

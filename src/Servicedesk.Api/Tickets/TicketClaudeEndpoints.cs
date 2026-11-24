@@ -54,51 +54,23 @@ public static class TicketClaudeEndpoints
         HttpContext http,
         ITicketRepository tickets,
         IQueueAccessService queueAccess,
-        [FromServices] Npgsql.NpgsqlDataSource dataSource,
+        Servicedesk.Infrastructure.Mail.Attachments.IAttachmentRepository attachments,
         CancellationToken ct)
     {
         var userId = ActorContext.GetUserId(http);
-        var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+        var role = ActorContext.GetRole(http.User);
         var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
         if (ticket is null) return Results.NotFound();
 
-        // Three ownership paths surface a ticket's images:
-        //  (a) agent uploads staged directly on the ticket (owner Ticket, no event)
-        //  (b) attachments on a Note/Comment/MailSent event of this ticket
-        //  (c) inbound-mail attachments — including inline images pasted into a
-        //      mail body — owned by a mail_messages row linked to this ticket.
-        // (c) is the common case for "I emailed a screenshot": those are
-        //     owner_kind='Mail', so without this branch the picker is empty and
-        //     the image never reaches the model.
-        const string sql = """
-            SELECT a.id                AS Id,
-                   a.original_filename AS Filename,
-                   a.mime_type         AS MimeType,
-                   a.size_bytes        AS SizeBytes,
-                   a.owner_kind        AS OwnerKind,
-                   a.owner_id          AS OwnerId,
-                   a.is_inline         AS IsInline
-              FROM attachments a
-              LEFT JOIN ticket_events e ON e.id = a.event_id
-              LEFT JOIN mail_messages m ON a.owner_kind = 'Mail' AND m.id = a.owner_id
-             WHERE a.mime_type ILIKE 'image/%'
-               AND a.processing_state = 'Ready'
-               AND (
-                     (a.owner_kind = 'Ticket' AND a.owner_id = @id AND a.event_id IS NULL)
-                  OR (a.event_id IS NOT NULL AND e.ticket_id = @id)
-                  OR (a.owner_kind = 'Mail' AND m.ticket_id = @id)
-                   )
-             ORDER BY a.created_utc ASC
-            """;
-        await using var conn = await dataSource.OpenConnectionAsync(ct);
-        var rows = await Dapper.SqlMapper.QueryAsync<ImageRow>(conn,
-            new Dapper.CommandDefinition(sql, new { id }, cancellationToken: ct));
+        // Uploads on the ticket, event attachments and inbound-mail images
+        // (inline screenshots included) — see ListTicketImagesAsync.
+        var rows = await attachments.ListTicketImagesAsync(id, ct);
         return Results.Ok(new
         {
             items = rows.Select(r => new
             {
                 id = r.Id,
-                filename = string.IsNullOrWhiteSpace(r.Filename) ? "image" : r.Filename,
+                filename = string.IsNullOrWhiteSpace(r.OriginalFilename) ? "image" : r.OriginalFilename,
                 mimeType = r.MimeType,
                 sizeBytes = r.SizeBytes,
                 isInline = r.IsInline,
@@ -109,17 +81,6 @@ public static class TicketClaudeEndpoints
                     : $"/api/tickets/{id}/attachments/{r.Id}?inline=true",
             }),
         });
-    }
-
-    private sealed class ImageRow
-    {
-        public Guid Id { get; set; }
-        public string Filename { get; set; } = string.Empty;
-        public string MimeType { get; set; } = string.Empty;
-        public long SizeBytes { get; set; }
-        public string OwnerKind { get; set; } = string.Empty;
-        public Guid OwnerId { get; set; }
-        public bool IsInline { get; set; }
     }
 
     public sealed record ProposalRequest(IReadOnlyList<Guid>? AttachmentIds);
@@ -258,7 +219,7 @@ public static class TicketClaudeEndpoints
         CancellationToken ct)
     {
         var userId = ActorContext.GetUserId(http);
-        var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+        var role = ActorContext.GetRole(http.User);
         var ticket = await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, id, ct);
         if (ticket is null) return Results.NotFound();
 

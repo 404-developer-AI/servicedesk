@@ -153,7 +153,7 @@ public static class IsoEndpoints
 
         // 3. User identity + ISO flag check.
         var userId = ActorContext.GetUserId(http);
-        var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+        var userRole = ActorContext.GetRole(http.User);
         var flags = await users.GetIsoFlagsAsync(userId, ct);
         if (!flagCheck(flags))
             return Results.Json(

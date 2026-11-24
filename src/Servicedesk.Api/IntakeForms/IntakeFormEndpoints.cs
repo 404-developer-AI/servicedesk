@@ -553,7 +553,7 @@ public static class IntakeFormEndpoints
         Guid ticketId, CancellationToken ct)
     {
         var userId = ActorContext.GetUserId(http);
-        var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+        var role = ActorContext.GetRole(http.User);
         return await tickets.GetAccessibleCoreAsync(queueAccess, userId, role, ticketId, ct) is not null;
     }
 

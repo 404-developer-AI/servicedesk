@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using Dapper;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
@@ -138,7 +137,7 @@ public static partial class AdsolutEndpoints
         Guid companyId,
         [FromBody] LinkCompanyRequest body,
         HttpContext http,
-        [FromServices] Npgsql.NpgsqlDataSource dataSource,
+        IAdsolutCoverageLinks coverageLinks,
         IAuditLogger audit,
         CancellationToken ct)
     {
@@ -147,30 +146,9 @@ public static partial class AdsolutEndpoints
             return Results.BadRequest(new { error = "missing_adsolut_id" });
         }
 
-        // Persist adsolut_id + adsolut_last_modified only. We deliberately
-        // do not stamp adsolut_synced_hash here: the next push tick will
-        // either fire a single PUT (drift on the SD side) or a single pull
-        // (drift on the Adsolut side); either way the loop closes within
-        // one tick, no "hash-storm". adsolut_number / adsolut_alpha_code
-        // arrive on the next pull tick that touches this row.
-        await using var conn = await dataSource.OpenConnectionAsync(ct);
-        var rows = await conn.ExecuteAsync(new CommandDefinition(
-            """
-            UPDATE companies
-               SET adsolut_id            = @AdsolutId,
-                   adsolut_last_modified = @LastModified,
-                   updated_utc           = COALESCE(@LastModified, now())
-             WHERE id = @CompanyId
-               AND is_active = TRUE
-            """,
-            new
-            {
-                CompanyId = companyId,
-                AdsolutId = body.AdsolutId,
-                LastModified = body.LastModified,
-            },
-            cancellationToken: ct));
-        if (rows == 0)
+        // Writes the Adsolut id + last-modified only (see IAdsolutCoverageLinks).
+        var linked = await coverageLinks.LinkCompanyAsync(companyId, body.AdsolutId, body.LastModified, ct);
+        if (!linked)
         {
             return Results.NotFound(new { error = "company_not_found_or_inactive" });
         }
@@ -195,7 +173,7 @@ public static partial class AdsolutEndpoints
         Guid linkId,
         [FromBody] LinkContactRequest body,
         HttpContext http,
-        [FromServices] Npgsql.NpgsqlDataSource dataSource,
+        IAdsolutCoverageLinks coverageLinks,
         IAuditLogger audit,
         CancellationToken ct)
     {
@@ -203,33 +181,8 @@ public static partial class AdsolutEndpoints
         {
             return Results.BadRequest(new { error = "missing_adsolut_contact_id" });
         }
-        // Stamp adsolut_active=TRUE so the v0.0.28-derived contacts.is_active
-        // recompute treats this link as Adsolut-aware for "ever was X" — see
-        // Adsolut.md → Lessons learned #5.
-        await using var conn = await dataSource.OpenConnectionAsync(ct);
-        var rows = await conn.ExecuteAsync(new CommandDefinition(
-            """
-            UPDATE contact_companies cc
-               SET adsolut_contact_id    = @AdsolutContactId,
-                   adsolut_last_modified = @LastModified,
-                   adsolut_active        = TRUE,
-                   updated_utc           = COALESCE(@LastModified, now())
-              FROM contacts c, companies co
-             WHERE cc.id = @LinkId
-               AND c.id = cc.contact_id
-               AND co.id = cc.company_id
-               AND c.is_active = TRUE
-               AND co.is_active = TRUE
-               AND co.adsolut_id IS NOT NULL
-            """,
-            new
-            {
-                LinkId = linkId,
-                AdsolutContactId = body.AdsolutContactId,
-                LastModified = body.LastModified,
-            },
-            cancellationToken: ct));
-        if (rows == 0)
+        var linked = await coverageLinks.LinkContactAsync(linkId, body.AdsolutContactId, body.LastModified, ct);
+        if (!linked)
         {
             return Results.NotFound(new
             {

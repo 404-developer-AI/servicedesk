@@ -19,7 +19,7 @@ internal static class PortalRequest
         return new PortalActor(
             id,
             http.User.Identity?.Name ?? id.ToString(),
-            http.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+            ActorContext.TryGetRole(http.User) ?? "anon",
             http.Connection.RemoteIpAddress?.ToString(),
             Truncate(http.Request.Headers.UserAgent.ToString(), 512));
     }
@@ -47,7 +47,7 @@ internal static class PortalRequest
 
     public static bool IsCustomerPrincipal(HttpContext http) =>
         http.User.Identity?.IsAuthenticated == true
-        && string.Equals(http.User.FindFirst(ClaimTypes.Role)?.Value, "Customer", StringComparison.Ordinal);
+        && string.Equals(ActorContext.TryGetRole(http.User), "Customer", StringComparison.Ordinal);
 
     public static Task<bool> PortalEnabledAsync(ISettingsService settings, CancellationToken ct) =>
         settings.GetAsync<bool>(SettingKeys.Portal.Enabled, ct);

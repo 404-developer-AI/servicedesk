@@ -303,7 +303,7 @@ public static class PortalAuthEndpoints
             else
             {
                 await audit.LogAsync(new AuditEvent(PortalEventTypes.Logout,
-                    http.User.Identity?.Name ?? "anon", http.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+                    http.User.Identity?.Name ?? "anon", ActorContext.TryGetRole(http.User) ?? "anon",
                     Target: sessionId.ToString(), ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                     UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
             }

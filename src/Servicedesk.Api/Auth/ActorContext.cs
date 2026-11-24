@@ -16,7 +16,7 @@ public static class ActorContext
         var email = user.FindFirst(ClaimTypes.Email)?.Value;
         var name = user.Identity?.Name;
         var id = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var role = user.FindFirst(ClaimTypes.Role)?.Value ?? "anon";
+        var role = TryGetRole(user) ?? "anon";
         return (email ?? name ?? id ?? "anon", role);
     }
 
@@ -41,4 +41,23 @@ public static class ActorContext
         Guid.TryParse(user?.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) && id != Guid.Empty
             ? id
             : null;
+
+    /// Strict: the signed-in user's role (Customer / Agent / Admin) — what
+    /// queue access and role gates are decided on. Throws when the session
+    /// carries no role; behind a role policy that never happens, so the throw
+    /// is a defensive contract, never a silent default role.
+    public static string GetRole(HttpContext httpContext) => GetRole(httpContext.User);
+
+    /// <inheritdoc cref="GetRole(HttpContext)"/>
+    public static string GetRole(ClaimsPrincipal? user) =>
+        TryGetRole(user) ?? throw new InvalidOperationException("The request has no authenticated role.");
+
+    /// Lenient: the role, or null when there is none — for audit rows and
+    /// code that also runs anonymously. Never use a fallback role to decide
+    /// access.
+    public static string? TryGetRole(HttpContext httpContext) => TryGetRole(httpContext.User);
+
+    /// <inheritdoc cref="TryGetRole(HttpContext)"/>
+    public static string? TryGetRole(ClaimsPrincipal? user) =>
+        user?.FindFirst(ClaimTypes.Role)?.Value is { Length: > 0 } role ? role : null;
 }

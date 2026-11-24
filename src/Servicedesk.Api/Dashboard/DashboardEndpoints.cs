@@ -29,7 +29,7 @@ public static class DashboardEndpoints
             CancellationToken ct) =>
         {
             var userId = ActorContext.GetUserId(http);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var role = ActorContext.GetRole(http.User);
             var scope = await queueAccess.GetScopeAsync(userId, role, ct);
 
             var presence = TicketPresenceHub.GetAllAgentPresence();

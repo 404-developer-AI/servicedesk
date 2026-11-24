@@ -195,6 +195,7 @@ public sealed class AttachmentWorkerTests
         public Task MarkFailedAsync(Guid id, CancellationToken ct) { Failed.Add(id); return Task.CompletedTask; }
         public HashSet<Guid> TooLarge { get; } = new();
         public Task MarkTooLargeAsync(Guid id, CancellationToken ct) { TooLarge.Add(id); return Task.CompletedTask; }
+        public Task<IReadOnlyList<AttachmentRow>> ListTicketImagesAsync(Guid ticketId, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<AttachmentRow>> ListByEventAsync(long eventId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<AttachmentRow>>(Rows.Values.Where(r => r.EventId == eventId).ToList());
         public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct) => throw new NotImplementedException();
