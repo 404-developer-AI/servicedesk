@@ -10,8 +10,9 @@ namespace Servicedesk.Infrastructure.Tickets;
 ///
 /// Writers: PATCH + bulk + trigger <c>set_owner</c> (via
 /// <see cref="TicketFieldRules"/>), ticket create (endpoint). Queue access of
-/// the assignee is deliberately not part of it — only the form-field
-/// <c>set_owner</c> mode checks that (<c>FormOwnerCheck</c>).
+/// the assignee is deliberately not part of it — only trigger
+/// <c>set_owner</c> (both modes) checks that (<c>TriggerOwnerCheck</c>), since
+/// a trigger runs as the system.
 public static class TicketAssigneeRule
 {
     public const string Code = "assignee_not_assignable";

@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Dapper;
+using Microsoft.Extensions.Caching.Memory;
 using Servicedesk.Api.Tests.TestInfrastructure;
+using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
@@ -156,14 +158,43 @@ public sealed class TriggerFieldHandlersDbTests
     [PostgresFact]
     public async Task Set_owner_assigns_the_agent_and_writes_an_assignment_change()
     {
-        var (seed, ticketId, _) = await TicketAsync();
+        var (seed, ticketId, queue) = await TicketAsync();
         var agent = await seed.UserAsync();
+        await GrantAsync(agent, queue);
 
         var result = await RunAsync(SetOwner(), ticketId, $$"""{ "user_id": "{{agent}}" }""");
 
         Assert.Equal(TriggerActionStatus.Applied, result.Status);
         Assert.Equal(agent, await ColumnAsync<Guid?>(ticketId, "assignee_user_id"));
         Assert.Contains(TriggerIdText, (await SingleEventAsync(ticketId, "AssignmentChange")).Metadata);
+    }
+
+    [PostgresFact]
+    public async Task Set_owner_to_an_agent_without_queue_access_fails_and_keeps_the_assignee()
+    {
+        // A trigger runs as the system: a fixed owner who cannot open the
+        // ticket's queue would own a ticket they cannot see.
+        var (seed, ticketId, _) = await TicketAsync();
+        var agent = await seed.UserAsync();
+        await GrantAsync(agent, await seed.QueueAsync("Other queue"));
+
+        var result = await RunAsync(SetOwner(), ticketId, $$"""{ "user_id": "{{agent}}" }""");
+
+        Assert.Equal(TriggerActionStatus.Failed, result.Status);
+        Assert.Null(await ColumnAsync<Guid?>(ticketId, "assignee_user_id"));
+        Assert.Equal(0, await EventCountAsync(ticketId));
+    }
+
+    [PostgresFact]
+    public async Task Set_owner_to_an_admin_needs_no_queue_grant()
+    {
+        var (seed, ticketId, _) = await TicketAsync();
+        var admin = await seed.UserAsync("Admin");
+
+        var result = await RunAsync(SetOwner(), ticketId, $$"""{ "user_id": "{{admin}}" }""");
+
+        Assert.Equal(TriggerActionStatus.Applied, result.Status);
+        Assert.Equal(admin, await ColumnAsync<Guid?>(ticketId, "assignee_user_id"));
     }
 
     [PostgresFact]
@@ -249,13 +280,19 @@ public sealed class TriggerFieldHandlersDbTests
     private SetQueueHandler SetQueue(InMemorySettingsService? settings = null) => new(
         Write(settings), new TaxonomyRepository(_db.DataSource));
 
-    // The fixed-value path never consults users or queue access (that is the
-    // form-field path); any call there would be a behaviour change.
+    // Real users + queue access: the fixed-value owner must be an active
+    // agent/admin with access to the ticket's queue, like the form-field mode.
     private SetOwnerHandler SetOwner() => new(
         Write(),
-        Fake<IUserService>.Create((m, _) => throw new InvalidOperationException("Unexpected: " + m.Name)),
-        FakeQueueAccess.None(),
+        new UserService(_db.DataSource),
+        new QueueAccessService(_db.DataSource, new MemoryCache(new MemoryCacheOptions())),
         TriggerWriteKit.Tickets(_db.DataSource));
+
+    private async Task GrantAsync(Guid user, Guid queue)
+    {
+        await using var c = await _db.DataSource.OpenConnectionAsync();
+        await c.ExecuteAsync("INSERT INTO user_queue_access (user_id, queue_id) VALUES (@user, @queue)", new { user, queue });
+    }
 
     // No render context in these runs, so the renderer must never be asked.
     private AddInternalNoteHandler AddInternalNote() => new(
