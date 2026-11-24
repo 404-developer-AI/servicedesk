@@ -40,6 +40,7 @@ const SKIP_REASON_LABEL: Record<string, string> = {
   status_gate_required: "Status change needs a confirmation — open the ticket",
   checklist_incomplete: "Checklist not finished — open the ticket to complete it",
   project_queue_locked: "Project ticket — stays in the project queue",
+  assignee_not_assignable: "Assignee is not an active agent or admin",
   failed: "Failed — try again or open the ticket",
 };
 

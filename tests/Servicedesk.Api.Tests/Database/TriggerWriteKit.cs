@@ -1,6 +1,7 @@
 using Npgsql;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Domain.Tickets;
+using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Checklists;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
@@ -22,7 +23,8 @@ internal static class TriggerWriteKit
                 new QueueStatusScope(new TaxonomyRepository(ds)),
                 Fake<IChecklistCloseGuard>.Create((_, _) => Task.FromResult<IReadOnlyList<ChecklistBlocker>>(Array.Empty<ChecklistBlocker>())),
                 settings ?? new InMemorySettingsService(),
-                TimeProvider.System),
+                TimeProvider.System,
+                new UserService(ds)),
             new TicketFieldWriter(ds),
             sla,
             Fake<IChecklistCloseBlockReporter>.Create((m, _) => throw new InvalidOperationException("Unexpected: " + m.Name)),

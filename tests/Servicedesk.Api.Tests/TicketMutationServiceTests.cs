@@ -1,5 +1,6 @@
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Domain.Tickets;
+using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Checklists;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Realtime;
@@ -24,6 +25,7 @@ public sealed class TicketMutationServiceTests
     private static readonly Guid QueueB = Guid.Parse("a0000000-0000-0000-0000-000000000002");
     private static readonly Guid Open = Guid.Parse("50000000-0000-0000-0000-000000000001");
     private static readonly Guid Closed = Guid.Parse("50000000-0000-0000-0000-000000000002");
+    private static readonly Guid Assignee = Guid.Parse("d0000000-0000-0000-0000-000000000001");
     private static readonly DateTime Now = new(2026, 11, 23, 12, 0, 0, DateTimeKind.Utc);
 
     private static readonly TicketMutationActor Actor = new(
@@ -103,6 +105,61 @@ public sealed class TicketMutationServiceTests
             new TicketFieldUpdate(PendingTillUtc: Now.AddDays(1)), default);
 
         Assert.Equal(TicketMutationCheck.Ok, result.Check);
+    }
+
+    // ---- precheck: assignee -------------------------------------------------
+
+    [Theory]
+    [InlineData("Customer", true)]
+    [InlineData("Agent", false)]
+    public async Task A_new_assignee_must_be_an_active_agent_or_admin(string role, bool active)
+    {
+        var h = new Harness { Users = { [Assignee] = User(Assignee, role, active) } };
+
+        var result = await h.Service.PrecheckFieldUpdateAsync(Actor, TicketId,
+            new TicketFieldUpdate(AssigneeUserId: Assignee), default);
+
+        Assert.Equal(TicketMutationCheck.AssigneeNotAssignable, result.Check);
+    }
+
+    [Fact]
+    public async Task An_unknown_assignee_is_refused_like_a_non_staff_one()
+    {
+        var h = new Harness();
+
+        var result = await h.Service.PrecheckFieldUpdateAsync(Actor, TicketId,
+            new TicketFieldUpdate(AssigneeUserId: Assignee), default);
+
+        Assert.Equal(TicketMutationCheck.AssigneeNotAssignable, result.Check);
+    }
+
+    [Theory]
+    [InlineData("Agent")]
+    [InlineData("Admin")]
+    public async Task An_active_agent_or_admin_can_be_assigned(string role)
+    {
+        var h = new Harness { Users = { [Assignee] = User(Assignee, role, active: true) } };
+
+        var result = await h.Service.PrecheckFieldUpdateAsync(Actor, TicketId,
+            new TicketFieldUpdate(AssigneeUserId: Assignee), default);
+
+        Assert.Equal(TicketMutationCheck.Ok, result.Check);
+    }
+
+    [Fact]
+    public async Task Keeping_a_deactivated_assignee_does_not_block_an_unrelated_edit()
+    {
+        var h = new Harness
+        {
+            Ticket = Ticket() with { AssigneeUserId = Assignee },
+            Users = { [Assignee] = User(Assignee, "Agent", active: false) },
+        };
+
+        var result = await h.Service.PrecheckFieldUpdateAsync(Actor, TicketId,
+            new TicketFieldUpdate(AssigneeUserId: Assignee, Subject: "unrelated edit"), default);
+
+        Assert.Equal(TicketMutationCheck.Ok, result.Check);
+        Assert.DoesNotContain("users.FindByIdAsync", h.Calls);
     }
 
     // ---- precheck: queue moves ----------------------------------------------
@@ -333,6 +390,9 @@ public sealed class TicketMutationServiceTests
         Source: "Web", ExternalRef: null, CreatedUtc: Now.AddDays(-1), UpdatedUtc: Now.AddDays(-1), DueUtc: null,
         FirstResponseUtc: null, ResolvedUtc: null, ClosedUtc: null, IsDeleted: false);
 
+    private static ApplicationUser User(Guid id, string role, bool active) => new(
+        id, "person@example.test", null, role, Now.AddYears(-1), null, 0, null, "Local", null, null, active);
+
     private static TicketEvent Event(long id, string type) => new(
         Id: id, TicketId: TicketId, EventType: type, AuthorUserId: Actor.UserId, AuthorContactId: null,
         AuthorName: Actor.AuditActor, BodyText: "x", BodyHtml: "<p>x</p>", MetadataJson: "{}",
@@ -352,6 +412,8 @@ public sealed class TicketMutationServiceTests
         public int GateCount { get; init; }
         public IReadOnlyList<MatchedStatusGate> GateResult { get; private set; } = Array.Empty<MatchedStatusGate>();
 
+        /// Users the assignee rule can find; any other id is unknown.
+        public Dictionary<Guid, ApplicationUser> Users { get; } = new();
         public InMemorySettingsService Settings { get; } = new();
         public FakeAuditLogger Audit { get; } = new();
         public List<string> Calls { get; } = new();
@@ -413,7 +475,14 @@ public sealed class TicketMutationServiceTests
                 return Task.CompletedTask;
             });
 
-            return new TicketMutationService(tickets, Access, new TicketFieldRules(scope, guard, Settings, new FixedClock(Now)),
+            var users = Fake<IUserService>.Create((m, a) =>
+            {
+                Calls.Add("users." + m.Name);
+                if (m.Name != nameof(IUserService.FindByIdAsync)) throw new InvalidOperationException(m.Name);
+                return Task.FromResult(Users.GetValueOrDefault((Guid)a![0]!));
+            });
+
+            return new TicketMutationService(tickets, Access, new TicketFieldRules(scope, guard, Settings, new FixedClock(Now), users),
                 gates, Audit, notifier, sla, triggers);
         }
 

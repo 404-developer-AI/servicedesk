@@ -52,6 +52,9 @@ public enum TicketMutationCheck
     /// v0.1.44 — the update sets a pending-till that is not in the future
     /// (server clock). See <see cref="PendingTillRules"/>.
     PendingTillInPast,
+    /// The new assignee is not an active Agent or Admin (or does not
+    /// exist). See <see cref="TicketAssigneeRule"/>.
+    AssigneeNotAssignable,
 }
 
 /// Result of <see cref="ITicketMutationService.PrecheckFieldUpdateAsync"/>.
@@ -182,7 +185,7 @@ public sealed class TicketMutationService : ITicketMutationService
             && !await _queueAccess.HasQueueAccessAsync(actor.UserId, actor.Role, update.QueueId.Value, ct))
             return FieldUpdatePrecheck.Fail(TicketMutationCheck.TargetQueueNoAccess);
 
-        // The rules every writer shares (pending-till, project pin, status
+        // The rules every writer shares (pending-till, assignee, project pin, status
         // scope, checklist close block) — triggers run the same ones.
         var verdict = await _rules.CheckAsync(current, update, ct);
         if (verdict.Check == TicketMutationCheck.ChecklistIncomplete)

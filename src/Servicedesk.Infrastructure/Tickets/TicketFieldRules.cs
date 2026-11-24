@@ -1,4 +1,5 @@
 using Servicedesk.Domain.Tickets;
+using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Checklists;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
@@ -22,8 +23,8 @@ public sealed record TicketFieldRuleVerdict(TicketMutationCheck Check, IReadOnly
 /// Who may act (queue access on the current and the target queue) is not
 /// here: that depends on an actor, and a trigger runs as the system. The
 /// status gates are not here either — they are a confirmation dialog for an
-/// agent, not a rule. Order: pending-till, project pin, status scope,
-/// checklist block.
+/// agent, not a rule. Order: pending-till, assignee, project pin, status
+/// scope, checklist block.
 public interface ITicketFieldRules
 {
     Task<TicketFieldRuleVerdict> CheckAsync(Ticket current, TicketFieldUpdate update, CancellationToken ct);
@@ -35,10 +36,13 @@ public sealed class TicketFieldRules : ITicketFieldRules
     private readonly IChecklistCloseGuard _checklistGuard;
     private readonly ISettingsService _settings;
     private readonly TimeProvider _clock;
+    private readonly IUserService _users;
 
     public TicketFieldRules(
-        IQueueStatusScope statusScope, IChecklistCloseGuard checklistGuard, ISettingsService settings, TimeProvider clock)
+        IQueueStatusScope statusScope, IChecklistCloseGuard checklistGuard, ISettingsService settings, TimeProvider clock,
+        IUserService users)
     {
+        _users = users;
         _statusScope = statusScope;
         _checklistGuard = checklistGuard;
         _settings = settings;
@@ -54,6 +58,13 @@ public sealed class TicketFieldRules : ITicketFieldRules
             && !PendingTillRules.SameInstant(update.PendingTillUtc, current.PendingTillUtc)
             && PendingTillRules.IsInPast(update.PendingTillUtc, _clock.GetUtcNow().UtcDateTime))
             return new(TicketMutationCheck.PendingTillInPast);
+
+        // A new assignee must be an active agent or admin. Keeping the one
+        // the ticket already has passes, so a deactivated owner never blocks
+        // an unrelated edit.
+        if (update.AssigneeUserId is Guid assignee && assignee != current.AssigneeUserId
+            && !await TicketAssigneeRule.IsAssignableAsync(_users, assignee, ct))
+            return new(TicketMutationCheck.AssigneeNotAssignable);
 
         // v0.0.105 — project tickets are pinned to the configured project
         // queue: any move to a different queue is refused.

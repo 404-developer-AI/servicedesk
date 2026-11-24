@@ -99,7 +99,8 @@ public sealed class SetStatusHandlerChecklistBlockTests
     private static SetStatusHandler Handler(
         FakeGuard guard, RecordingReporter reporter, FakeTriggers triggers, FakeScope scope) =>
         new(new TriggerFieldWrite(
-            new TicketFieldRules(scope, guard, new InMemorySettingsService(), TimeProvider.System),
+            new TicketFieldRules(scope, guard, new InMemorySettingsService(), TimeProvider.System,
+                Fake<Servicedesk.Infrastructure.Auth.IUserService>.Create((m, _) => throw new InvalidOperationException("Unexpected: " + m.Name))),
             new TicketFieldWriter(null!),
             Fake<ISlaEngine>.Create((m, _) => throw new InvalidOperationException("Unexpected: " + m.Name)),
             reporter, triggers,

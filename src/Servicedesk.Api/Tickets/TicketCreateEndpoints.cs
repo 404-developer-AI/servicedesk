@@ -46,7 +46,7 @@ public static partial class TicketEndpoints
             ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
             IContactLookupService contactLookup,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
-            ITriggerService triggers, ISettingsService settings,
+            ITriggerService triggers, ISettingsService settings, IUserService users,
             Servicedesk.Infrastructure.Tickets.ITicketHtmlSanitizer htmlSanitizer, TimeProvider clock, CancellationToken ct) =>
         {
             req = req with
@@ -64,6 +64,8 @@ public static partial class TicketEndpoints
             // Checked before any write (company link learning below).
             if (PendingTillRules.IsInPast(req.PendingTillUtc, clock.GetUtcNow().UtcDateTime))
                 return Results.BadRequest(new { error = PendingTillRules.PastMessage, code = PendingTillRules.PastCode });
+            if (req.AssigneeUserId is Guid assignee && !await TicketAssigneeRule.IsAssignableAsync(users, assignee, ct))
+                return Results.BadRequest(new { error = TicketAssigneeRule.Message, code = TicketAssigneeRule.Code });
 
             var userId = ActorContext.GetUserId(http);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;

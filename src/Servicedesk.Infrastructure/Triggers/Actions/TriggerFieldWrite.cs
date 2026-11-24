@@ -103,6 +103,10 @@ internal sealed class TriggerFieldWrite
                     column,
                     reason = "Suppressed: project tickets are pinned to the project queue.",
                 });
+            case TicketMutationCheck.AssigneeNotAssignable:
+                // A misconfigured action (customer, deactivated or deleted
+                // user): failed, so it stands out in the run log.
+                return TriggerActionResult.Failed(kind, "The owner this action points to is not an active agent or admin; owner not changed.");
             case TicketMutationCheck.StatusNotInQueueScope:
                 return TriggerActionResult.NoOp(kind, new { column, reason = "status_not_in_queue_scope", to = update.StatusId });
             case TicketMutationCheck.ChecklistIncomplete:

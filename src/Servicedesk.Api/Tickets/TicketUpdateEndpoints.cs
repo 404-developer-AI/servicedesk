@@ -151,6 +151,8 @@ public static partial class TicketEndpoints
                     // v0.1.44 — the picker disables past moments, so this
                     // only catches a stale tab or a hand-rolled call.
                     return Results.BadRequest(new { error = PendingTillRules.PastMessage, code = PendingTillRules.PastCode });
+                case TicketMutationCheck.AssigneeNotAssignable:
+                    return Results.BadRequest(new { error = TicketAssigneeRule.Message, code = TicketAssigneeRule.Code });
                 case TicketMutationCheck.ChecklistIncomplete:
                     // v0.0.103 — hard block: no confirmation payload can
                     // satisfy it. The body names the checklists so the FE

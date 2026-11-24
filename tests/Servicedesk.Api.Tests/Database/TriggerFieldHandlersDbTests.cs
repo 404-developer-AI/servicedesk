@@ -190,6 +190,22 @@ public sealed class TriggerFieldHandlersDbTests
         Assert.Equal(0, await EventCountAsync(ticketId));
     }
 
+    [PostgresTheory]
+    [InlineData("Customer", true)]
+    [InlineData("Agent", false)]
+    public async Task Set_owner_to_a_customer_or_deactivated_user_fails_and_keeps_the_assignee(string role, bool active)
+    {
+        var (seed, ticketId, _) = await TicketAsync();
+        var user = await seed.UserAsync(role);
+        if (!active) await DeactivateAsync(user);
+
+        var result = await RunAsync(SetOwner(), ticketId, $$"""{ "user_id": "{{user}}" }""");
+
+        Assert.Equal(TriggerActionStatus.Failed, result.Status);
+        Assert.Null(await ColumnAsync<Guid?>(ticketId, "assignee_user_id"));
+        Assert.Equal(0, await EventCountAsync(ticketId));
+    }
+
     // ---- add_internal_note --------------------------------------------------
 
     [PostgresFact]
@@ -274,6 +290,12 @@ public sealed class TriggerFieldHandlersDbTests
     {
         await using var c = await _db.DataSource.OpenConnectionAsync();
         await c.ExecuteAsync($"UPDATE tickets SET {column} = @value WHERE id = @ticketId", new { ticketId, value });
+    }
+
+    private async Task DeactivateAsync(Guid userId)
+    {
+        await using var c = await _db.DataSource.OpenConnectionAsync();
+        await c.ExecuteAsync("UPDATE users SET is_active = FALSE WHERE id = @userId", new { userId });
     }
 
     private async Task<int> EventCountAsync(Guid ticketId)
