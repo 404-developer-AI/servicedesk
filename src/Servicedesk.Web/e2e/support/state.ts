@@ -14,7 +14,7 @@ export type E2eState = {
   lastUsedStep: number;
   requesterEmail: string;
   /** Ids of the seeded data, for specs that create their own tickets. */
-  ids: { contact: string; queue: string; newStatus: string; normalPriority: string; highPriority: string };
+  ids: { contact: string; company: string; queue: string; newStatus: string; normalPriority: string; highPriority: string };
 };
 
 const DIR = path.join(import.meta.dirname, "..", ".state");

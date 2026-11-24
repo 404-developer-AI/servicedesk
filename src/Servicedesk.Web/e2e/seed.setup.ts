@@ -44,6 +44,6 @@ setup("seed a fresh install", async ({ request }) => {
 
   writeState({
     email, password, totpSecret: secret, lastUsedStep: step, requesterEmail,
-    ids: { contact: contact.id, queue: queue.id, newStatus: newStatus.id, normalPriority: normal.id, highPriority: high.id },
+    ids: { contact: contact.id, company: company.id, queue: queue.id, newStatus: newStatus.id, normalPriority: normal.id, highPriority: high.id },
   });
 });

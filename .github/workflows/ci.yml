@@ -149,7 +149,8 @@ jobs:
       # End-to-end smoke flows (src/Servicedesk.Web/e2e) against the booted
       # image on its fresh database: the seed step creates the first admin
       # through the setup wizard, then sign-in with TOTP, ticket create,
-      # note + status, bulk edit and global search run in a real browser.
+      # note + status, bulk edit, global search and the customer portal
+      # (invitation → password + TOTP → public reply only) run in a browser.
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -161,11 +162,14 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
+          # The portal flow stands in for the invitation mail through psql.
+          command -v psql >/dev/null || (sudo apt-get update && sudo apt-get install -y postgresql-client)
 
       - name: End-to-end smoke flows
         working-directory: src/Servicedesk.Web
         env:
           E2E_BASE_URL: http://localhost:8080
+          E2E_PG_URL: postgresql://sd_ci:ci_stub_password@127.0.0.1:5432/servicedesk_ci
         run: npx playwright test
 
       # Fictitious data only: a throw-away admin on a database that is gone
