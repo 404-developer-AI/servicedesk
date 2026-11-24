@@ -60,6 +60,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Playwright writes traces/screenshots under e2e/ while it drives the dev
+    // server; watching them would reload the page under test.
+    watch: { ignored: ["**/e2e/**"] },
     proxy: {
       "/api": {
         target: "http://localhost:5080",

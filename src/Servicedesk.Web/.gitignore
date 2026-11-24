@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Playwright e2e run output (state holds a throw-away e2e admin)
+e2e/.state/
+e2e/.results/
+e2e/.report/

@@ -121,11 +121,15 @@ jobs:
           # localhost:5432 exactly as a VPS install would reach native-host
           # Postgres. ASPNETCORE_URLS=:8080 stays the same — the runner's port
           # is free because GitHub Actions runners give us a fresh host.
+          # The raised global API budget is for the e2e flows below only: one
+          # browser loads page after page within a minute, far denser than an
+          # agent at work, and would trip the 240/min default.
           docker run -d --name sd \
             --network host \
             -e SERVICEDESK_ConnectionStrings__Postgres="Host=127.0.0.1;Port=5432;Database=servicedesk_ci;Username=sd_ci;Password=ci_stub_password" \
             -e SERVICEDESK_Audit__HashKey="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
             -e SERVICEDESK_DataProtection__MasterKey="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
+            -e SERVICEDESK_Security__RateLimit__Global__PermitPerWindow=3000 \
             servicedesk/app:ci
 
           # Wait up to 60s for the app to boot, bootstrap schema, and answer.
@@ -141,6 +145,44 @@ jobs:
           echo "boot failed — dumping logs:"
           docker logs sd
           exit 1
+
+      # End-to-end smoke flows (src/Servicedesk.Web/e2e) against the booted
+      # image on its fresh database: the seed step creates the first admin
+      # through the setup wizard, then sign-in with TOTP, ticket create,
+      # note + status, bulk edit and global search run in a real browser.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: src/Servicedesk.Web/package-lock.json
+
+      - name: Install Playwright
+        working-directory: src/Servicedesk.Web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: End-to-end smoke flows
+        working-directory: src/Servicedesk.Web
+        env:
+          E2E_BASE_URL: http://localhost:8080
+        run: npx playwright test
+
+      # Fictitious data only: a throw-away admin on a database that is gone
+      # when the runner stops.
+      - name: Upload e2e report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            src/Servicedesk.Web/e2e/.report
+            src/Servicedesk.Web/e2e/.results
+          retention-days: 7
+
+      - name: App logs after a failed e2e run
+        if: failure()
+        run: docker logs sd 2>&1 | tail -200
 
       - name: Stop container
         if: always()

@@ -15,5 +15,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     css: false,
+    // Unit tests live next to the code; Playwright owns e2e/.
+    include: ["src/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
   },
 });
