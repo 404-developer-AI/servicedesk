@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Health;
@@ -40,17 +39,20 @@ public sealed class HealthReportCache : IHealthReportCache
     private readonly IIntegrationsHealthAggregator _integrations;
     private readonly ISettingsService _settings;
 
-    private readonly Entry<HealthReport> _systemEntry = new();
-    private readonly Entry<IntegrationsHealthReport> _integrationsEntry = new();
+    private readonly Entry<HealthReport> _systemEntry;
+    private readonly Entry<IntegrationsHealthReport> _integrationsEntry;
 
     public HealthReportCache(
         IHealthAggregator system,
         IIntegrationsHealthAggregator integrations,
-        ISettingsService settings)
+        ISettingsService settings,
+        TimeProvider clock)
     {
         _system = system;
         _integrations = integrations;
         _settings = settings;
+        _systemEntry = new Entry<HealthReport>(clock);
+        _integrationsEntry = new Entry<IntegrationsHealthReport>(clock);
     }
 
     public async Task<HealthReport> GetSystemReportAsync(CancellationToken ct)
@@ -71,9 +73,10 @@ public sealed class HealthReportCache : IHealthReportCache
         return TimeSpan.FromSeconds(Math.Clamp(seconds, TtlFloorSeconds, TtlCeilingSeconds));
     }
 
-    /// One cached value with a monotonic timestamp and a single-flight gate.
-    /// The gate is only taken on a miss, so cache hits stay lock-free.
-    private sealed class Entry<T> where T : class
+    /// One cached value with a monotonic timestamp (the clock's
+    /// <c>GetTimestamp</c>, a stopwatch in production) and a single-flight
+    /// gate. The gate is only taken on a miss, so cache hits stay lock-free.
+    private sealed class Entry<T>(TimeProvider clock) where T : class
     {
         private readonly SemaphoreSlim _gate = new(1, 1);
         private T? _value;
@@ -95,7 +98,7 @@ public sealed class HealthReportCache : IHealthReportCache
 
                 var value = await compute(ct);
                 Volatile.Write(ref _value, value);
-                Volatile.Write(ref _stamp, Stopwatch.GetTimestamp());
+                Volatile.Write(ref _stamp, clock.GetTimestamp());
                 return value;
             }
             finally
@@ -109,7 +112,7 @@ public sealed class HealthReportCache : IHealthReportCache
         private bool TryGetFresh(TimeSpan ttl, out T value)
         {
             var v = Volatile.Read(ref _value);
-            if (v is not null && Stopwatch.GetElapsedTime(Volatile.Read(ref _stamp)) < ttl)
+            if (v is not null && clock.GetElapsedTime(Volatile.Read(ref _stamp)) < ttl)
             {
                 value = v;
                 return true;

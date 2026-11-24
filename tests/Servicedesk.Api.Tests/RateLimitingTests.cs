@@ -27,9 +27,9 @@ public sealed class RateLimitingTests
         var rejected = await client.GetAsync("/api/auth/config");
         Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
 
-        // Give the async OnRejected a moment to flush.
-        await Task.Delay(50);
-        Assert.Contains(factory.Audit.Events, e => e.EventType == "rate_limited");
+        // OnRejected writes the audit row asynchronously.
+        await Eventually.TrueAsync(
+            () => factory.Audit.Events.Any(e => e.EventType == "rate_limited"), "the rate_limited audit event");
     }
 
     // v0.1.4 — signed-in callers are budgeted per session cookie, so two

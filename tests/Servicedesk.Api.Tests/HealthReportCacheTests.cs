@@ -70,12 +70,16 @@ public sealed class HealthReportCacheTests
     public async Task Cached_report_expires_after_ttl()
     {
         var system = new CountingSystemAggregator();
-        var cache = Build(system, ttlSeconds: 1);
+        var clock = new ManualClock(new DateTime(2026, 11, 24, 9, 0, 0, DateTimeKind.Utc));
+        var cache = Build(system, new CountingIntegrationsAggregator(), ttlSeconds: 1, clock);
 
         await cache.GetSystemReportAsync(default);
-        await Task.Delay(TimeSpan.FromMilliseconds(1300));
+        clock.Advance(TimeSpan.FromMilliseconds(999));
         await cache.GetSystemReportAsync(default);
+        Assert.Equal(1, system.Calls);
 
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        await cache.GetSystemReportAsync(default);
         Assert.Equal(2, system.Calls);
     }
 
@@ -83,11 +87,12 @@ public sealed class HealthReportCacheTests
         Build(system, new CountingIntegrationsAggregator(), ttlSeconds);
 
     private static HealthReportCache Build(
-        CountingSystemAggregator system, CountingIntegrationsAggregator integrations, int ttlSeconds)
+        CountingSystemAggregator system, CountingIntegrationsAggregator integrations, int ttlSeconds,
+        TimeProvider? clock = null)
     {
         var settings = new InMemorySettingsService();
         settings.Set(SettingKeys.Health.ReportCacheSeconds, ttlSeconds.ToString());
-        return new HealthReportCache(system, integrations, settings);
+        return new HealthReportCache(system, integrations, settings, clock ?? TimeProvider.System);
     }
 
     private sealed class CountingSystemAggregator : IHealthAggregator

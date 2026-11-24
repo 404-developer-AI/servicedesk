@@ -146,13 +146,13 @@ public sealed class TicketBulkRulesTests
 
             var mutations = new TicketMutationService(
                 tickets, new FakeQueueAccess(QueueA),
-                new TicketFieldRules(scope, guard, settings, new FixedClock(Now), users),
+                new TicketFieldRules(scope, guard, settings, new ManualClock(Now), users),
                 gates, new FakeAuditLogger(),
                 Fake<ITicketListNotifier>.Create((_, _) => Task.CompletedTask),
                 Fake<ISlaEngine>.Create((_, _) => Task.CompletedTask),
                 Fake<ITriggerService>.Create((_, _) => Task.CompletedTask));
             return new TicketBulkActionService(
-                mutations, settings, new FakeAuditLogger(), NullLogger<TicketBulkActionService>.Instance, new FixedClock(Now));
+                mutations, settings, new FakeAuditLogger(), NullLogger<TicketBulkActionService>.Instance, new ManualClock(Now));
         }
 
         private Task<TicketDetail?> Write(Guid id)
@@ -162,10 +162,5 @@ public sealed class TicketBulkRulesTests
             return Task.FromResult<TicketDetail?>(new TicketDetail(
                 t, new TicketBody(t.Id, "body", null), Array.Empty<TicketEvent>(), Array.Empty<TicketEventPin>()));
         }
-    }
-
-    private sealed class FixedClock(DateTime now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => new(now, TimeSpan.Zero);
     }
 }

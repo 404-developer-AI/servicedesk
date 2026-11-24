@@ -1,3 +1,4 @@
+using Servicedesk.Api.Tests.TestInfrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Infrastructure.Hosting;
@@ -66,12 +67,7 @@ public sealed class PeriodicWorkerTests
         finally { await worker.StopAsync(CancellationToken.None); }
     }
 
-    private static async Task WaitForAsync(Func<bool> done)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (!done() && DateTime.UtcNow < deadline) await Task.Delay(10);
-        Assert.True(done(), "Condition not reached within 10 s.");
-    }
+    private static Task WaitForAsync(Func<bool> done) => Eventually.TrueAsync(done, "the worker condition");
 
     private sealed class ProbeSignal : WorkerWakeSignal;
 
