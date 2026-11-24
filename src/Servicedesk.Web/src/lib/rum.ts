@@ -69,6 +69,38 @@ export function chunkName(url: string | undefined | null): string {
   }
 }
 
+/// "Open time" (route_change): navigate → the new page painted, measured at
+/// most once per navigation. The router also resolves without a new
+/// navigation (a loader revalidation, a redirect leg); before 2026-11-24 such
+/// a late resolve measured from the previous navigation, which produced
+/// 100–250 s samples on pages left open. Hiding the tab voids the pending
+/// measurement: browsers pause animation frames in a hidden tab.
+export function createRouteChangeTimer(deps: {
+  now: () => number;
+  visible: () => boolean;
+  afterPaint: (cb: () => void) => void;
+  report: (route: string, ms: number) => void;
+}) {
+  let start = 0;
+  return {
+    navigate() {
+      start = deps.now();
+    },
+    hide() {
+      start = 0;
+    },
+    resolved(route: string) {
+      const begin = start;
+      if (begin === 0) return;
+      deps.afterPaint(() => {
+        if (start !== begin || !deps.visible()) return;
+        start = 0;
+        deps.report(route, deps.now() - begin);
+      });
+    },
+  };
+}
+
 function push(item: Item) {
   if (queue.length >= MAX_QUEUE) return;
   if (!Number.isFinite(item.v) || item.v < 0) return;
@@ -256,7 +288,13 @@ function collect(router: RouterLike, config: PerfConfig, lateStart: boolean): vo
   // start-up calls (session, settings, navigation, …); it is reported as
   // load_api_calls so screen_api_calls measures in-app screen opens only.
   let screenIsPageLoad = true;
-  let navStart = 0;
+  const openTime = createRouteChangeTimer({
+    now: () => performance.now(),
+    visible: () => document.visibilityState === "visible",
+    // Two frames: the new page has been committed and painted.
+    afterPaint: (cb) => requestAnimationFrame(() => requestAnimationFrame(cb)),
+    report: (route, ms) => push({ m: "route_change", r: route, v: ms }),
+  });
 
   const closeScreen = () => {
     if (!screenOpen) return;
@@ -281,26 +319,15 @@ function collect(router: RouterLike, config: PerfConfig, lateStart: boolean): vo
   if (!lateStart) openScreen(initialRoute, true);
 
   router.subscribe("onBeforeNavigate", () => {
-    navStart = performance.now();
+    openTime.navigate();
     closeScreen();
   });
-  // Browsers pause animation frames in a hidden tab, so a navigation that
-  // happens (or is still painting) while the tab is hidden would report the
-  // whole hidden time as "open time" (seen: 41 s on /timesheet). Hiding the
-  // tab voids the pending measurement.
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") navStart = 0;
+    if (document.visibilityState === "hidden") openTime.hide();
   });
   router.subscribe("onResolved", () => {
     const route = currentRoute();
-    const begin = navStart;
-    // Two frames: the new page has been committed and painted.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        if (begin > 0 && navStart === begin && document.visibilityState === "visible")
-          push({ m: "route_change", r: route, v: performance.now() - begin });
-      }),
-    );
+    openTime.resolved(route);
     openScreen(route);
   });
 
