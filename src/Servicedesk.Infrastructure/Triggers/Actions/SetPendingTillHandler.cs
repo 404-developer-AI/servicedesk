@@ -56,11 +56,6 @@ internal sealed class SetPendingTillHandler : ITriggerActionHandler
             var source = FormFieldActionSource.Resolve(actionJson, ctx, FormFieldType.DateTime);
             if (source.Error is not null) return TriggerActionResult.Failed(Kind, source.Error);
             if (source.EmptyReason is not null) return TriggerActionResult.NoOp(Kind, new { reason = source.EmptyReason });
-            // A pending-till only lives on a Pending ticket (the invariant
-            // every status writer keeps). Fresh read: a Set status action
-            // earlier in this trigger is what normally gets it there.
-            if (await PendingStatusCheck.ReasonNotPendingAsync(_tickets, _taxonomy, ctx.TicketId, ct) is { } notPending)
-                return TriggerActionResult.Failed(Kind, notPending);
             target = source.Field!.DateTimeUtc!.Value;
         }
         else
@@ -82,6 +77,14 @@ internal sealed class SetPendingTillHandler : ITriggerActionHandler
         if (PendingTillRules.IsInPast(target, DateTime.UtcNow))
             return TriggerActionResult.Failed(Kind, $"Target time {target:yyyy-MM-ddTHH:mm:ssZ} is in the past; pending-till not set.");
 
+        // A pending-till only lives on a Pending ticket (the invariant every
+        // writer keeps; the chained-reminder query does not filter on status).
+        // Both modes, fixed value and form field (the fixed-value mode skipped
+        // this until 2026-11-24). Fresh read: a Set status action earlier in
+        // this trigger is what normally gets it there.
+        if (await PendingStatusCheck.ReasonNotPendingAsync(_tickets, _taxonomy, ctx.TicketId, ct) is { } notPending)
+            return TriggerActionResult.Failed(Kind, notPending);
+
         var (nextTriggerId, nextError) = SetPendingTillResolver.ResolveNextTriggerId(actionJson);
         if (nextError is not null) return TriggerActionResult.Failed(Kind, nextError);
 
@@ -100,8 +103,9 @@ internal sealed class SetPendingTillHandler : ITriggerActionHandler
         => await SetPendingTillResolver.ResolveAsync(actionJson, ctx, _slaRepository, ct);
 }
 
-/// v0.1.58 — why a ticket cannot take a pending-till from a form field right
-/// now (its status is not in the Pending category), or null when it can.
+/// Why a ticket cannot take a pending-till right now (its status is not in
+/// the Pending category), or null when it can. Form-field mode since v0.1.58,
+/// fixed-value mode since 2026-11-24.
 internal static class PendingStatusCheck
 {
     public static async Task<string?> ReasonNotPendingAsync(

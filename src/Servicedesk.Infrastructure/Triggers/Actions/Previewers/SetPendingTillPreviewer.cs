@@ -27,11 +27,12 @@ internal sealed class SetPendingTillPreviewer : ITriggerActionPreviewer
             return TriggerActionPreviewResult.WouldApply(Kind, new { cleared = true });
         }
 
+        // The Pending-status check (both modes) is left to the real run: in a
+        // dry run an earlier Set status action of the same trigger is not
+        // applied.
         DateTime? target;
         if (FormFieldActionSource.HasFormField(actionJson))
         {
-            // The Pending-status check is left to the real run: in a dry run
-            // an earlier Set status action of the same trigger is not applied.
             var source = FormFieldActionSource.Resolve(actionJson, ctx, FormFieldType.DateTime);
             if (source.Error is not null) return TriggerActionPreviewResult.Failed(Kind, source.Error);
             if (source.EmptyReason is not null) return TriggerActionPreviewResult.WouldNoOp(Kind, new { reason = source.EmptyReason });

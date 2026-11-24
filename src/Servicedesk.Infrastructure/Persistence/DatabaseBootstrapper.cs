@@ -1761,6 +1761,34 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON tickets (pending_till_next_trigger_id)
             WHERE pending_till_next_trigger_id IS NOT NULL;
 
+        -- 2026-11-24 — one-shot cleanup for the pending-till invariant
+        -- (pending_till_utc only on a Pending-category ticket). Until then
+        -- the field writer stored a value sent without a status change on
+        -- any ticket, and the fixed-value trigger set_pending_till did not
+        -- check the status; the chained-reminder scan does not filter on
+        -- status, so such a value could still fire a trigger. Every writer
+        -- now keeps the invariant; this clears what leaked before. Cheap
+        -- (partial index on pending_till_utc), guarded by a marker so it
+        -- runs once; a later leak would then show up instead of being
+        -- silently wiped.
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM settings WHERE key = 'Bootstrap.PendingTillInvariantCleaned') THEN
+                UPDATE tickets t
+                SET pending_till_utc = NULL,
+                    pending_till_next_trigger_id = NULL
+                FROM statuses s
+                WHERE s.id = t.status_id
+                  AND t.pending_till_utc IS NOT NULL
+                  AND t.is_deleted = FALSE
+                  AND s.state_category <> 'Pending';
+                INSERT INTO settings (key, value, value_type, category, description, default_value, updated_utc)
+                    VALUES ('Bootstrap.PendingTillInvariantCleaned', 'true', 'bool', 'Bootstrap',
+                            'Internal marker: pending-till values on non-Pending tickets were cleared once (2026-11-24). Delete the row to re-run the cleanup on the next start.',
+                            'true', now())
+                    ON CONFLICT (key) DO NOTHING;
+            END IF;
+        END $$;
+
         -- v0.0.25 — Adsolut OAuth integration. Single-row connection state
         -- (one Adsolut administration links to one servicedesk install). The
         -- secrets (client_secret, refresh_token) live in protected_secrets
