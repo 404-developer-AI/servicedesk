@@ -70,7 +70,7 @@ public sealed class SetQueueAutoFlipDbTests
 
     private async Task<TriggerActionResult> ApplyAsync(Guid ticketId, Guid queueId)
     {
-        var tickets = new TicketRepository(_db.DataSource);
+        var tickets = TriggerWriteKit.Tickets(_db.DataSource);
         var sla = Fake<ISlaEngine>.Create((method, _) =>
             method.ReturnType == typeof(Task)
                 ? Task.CompletedTask

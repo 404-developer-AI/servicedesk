@@ -80,9 +80,9 @@ public sealed partial class TicketRepository : ITicketRepository, ITicketNumberL
 
     private readonly TicketFieldWriter _fieldWriter;
 
-    public TicketRepository(NpgsqlDataSource dataSource)
+    public TicketRepository(NpgsqlDataSource dataSource, TicketFieldWriter fieldWriter)
     {
-        _fieldWriter = new TicketFieldWriter(dataSource);
+        _fieldWriter = fieldWriter;
         _dataSource = dataSource;
     }
 

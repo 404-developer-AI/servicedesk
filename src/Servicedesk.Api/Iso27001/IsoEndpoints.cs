@@ -184,6 +184,13 @@ public static class IsoEndpoints
                 actualStatusId = detail.StatusId,
             });
 
+        // 5b. The checklist close block holds here too (no override, CLAUDE.md
+        //     → Checklists): refuse before the motivation note is written.
+        var blockers = await http.RequestServices
+            .GetRequiredService<Servicedesk.Infrastructure.Checklists.IChecklistCloseGuard>()
+            .FindBlockersAsync(ticketId, toStatus.Id, ct);
+        if (blockers.Count > 0) return Tickets.TicketEndpoints.ChecklistBlocked(blockers);
+
         // 6. Write the internal note FIRST. If the status flip fails
         //    afterwards the note is still in the timeline as visible
         //    intent — better than a status change without a recorded
@@ -202,11 +209,17 @@ public static class IsoEndpoints
         //    StatusChange event, audit log, and downstream event/time
         //    trigger evaluators — admin-built automations chained on
         //    "ticket reaches closed" fire for ISO closures too.
-        var updated = await tickets.UpdateFieldsAsync(
-            ticketId,
-            new TicketFieldUpdate(StatusId: toStatus.Id),
-            userId,
-            ct);
+        TicketDetail? updated;
+        try
+        {
+            updated = await tickets.UpdateFieldsAsync(ticketId, new TicketFieldUpdate(StatusId: toStatus.Id), userId, ct);
+        }
+        catch (Servicedesk.Infrastructure.Checklists.ChecklistBlockedException blocked)
+        {
+            // An item reopened between 5b and the write: the note stays as
+            // recorded intent (step 6), the status does not change.
+            return Tickets.TicketEndpoints.ChecklistBlocked(blocked.Blockers);
+        }
         if (updated is null)
             return Results.NotFound();
 

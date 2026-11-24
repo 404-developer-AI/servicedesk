@@ -289,7 +289,7 @@ public sealed class QueueAccessQueriesDbTests
 
     // ---- 5. ticket list + picker ---------------------------------------------
 
-    private TicketRepository Tickets => new(_db.DataSource);
+    private TicketRepository Tickets => TriggerWriteKit.Tickets(_db.DataSource);
 
     [PostgresFact]
     public async Task Ticket_list_search_applies_the_queue_access_list()

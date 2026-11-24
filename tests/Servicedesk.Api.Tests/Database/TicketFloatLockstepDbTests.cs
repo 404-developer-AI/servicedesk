@@ -79,7 +79,7 @@ public sealed class TicketFloatLockstepDbTests
             ids[id] = c.Name;
         }
 
-        var tickets = new TicketRepository(_db.DataSource);
+        var tickets = TriggerWriteKit.Tickets(_db.DataSource);
         foreach (var view in cases.Views)
         {
             var page = await tickets.SearchAsync(

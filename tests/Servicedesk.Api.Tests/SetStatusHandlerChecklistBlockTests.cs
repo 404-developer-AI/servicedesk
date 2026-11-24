@@ -101,7 +101,7 @@ public sealed class SetStatusHandlerChecklistBlockTests
         new(new TriggerFieldWrite(
             new TicketFieldRules(scope, guard, new InMemorySettingsService(), TimeProvider.System,
                 Fake<Servicedesk.Infrastructure.Auth.IUserService>.Create((m, _) => throw new InvalidOperationException("Unexpected: " + m.Name))),
-            new TicketFieldWriter(null!),
+            new TicketFieldWriter(null!, guard),
             Fake<ISlaEngine>.Create((m, _) => throw new InvalidOperationException("Unexpected: " + m.Name)),
             reporter, triggers,
             Fake<ITicketRepository>.Create((m, a) => m.Name == nameof(ITicketRepository.GetCoreAsync)

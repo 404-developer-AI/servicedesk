@@ -4,16 +4,26 @@ namespace Servicedesk.Infrastructure.Checklists;
 
 /// The close-block rule (v0.0.103): a status change into one of the
 /// configured "closing" state categories is refused while an attached
-/// checklist with block_close still has required open items. Evaluated by
-/// <see cref="Tickets.TicketMutationService"/> so the single-ticket PATCH
-/// and bulk actions share it; automation (triggers, mail-ingest, merge)
-/// writes through the repository and is deliberately not covered — same
-/// principle as status gates.
+/// checklist with block_close still has required open items. Judged twice:
+/// by <c>TicketFieldRules</c> before the write (PATCH, bulk, trigger
+/// "Set status" — a clean refusal with the blockers) and by
+/// <c>TicketFieldWriter</c> under the ticket row lock for the effective
+/// status (queue auto-flip, an item reopened in between; 2026-11-24).
+/// Merge moves the source ticket with its own UPDATE and is not covered.
 public interface IChecklistCloseGuard
 {
     /// Empty = not blocked. Non-empty = the checklists that block, in
     /// display order.
     Task<IReadOnlyList<ChecklistBlocker>> FindBlockersAsync(Guid ticketId, Guid targetStatusId, CancellationToken ct);
+}
+
+/// The field writer refused a status change because of the close block
+/// (see <see cref="IChecklistCloseGuard"/>): thrown by the agent write path
+/// so the PATCH, bulk and ISO callers answer like the precheck does.
+public sealed class ChecklistBlockedException(IReadOnlyList<ChecklistBlocker> blockers)
+    : InvalidOperationException("The checklist close block refused the status change.")
+{
+    public IReadOnlyList<ChecklistBlocker> Blockers { get; } = blockers;
 }
 
 public sealed class ChecklistCloseGuard : IChecklistCloseGuard

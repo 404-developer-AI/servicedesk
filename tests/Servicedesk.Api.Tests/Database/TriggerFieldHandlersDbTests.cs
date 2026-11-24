@@ -255,11 +255,11 @@ public sealed class TriggerFieldHandlersDbTests
         Write(),
         Fake<IUserService>.Create((m, _) => throw new InvalidOperationException("Unexpected: " + m.Name)),
         FakeQueueAccess.None(),
-        new TicketRepository(_db.DataSource));
+        TriggerWriteKit.Tickets(_db.DataSource));
 
     // No render context in these runs, so the renderer must never be asked.
     private AddInternalNoteHandler AddInternalNote() => new(
-        new TicketRepository(_db.DataSource),
+        TriggerWriteKit.Tickets(_db.DataSource),
         Fake<ITriggerTemplateRenderer>.Create((m, _) => throw new InvalidOperationException("Unexpected: " + m.Name)),
         Sla());
 
@@ -273,7 +273,7 @@ public sealed class TriggerFieldHandlersDbTests
 
     private async Task<TriggerActionResult> RunAsync(ITriggerActionHandler handler, Guid ticketId, string actionJson)
     {
-        var ticket = (await new TicketRepository(_db.DataSource).GetCoreAsync(ticketId, default))!;
+        var ticket = (await TriggerWriteKit.Tickets(_db.DataSource).GetCoreAsync(ticketId, default))!;
         var ctx = new TriggerEvaluationContext(ticketId, ticket, null, TriggerChangeSet.Empty, DateTime.UtcNow, TriggerId);
         using var action = JsonDocument.Parse(actionJson);
         return await handler.ApplyAsync(action.RootElement, ctx, default);

@@ -69,6 +69,12 @@ internal sealed class TriggerFieldWrite
                 return TriggerActionResult.Failed(kind, "Ticket vanished mid-update.");
             case TicketFieldWriteStatus.TargetNotFound:
                 return TriggerActionResult.Failed(kind, $"The {result.MissingTarget} this action points to no longer exists.");
+            case TicketFieldWriteStatus.ChecklistIncomplete:
+                // Found under the row lock (a queue move flipping into a
+                // closing status, or an item reopened since the check):
+                // same no-op + report as the rules' refusal.
+                return await RefusedAsync(kind, column, update with { StatusId = result.BlockedStatusId },
+                    new TicketFieldRuleVerdict(TicketMutationCheck.ChecklistIncomplete, result.Blockers), current, ctx, ct);
         }
 
         // Any field change re-runs the SLA engine (same as the agent path):

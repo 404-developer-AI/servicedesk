@@ -88,7 +88,7 @@ public sealed class SetPendingTillStatusDbTests
 
     private async Task<TriggerActionResult> ApplyAsync(Guid ticketId, string actionJson)
     {
-        var tickets = new TicketRepository(_db.DataSource);
+        var tickets = TriggerWriteKit.Tickets(_db.DataSource);
         var handler = new SetPendingTillHandler(
             new SystemFieldMutator(_db.DataSource), null!, tickets, new TaxonomyRepository(_db.DataSource));
         var ticket = (await tickets.GetCoreAsync(ticketId, default))!;

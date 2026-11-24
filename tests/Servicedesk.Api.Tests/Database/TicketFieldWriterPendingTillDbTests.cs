@@ -75,7 +75,7 @@ public sealed class TicketFieldWriterPendingTillDbTests
     }
 
     private async Task<TicketFieldWriteResult> WriteAsync(DbSeed seed, Guid ticketId, TicketFieldUpdate update) =>
-        await new TicketFieldWriter(_db.DataSource).ApplyAsync(
+        await TriggerWriteKit.Writer(_db.DataSource).ApplyAsync(
             ticketId, update, new TicketWriteOrigin.Agent(await seed.UserAsync()), default);
 
     private async Task<DateTime?> PendingTillAsync(Guid ticketId)

@@ -28,6 +28,10 @@ public enum TicketFieldWriteStatus
     TicketGone,
     /// A target id (queue, status, priority, category, user) does not exist.
     TargetNotFound,
+    /// The effective target status (after a queue auto-flip) is blocked by
+    /// a checklist with required open items — judged under the row lock,
+    /// so it also catches an item reopened after the caller's precheck.
+    ChecklistIncomplete,
 }
 
 /// One column change the write made, as recorded in its timeline event.
@@ -37,7 +41,9 @@ public sealed record TicketFieldChange(
 public sealed record TicketFieldWriteResult(
     TicketFieldWriteStatus Status,
     IReadOnlyList<TicketFieldChange> Changes,
-    string? MissingTarget = null)
+    string? MissingTarget = null,
+    IReadOnlyList<Checklists.ChecklistBlocker>? Blockers = null,
+    Guid? BlockedStatusId = null)
 {
     public TicketFieldChange? Change(string column) => Changes.FirstOrDefault(c => c.Column == column);
 }
@@ -52,11 +58,25 @@ public sealed record TicketFieldWriteResult(
 ///
 /// Reads the row <c>FOR UPDATE</c> and compares against it, so a no-op is
 /// judged on the current row, not on a caller's (possibly stale) snapshot.
+///
+/// One rule is re-checked here, under that lock: the checklist close block
+/// for the effective target status. The rules' precheck runs before the
+/// lock and does not see a queue auto-flip. Every checklist write touches
+/// the ticket row in its own transaction (counter update; event rows whose
+/// foreign key takes FOR KEY SHARE), which conflicts with this lock, so a
+/// checklist change either committed before this check or waits until the
+/// status change is done — never in between. Keep the read FOR UPDATE: a
+/// FOR NO KEY UPDATE would not conflict with the foreign-key lock.
 public sealed class TicketFieldWriter
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly Checklists.IChecklistCloseGuard _checklistGuard;
 
-    public TicketFieldWriter(NpgsqlDataSource dataSource) => _dataSource = dataSource;
+    public TicketFieldWriter(NpgsqlDataSource dataSource, Checklists.IChecklistCloseGuard checklistGuard)
+    {
+        _dataSource = dataSource;
+        _checklistGuard = checklistGuard;
+    }
 
     public async Task<TicketFieldWriteResult> ApplyAsync(
         Guid ticketId, TicketFieldUpdate update, TicketWriteOrigin origin, CancellationToken ct)
@@ -100,6 +120,19 @@ public sealed class TicketFieldWriter
                 {
                     update = update with { StatusId = scope.DefaultStatusId };
                 }
+            }
+        }
+
+        // The close block, judged on the locked row for the status the write
+        // will actually set (explicit or auto-flipped).
+        if (update.StatusId is Guid target && target != current.StatusId)
+        {
+            var blockers = await _checklistGuard.FindBlockersAsync(ticketId, target, ct);
+            if (blockers.Count > 0)
+            {
+                await tx.RollbackAsync(ct);
+                return new TicketFieldWriteResult(TicketFieldWriteStatus.ChecklistIncomplete,
+                    Array.Empty<TicketFieldChange>(), Blockers: blockers, BlockedStatusId: target);
             }
         }
 

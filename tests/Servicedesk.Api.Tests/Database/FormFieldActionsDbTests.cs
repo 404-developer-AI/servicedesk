@@ -44,7 +44,7 @@ public sealed class FormFieldActionsDbTests
 
     private async Task<TriggerActionResult> ApplyOwnerAsync(Guid ticketId, TriggerChangeSet cs)
     {
-        var tickets = new TicketRepository(_db.DataSource);
+        var tickets = TriggerWriteKit.Tickets(_db.DataSource);
         var handler = new SetOwnerHandler(
             TriggerWriteKit.Create(_db.DataSource, NoSla()), new UserService(_db.DataSource),
             new QueueAccessService(_db.DataSource, new MemoryCache(new MemoryCacheOptions())), tickets);
@@ -101,7 +101,7 @@ public sealed class FormFieldActionsDbTests
 
     private async Task<TriggerActionResult> ApplyPendingAsync(Guid ticketId, TriggerChangeSet cs)
     {
-        var tickets = new TicketRepository(_db.DataSource);
+        var tickets = TriggerWriteKit.Tickets(_db.DataSource);
         var handler = new SetPendingTillHandler(
             new SystemFieldMutator(_db.DataSource), null!, tickets, new TaxonomyRepository(_db.DataSource));
         var ticket = (await tickets.GetCoreAsync(ticketId, default))!;

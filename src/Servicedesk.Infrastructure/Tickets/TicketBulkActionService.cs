@@ -232,6 +232,12 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
             {
                 throw;
             }
+            catch (Checklists.ChecklistBlockedException)
+            {
+                // The writer's re-check under the row lock (queue auto-flip
+                // into a closing status, or an item reopened meanwhile).
+                skipped.Add(new TicketBulkSkipped(ticketId, number, TicketBulkSkipReason.ChecklistIncomplete));
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Bulk action {BatchId}: ticket {TicketId} failed", batchId, ticketId);

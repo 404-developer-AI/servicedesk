@@ -153,7 +153,7 @@ public sealed class TicketFollowDbTests
         await Repo.FollowAsync(w.User, target, 200, default);  // follows both
         await Repo.FollowAsync(other, source, 200, default);   // follows the source only
 
-        var result = await new TicketRepository(_db.DataSource).MergeAsync(source, target, w.User, true, default);
+        var result = await TriggerWriteKit.Tickets(_db.DataSource).MergeAsync(source, target, w.User, true, default);
         Assert.NotNull(result);
         Assert.True(result!.Success);
 
@@ -221,7 +221,7 @@ public sealed class TicketFollowDbTests
         await Repo.SetNoteAsync(w.User, target, "Target note", default);
         await Repo.SetNoteAsync(other, source, "Only on the source", default);
 
-        var result = await new TicketRepository(_db.DataSource).MergeAsync(source, target, w.User, true, default);
+        var result = await TriggerWriteKit.Tickets(_db.DataSource).MergeAsync(source, target, w.User, true, default);
         Assert.True(result!.Success);
 
         Assert.Equal("Target note", (await RowAsync(w.User, target, w.Queue)).Note);

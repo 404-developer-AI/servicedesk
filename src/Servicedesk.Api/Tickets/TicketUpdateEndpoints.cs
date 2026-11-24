@@ -159,13 +159,7 @@ public static partial class TicketEndpoints
                     // v0.0.103 — hard block: no confirmation payload can
                     // satisfy it. The body names the checklists so the FE
                     // can offer "Open checklist".
-                    return Results.Json(new
-                    {
-                        error = "Finish the checklist before resolving or closing this ticket.",
-                        code = "checklist_incomplete",
-                        checklists = (pre.ChecklistBlockers ?? Array.Empty<Servicedesk.Infrastructure.Checklists.ChecklistBlocker>())
-                            .Select(b => new { checklistId = b.ChecklistId, name = b.Name, openRequired = b.OpenRequired }),
-                    }, statusCode: 409);
+                    return ChecklistBlocked(pre.ChecklistBlockers);
             }
             var current = pre.Ticket!;
 
@@ -199,7 +193,17 @@ public static partial class TicketEndpoints
             // v0.0.89 — a keep_open choice holds the ticket in its current
             // status: the status change is dropped, other edits still apply.
             var update = negotiation.KeepOpen ? requested with { StatusId = null } : requested;
-            var detail = await mutations.ApplyFieldUpdateAsync(id, update, userId, ct);
+            TicketDetail? detail;
+            try
+            {
+                detail = await mutations.ApplyFieldUpdateAsync(id, update, userId, ct);
+            }
+            catch (Servicedesk.Infrastructure.Checklists.ChecklistBlockedException blocked)
+            {
+                // The writer's re-check under the row lock: a queue auto-flip
+                // into a closing status, or an item reopened since the precheck.
+                return ChecklistBlocked(blocked.Blockers);
+            }
             if (detail is null) return Results.NotFound();
 
             // Confirmation notes + decision events after the write (they sort
@@ -230,4 +234,15 @@ public static partial class TicketEndpoints
 
         return app;
     }
+
+    /// 409 for the checklist close block, from the precheck or the writer
+    /// (also used by the ISO 27001 transitions).
+    internal static IResult ChecklistBlocked(IReadOnlyList<Servicedesk.Infrastructure.Checklists.ChecklistBlocker>? blockers) =>
+        Results.Json(new
+        {
+            error = "Finish the checklist before resolving or closing this ticket.",
+            code = "checklist_incomplete",
+            checklists = (blockers ?? Array.Empty<Servicedesk.Infrastructure.Checklists.ChecklistBlocker>())
+                .Select(b => new { checklistId = b.ChecklistId, name = b.Name, openRequired = b.OpenRequired }),
+        }, statusCode: 409);
 }
