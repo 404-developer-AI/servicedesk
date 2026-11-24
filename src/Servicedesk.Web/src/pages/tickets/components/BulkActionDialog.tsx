@@ -43,6 +43,7 @@ const SKIP_REASON_LABEL: Record<string, string> = {
   project_queue_locked: "Project ticket — stays in the project queue",
   assignee_not_assignable: "Assignee is not an active agent or admin",
   pending_till_not_pending: "Pending till needs a Pending status",
+  unknown_target: "Status, queue, priority or assignee no longer exists — reload the page",
   failed: "Failed — try again or open the ticket",
 };
 

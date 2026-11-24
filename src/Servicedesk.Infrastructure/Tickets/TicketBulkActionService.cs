@@ -49,6 +49,8 @@ public static class TicketBulkSkipReason
     public const string AssigneeNotAssignable = TicketAssigneeRule.Code;
     /// A new pending-till on a ticket that stays non-Pending.
     public const string PendingTillNotPending = PendingTillRules.NotPendingCode;
+    /// The status, queue, priority or assignee id does not exist.
+    public const string UnknownTarget = TicketFieldTargetNotFoundException.Code;
     public const string Failed = "failed";
 }
 
@@ -237,6 +239,10 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
                 // The writer's re-check under the row lock (queue auto-flip
                 // into a closing status, or an item reopened meanwhile).
                 skipped.Add(new TicketBulkSkipped(ticketId, number, TicketBulkSkipReason.ChecklistIncomplete));
+            }
+            catch (TicketFieldTargetNotFoundException)
+            {
+                skipped.Add(new TicketBulkSkipped(ticketId, number, TicketBulkSkipReason.UnknownTarget));
             }
             catch (Exception ex)
             {

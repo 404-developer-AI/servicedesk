@@ -204,6 +204,17 @@ public static partial class TicketEndpoints
                 // into a closing status, or an item reopened since the precheck.
                 return ChecklistBlocked(blocked.Blockers);
             }
+            catch (TicketFieldTargetNotFoundException unknown)
+            {
+                // A stale form or hand-rolled call naming a queue, status,
+                // priority or user that does not exist: the writer rolled back.
+                return Results.BadRequest(new
+                {
+                    error = $"Unknown {unknown.Target}.",
+                    code = TicketFieldTargetNotFoundException.Code,
+                    field = unknown.Target,
+                });
+            }
             if (detail is null) return Results.NotFound();
 
             // Confirmation notes + decision events after the write (they sort

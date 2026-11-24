@@ -103,6 +103,21 @@ public sealed class TicketBulkRulesTests
         Assert.Equal(1, result.Succeeded);
     }
 
+    [Fact]
+    public async Task An_unknown_target_found_by_the_writer_is_a_skip_with_its_reason()
+    {
+        // E.g. a priority deleted after the agent opened the dialog: the
+        // writer rolls back, the bulk reports it instead of "failed".
+        var w = new World();
+        var ticket = w.Add(QueueA, unknownAtWrite: true);
+        var other = w.Add(QueueA);
+
+        var result = await w.Bulk.ExecuteAsync(Actor, Request([ticket, other], statusId: Closed), default);
+
+        Assert.Equal(TicketBulkSkipReason.UnknownTarget, Reason(result, ticket));
+        Assert.Equal([other], w.Written);
+    }
+
     // ---- plumbing -----------------------------------------------------------
 
     private static TicketBulkActionRequest Request(Guid[] ids, Guid? statusId = null, Guid? assignee = null) =>
@@ -119,12 +134,13 @@ public sealed class TicketBulkRulesTests
         private readonly Dictionary<Guid, Ticket> _tickets = new();
         private readonly HashSet<Guid> _checklistBlocked = new();
         private readonly HashSet<Guid> _blockedAtWrite = new();
+        private readonly HashSet<Guid> _unknownAtWrite = new();
 
         public bool GateMatches { get; init; }
         public Func<Guid, Guid, bool> StatusAllowed { get; init; } = (_, _) => true;
         public List<Guid> Written { get; } = new();
 
-        public Guid Add(Guid queueId, bool checklistBlocks = false, bool blockedAtWrite = false)
+        public Guid Add(Guid queueId, bool checklistBlocks = false, bool blockedAtWrite = false, bool unknownAtWrite = false)
         {
             var id = Guid.NewGuid();
             _tickets[id] = new Ticket(
@@ -134,6 +150,7 @@ public sealed class TicketBulkRulesTests
                 FirstResponseUtc: null, ResolvedUtc: null, ClosedUtc: null, IsDeleted: false);
             if (checklistBlocks) _checklistBlocked.Add(id);
             if (blockedAtWrite) _blockedAtWrite.Add(id);
+            if (unknownAtWrite) _unknownAtWrite.Add(id);
             return id;
         }
 
@@ -177,6 +194,8 @@ public sealed class TicketBulkRulesTests
         {
             if (_blockedAtWrite.Contains(id))
                 throw new ChecklistBlockedException([new ChecklistBlocker(Guid.NewGuid(), "Onboarding", 1)]);
+            if (_unknownAtWrite.Contains(id))
+                throw new TicketFieldTargetNotFoundException("priority");
             Written.Add(id);
             var t = _tickets[id];
             return Task.FromResult<TicketDetail?>(new TicketDetail(

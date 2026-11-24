@@ -116,9 +116,10 @@ public sealed partial class TicketRepository
 
     /// Agent field write: the shared <see cref="TicketFieldWriter"/> with the
     /// agent as author. Returns the fresh detail, or null when the ticket is
-    /// gone. An unknown target id is a caller bug (the endpoints validate
-    /// ids first) and throws, like the foreign-key error it used to be; a
-    /// close block found under the row lock throws ChecklistBlockedException.
+    /// gone. An unknown target id throws TicketFieldTargetNotFoundException
+    /// (the callers answer 400 / skip — the endpoints do not pre-validate
+    /// queue, status or priority ids); a close block found under the row
+    /// lock throws ChecklistBlockedException.
     public async Task<TicketDetail?> UpdateFieldsAsync(Guid ticketId, TicketFieldUpdate update, Guid actorUserId, CancellationToken ct)
     {
         var result = await _fieldWriter.ApplyAsync(ticketId, update, new TicketWriteOrigin.Agent(actorUserId), ct);
@@ -126,7 +127,7 @@ public sealed partial class TicketRepository
         {
             TicketFieldWriteStatus.TicketGone => null,
             TicketFieldWriteStatus.TargetNotFound =>
-                throw new InvalidOperationException($"Ticket update refers to an unknown {result.MissingTarget}."),
+                throw new TicketFieldTargetNotFoundException(result.MissingTarget ?? "target"),
             TicketFieldWriteStatus.ChecklistIncomplete =>
                 throw new Checklists.ChecklistBlockedException(result.Blockers!),
             _ => await GetByIdAsync(ticketId, ct),

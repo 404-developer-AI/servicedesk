@@ -48,6 +48,19 @@ public sealed record TicketFieldWriteResult(
     public TicketFieldChange? Change(string column) => Changes.FirstOrDefault(c => c.Column == column);
 }
 
+/// The agent write path's form of <see cref="TicketFieldWriteStatus.TargetNotFound"/>:
+/// the update names a queue, status, priority, category or user that does
+/// not exist (a stale form, a hand-rolled call, or a row deleted since).
+/// PATCH answers 400 and a bulk leg is skipped — never a 500.
+public sealed class TicketFieldTargetNotFoundException(string target)
+    : InvalidOperationException($"Ticket update refers to an unknown {target}.")
+{
+    public const string Code = "unknown_target";
+
+    /// "queue", "status", "priority", "category" or "user".
+    public string Target { get; } = target;
+}
+
 /// The one write path for ticket field changes (v0.1.65 — ROADMAP §2 C3).
 /// Agent PATCHes, bulk legs and trigger field actions all land here, so the
 /// side effects of a change cannot drift between them: the queue → status
