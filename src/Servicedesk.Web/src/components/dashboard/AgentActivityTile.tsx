@@ -153,7 +153,7 @@ export function AgentActivityTile() {
       {agents.length === 0 ? (
         <p className="text-xs text-muted-foreground">No agents found.</p>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] md:[&>*]:min-h-0 md:[&>*]:overflow-y-auto">
           <AgentList
             agents={agents}
             selectedUserId={selected?.userId ?? null}

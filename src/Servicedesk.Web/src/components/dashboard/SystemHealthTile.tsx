@@ -81,7 +81,7 @@ export function SystemHealthTile() {
         </p>
       ) : query.data ? (
         <>
-          <ul className="divide-y divide-glass">
+          <ul className="-mr-1 mb-3 min-h-0 flex-1 divide-y divide-glass overflow-y-auto pr-1">
             {query.data.subsystems.map((s) => (
               <SubsystemRow key={s.key} subsystem={s} />
             ))}

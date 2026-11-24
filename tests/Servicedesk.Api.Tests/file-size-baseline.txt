@@ -20,7 +20,6 @@
 1115 src/Servicedesk.Web/src/pages/settings/ZammadIntegrationPage.tsx
 1096 src/Servicedesk.Web/src/shell/NewTicketDrawer.tsx
 1089 src/Servicedesk.Web/src/pages/settings/TicketsSettingsPage.tsx
-1052 src/Servicedesk.Web/src/shell/Sidebar.tsx
 1034 src/Servicedesk.Infrastructure/Surveys/SurveyInvitationRepository.cs
 1033 src/Servicedesk.Web/src/pages/views/ViewsPage.tsx
 1024 src/Servicedesk.Web/src/pages/settings/templates/FormTemplatesPanel.tsx
@@ -33,6 +32,7 @@
 977 src/Servicedesk.Infrastructure/DependencyInjection.cs
 968 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadDryRunWorker.cs
 954 src/Servicedesk.Web/src/pages/settings/TriggersSettingsPage.tsx
+917 src/Servicedesk.Web/src/shell/Sidebar.tsx
 914 src/Servicedesk.Api/Program.cs
 909 src/Servicedesk.Infrastructure/Integrations/Zammad/ZammadKbImportWorker.cs
 905 src/Servicedesk.Web/src/pages/settings/ClaudeIntegrationPage.tsx

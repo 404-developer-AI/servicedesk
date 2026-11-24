@@ -201,6 +201,10 @@ function SortableTile({
       }}
       className={cn(
         "relative h-full",
+        // Fixed tile height (content scrolls inside the card): a tile's height
+        // must not depend on its data, or every tile below jumps when the
+        // first row finishes loading (Logs7–10: dashboard CLS 0.11–0.15).
+        tile.fixedHeight !== false && "md:h-136",
         // Span both md columns when the lg-span is 3 or 4, so the
         // breakpoint between tablet and desktop still renders sensibly.
         (colSpan >= 3) && "md:col-span-2",

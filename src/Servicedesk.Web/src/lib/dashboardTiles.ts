@@ -47,6 +47,10 @@ export type DashboardTile = {
   /// may exclude `small` because columns become unreadable; the size-
   /// cycle button skips over excluded sizes.
   allowedSizes: readonly DashboardTileSize[];
+  /// false = the tile sizes to its content instead of the fixed dashboard
+  /// tile height (only for a tile that renders nothing when it has nothing
+  /// to show — a fixed slot would leave an empty hole).
+  fixedHeight?: false;
   Component: ComponentType;
 };
 
@@ -107,6 +111,7 @@ export const DASHBOARD_TILES: DashboardTile[] = [
     icon: Plug,
     defaultSize: "full",
     allowedSizes: ["medium", "wide", "full"],
+    fixedHeight: false,
     Component: IntegrationsHealthTile,
   },
 ];

@@ -46,6 +46,7 @@ export function AvgPickupTile() {
       {q.isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : (
+        <div className="-mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
         <table className="w-full text-sm">
           <thead className="text-xs uppercase tracking-wider text-muted-foreground/60">
             <tr>
@@ -73,6 +74,7 @@ export function AvgPickupTile() {
             )}
           </tbody>
         </table>
+        </div>
       )}
     </section>
   );
