@@ -255,8 +255,17 @@ public static class CompanyEndpoints
         // strictly narrower than the admin list endpoint. Limited to 20 hits
         // per call — typeahead, not a report.
         agentGroup.MapGet("/picker", async (
-            string? search, ICompanyRepository repo, CancellationToken ct) =>
+            string? search, Guid? id, ICompanyRepository repo, CancellationToken ct) =>
         {
+            // v0.1.67 — `id` resolves the selected company's label (the
+            // top-20 search list may not contain it).
+            if (id is { } companyId)
+            {
+                var one = await repo.GetCompanyAsync(companyId, ct);
+                return Results.Ok(one is null
+                    ? Array.Empty<object>()
+                    : new object[] { new { one.Id, one.Name, one.Code, one.ShortName, one.IsActive } });
+            }
             var results = await repo.ListCompaniesAsync(search, includeInactive: false, ct);
             return Results.Ok(results
                 .Take(20)

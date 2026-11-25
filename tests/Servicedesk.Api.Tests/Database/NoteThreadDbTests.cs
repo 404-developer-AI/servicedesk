@@ -27,7 +27,7 @@ public sealed class NoteThreadDbTests
 
     private sealed record World(
         NoteThreadService Service, Guid TicketId, long NoteId, Guid NoteAuthor, Guid Replier,
-        RecordingMailer Mailer, RecordingMentions Mentions);
+        RecordingMailer Mailer, RecordingMentions Mentions, global::System.Collections.Concurrent.ConcurrentQueue<(long? EventId, TriggerChangeSet ChangeSet)> TriggerPasses);
 
     private async Task<World> WorldAsync()
     {
@@ -41,13 +41,20 @@ public sealed class NoteThreadDbTests
         var mutations = new AccessAll(ticketId, q);
         var mailer = new RecordingMailer();
         var mentions = new RecordingMentions();
+        var passes = new global::System.Collections.Concurrent.ConcurrentQueue<(long? EventId, TriggerChangeSet ChangeSet)>();
+        var triggers = Fake<ITriggerService>.Create((method, args) =>
+        {
+            if (method.Name != nameof(ITriggerService.EvaluateAsync)) throw new InvalidOperationException(method.Name);
+            passes.Enqueue(((long?)args![1], (TriggerChangeSet)args[3]!));
+            return Task.CompletedTask;
+        });
         var svc = new NoteThreadService(
             new NoteThreadRepository(_db.DataSource), mutations, new TicketHtmlSanitizer(),
             new UserService(_db.DataSource), new NotificationRepository(_db.DataSource), new NullUserNotifier(),
             mailer, mentions, new NullTicketListNotifier(), new FakeAuditLogger(),
-            new Servicedesk.Infrastructure.Mail.Attachments.AttachmentRepository(_db.DataSource),
+            new Servicedesk.Infrastructure.Mail.Attachments.AttachmentRepository(_db.DataSource), triggers,
             NullLogger<NoteThreadService>.Instance);
-        return new World(svc, ticketId, noteId, author, replier, mailer, mentions);
+        return new World(svc, ticketId, noteId, author, replier, mailer, mentions, passes);
     }
 
     private static TicketMutationActor Actor(Guid id, string role = "Agent")
@@ -255,6 +262,55 @@ public sealed class NoteThreadDbTests
 
         await w.Service.SetLikeAsync(Actor(w.NoteAuthor), w.TicketId, w.NoteId, null, true, default); // own note
         Assert.Single(await NotificationsAsync(w.TicketId), n => n.Type == NoteThreadService.LikeType);
+    }
+
+    // ---- triggers ---------------------------------------------------------
+
+    // The article part of the prod "Reset Status [Note]" trigger.
+    private const string AgentNoteConditions = """
+        { "op": "AND", "items": [
+            { "field": "article.sender", "operator": "is", "value": "Agent" },
+            { "op": "OR", "items": [
+                { "field": "article.type", "operator": "is", "value": "Note" },
+                { "field": "article.type", "operator": "is", "value": "Comment" }
+            ] }
+        ] }
+        """;
+
+    [PostgresFact]
+    public async Task A_reply_runs_the_note_trigger_pass_with_the_reply_as_an_agent_note()
+    {
+        var w = await WorldAsync();
+        await w.Service.AddReplyAsync(Actor(w.Replier), w.TicketId, w.NoteId, Reply("Customer called back, done"), default);
+
+        var (eventId, changeSet) = Assert.Single(w.TriggerPasses);
+        Assert.Equal(w.NoteId, eventId);
+        Assert.True(changeSet.ArticleAdded);
+        var article = Assert.IsType<TicketEvent>(changeSet.NoteReplyArticle);
+        Assert.Equal(w.NoteId, article.Id);
+        Assert.Equal(w.Replier, article.AuthorUserId);
+        Assert.True(article.IsInternal);
+        Assert.Contains("Customer called back", article.BodyText);
+
+        var ticket = new Ticket(w.TicketId, 1, "Licence request", Guid.NewGuid(), null, Guid.NewGuid(),
+            Guid.NewGuid(), Guid.NewGuid(), null, "web", null, DateTime.UtcNow, DateTime.UtcNow, null, null, null, null, false);
+        var ctx = new TriggerEvaluationContext(w.TicketId, ticket, article, changeSet, DateTime.UtcNow);
+        using var doc = global::System.Text.Json.JsonDocument.Parse(AgentNoteConditions);
+        Assert.True(new TriggerConditionMatcher().Matches(doc.RootElement, ctx));
+    }
+
+    [PostgresFact]
+    public async Task Likes_and_reply_edits_run_no_trigger_pass()
+    {
+        var w = await WorldAsync();
+        var reply = await w.Service.AddReplyAsync(Actor(w.Replier), w.TicketId, w.NoteId, Reply("First"), default);
+        w.TriggerPasses.Clear();
+
+        await w.Service.SetLikeAsync(Actor(w.NoteAuthor), w.TicketId, w.NoteId, null, true, default);
+        await w.Service.SetLikeAsync(Actor(w.NoteAuthor), w.TicketId, null, reply.Id, true, default);
+        await w.Service.EditReplyAsync(Actor(w.Replier), w.TicketId, reply.Id, "<p>Edited</p>", default);
+
+        Assert.Empty(w.TriggerPasses);
     }
 
     // ---- fakes ------------------------------------------------------------

@@ -14,6 +14,8 @@ import {
   MessageSquareText,
   ClipboardCheck,
   PackageSearch,
+  Megaphone,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -154,6 +156,30 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Distributor orders from TD SYNNEX — status, expected ship dates, deliveries and the tickets they belong to.",
+    section: "main",
+  },
+  // v0.1.67 — Campaigns (bulk mail: one mail per ticket, sent from its own
+  // ticket). Role gate Agent+Admin; the per-user `campaigns_enabled` flag is
+  // checked in navFlagGates.ts and the route gate, and /api/campaigns
+  // enforces it server-side.
+  {
+    label: "Campaigns",
+    to: "/campaigns",
+    icon: Megaphone,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Mail many tickets at once — each mail personalised and sent from its own ticket — and follow up who answered.",
+    section: "main",
+  },
+  // v0.1.67 (phase 3) — Maintenance planner. Same per-user flag as
+  // Campaigns (navFlagGates.ts, route gate, /api/maintenance server-side).
+  {
+    label: "Maintenance",
+    to: "/maintenance",
+    icon: Wrench,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Recurring maintenance per customer device — a new ticket and a campaign mail ahead of every due date.",
     section: "main",
   },
   // v0.1.13 — Insights (reporting dashboard). Role gate is Agent+Admin; the

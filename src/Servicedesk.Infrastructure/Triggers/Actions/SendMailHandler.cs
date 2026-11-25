@@ -16,6 +16,7 @@ using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Signatures;
 using Servicedesk.Infrastructure.Sla;
+using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Triggers.Templating;
 
 namespace Servicedesk.Infrastructure.Triggers.Actions;
@@ -120,11 +121,9 @@ internal sealed class SendMailHandler : ITriggerActionHandler
         // notifications — owner-agent / queue-agents / address — are
         // unaffected). Mirrors the manual-compose gate on the mail
         // endpoint; only enforced while the projects feature is on.
-        if (ctx.Ticket.IsProject && string.Equals(toSpec.Trim(), "customer", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(toSpec.Trim(), "customer", StringComparison.OrdinalIgnoreCase))
         {
-            bool projectsOn;
-            projectsOn = await _settings.GetOrAsync<bool>(SettingKeys.Projects.Enabled, true, ct);
-            if (projectsOn)
+            if (await ProjectMailGuard.IsBlockedAsync(_settings, ctx.Ticket.IsProject, ct))
             {
                 _logger.LogInformation(
                     "Trigger {TriggerId}: suppressed send_mail to customer on ticket {TicketId} — project tickets are internal.",

@@ -23,6 +23,8 @@ A self-hosted helpdesk for IT service teams. One install per organisation, on a 
 - Optional Outlook calendar planning from forms: appointments per technician or a Teams meeting with invitees, with a live double-booking check (Microsoft 365, `Calendars.ReadWrite` application permission).
 - Views can split their tickets into tabs per category.
 - Project tickets that group related tickets, with their logged time rolled up.
+- Campaigns: mail many tickets at once — for example a planned-maintenance request — with one personalised mail per ticket, sent from that ticket. Schedule a round for later, let customers approve, decline or ask for another moment through a link in the mail, follow up who answered, and let tickets wait for the customer until a pending date.
+- A maintenance planner for recurring interventions (for example a half-yearly firewall update): link the customers a plan applies to, and ahead of every intervention each of them gets a new ticket and the request mail, with the answers followed in that round's campaign.
 - Triggers, SLA targets, call-back and research flags, merge and split, and bulk actions on many tickets at once.
 
 **Finding things**

@@ -25,6 +25,7 @@ import {
   FolderKanban,
   Link2,
   CalendarClock,
+  Megaphone,
 } from "lucide-react";
 import type { TicketEvent } from "@/lib/ticket-api";
 
@@ -168,6 +169,10 @@ export const EVENT_CONFIG: Record<string, EventConfig> = {
   TicketFlagChange: { icon: Flag, dotColor: "bg-emerald-500", label: "Ticket flag changed" },
   // v0.1.44 — an agent changed "Pending till" (side panel or bulk).
   PendingTillChange: { icon: CalendarClock, dotColor: "bg-amber-500", label: "Pending till changed" },
+  // v0.1.67 — a campaign round finished sending (on the linked project only).
+  CampaignSent: { icon: Megaphone, dotColor: "bg-sky-500", label: "Campaign sent" },
+  // v0.1.67 — the customer answered a campaign through its answer link.
+  CampaignAnswer: { icon: Megaphone, dotColor: "bg-emerald-500", label: "Campaign answer" },
 };
 
 /// Event types that are system/audit noise rather than real

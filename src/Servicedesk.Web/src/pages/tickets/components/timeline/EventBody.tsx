@@ -14,6 +14,8 @@ import {
   ParentLinkedBody,
   ParentUnlinkedBody,
   PendingTillChangeText,
+  CampaignSentBody,
+  CampaignAnswerBody,
   ProjectConvertedBody,
   ProjectLinkedBody,
   ProjectRevertedBody,
@@ -89,6 +91,12 @@ export function EventBody({ event, readOnly = false }: { event: TicketEvent; rea
 
     case "PendingTillChange":
       return <PendingTillChangeText from={meta.from} to={meta.to} />;
+
+    case "CampaignSent":
+      return <CampaignSentBody meta={meta} />;
+
+    case "CampaignAnswer":
+      return <CampaignAnswerBody meta={meta} note={event.bodyText} />;
 
     case "ParentLinked":
       return <ParentLinkedBody meta={meta} />;

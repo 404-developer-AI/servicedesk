@@ -11,9 +11,11 @@ import { useDebounced } from "@/hooks/useDebounced"
 
 type ContactPickerProps = {
   value: string | null
-  onChange: (contactId: string) => void
+  onChange: (contactId: string, contact: Contact) => void
   placeholder?: string
   className?: string
+  /** Only offer contacts linked (any role) to this company; a new contact is created in it. */
+  companyId?: string | null
 }
 
 export function ContactPicker({
@@ -21,6 +23,7 @@ export function ContactPicker({
   onChange,
   placeholder = "Select a contact…",
   className,
+  companyId,
 }: ContactPickerProps) {
   const [open, setOpen] = React.useState(false)
   const [dialogOpen, setDialogOpen] = React.useState(false)
@@ -37,8 +40,8 @@ export function ContactPicker({
   }, [open])
 
   const { data: contacts, isFetching } = useQuery({
-    queryKey: ["contacts", "picker", debouncedSearch],
-    queryFn: () => contactApi.list(debouncedSearch || undefined),
+    queryKey: ["contacts", "picker", debouncedSearch, companyId ?? null],
+    queryFn: () => contactApi.list(debouncedSearch || undefined, companyId ?? undefined),
     placeholderData: (prev) => prev,
   })
 
@@ -62,7 +65,7 @@ export function ContactPicker({
 
   function handleSelect(contact: Contact) {
     setSelectedContact(contact)
-    onChange(contact.id)
+    onChange(contact.id, contact)
     setOpen(false)
   }
 
@@ -119,6 +122,11 @@ export function ContactPicker({
             )}
           </div>
 
+          {companyId && (
+            <p className="border-b border-glass px-3 py-1.5 text-[11px] text-muted-foreground">
+              Only contacts of the selected company
+            </p>
+          )}
           <div className="max-h-[240px] overflow-y-auto">
             {!contacts ? (
               <div className="space-y-1 p-2">
@@ -128,7 +136,7 @@ export function ContactPicker({
               </div>
             ) : contacts.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                No contacts found
+                {companyId ? "No contacts found for this company" : "No contacts found"}
               </p>
             ) : (
               <div className="p-1">
@@ -194,12 +202,13 @@ export function ContactPicker({
       <ContactFormDialog
         open={dialogOpen}
         mode="create"
+        forCompanyId={companyId ?? undefined}
         onClose={() => setDialogOpen(false)}
         onSaved={(created) => {
           // Adopt the freshly-created contact into this form field so the
           // calling drawer can submit without a second round-trip.
           setSelectedContact(created)
-          onChange(created.id)
+          onChange(created.id, created)
           setDialogOpen(false)
         }}
       />

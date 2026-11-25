@@ -178,8 +178,8 @@ public sealed class TriggerService : ITriggerService
                     _logger.LogWarning("Ticket {TicketId} disappeared mid-evaluation; aborting trigger pass.", ticketId);
                     return;
                 }
-                if (ticketEventId.HasValue)
-                    triggeringEvent = await _tickets.GetEventAsync(ticketId, ticketEventId.Value, ct);
+                triggeringEvent = changeSet.NoteReplyArticle ?? (ticketEventId.HasValue
+                    ? await _tickets.GetEventAsync(ticketId, ticketEventId.Value, ct) : null);
             }
 
             var (_, results) = await RunOneTriggerAsync(
@@ -215,9 +215,9 @@ public sealed class TriggerService : ITriggerService
                         ticketId, trigger.Id);
                     return;
                 }
-                triggeringEvent = ticketEventId.HasValue
+                triggeringEvent = changeSet.NoteReplyArticle ?? (ticketEventId.HasValue
                     ? await _tickets.GetEventAsync(ticketId, ticketEventId.Value, ct)
-                    : null;
+                    : null);
             }
         }
         }

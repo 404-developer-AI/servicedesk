@@ -168,6 +168,7 @@ public sealed record UserAdminRow(
     bool InsightsEnabled = false,
     bool OrderManagementEnabled = false,
     bool CalendarPlanningEnabled = false,
+    bool CampaignsEnabled = false,
     string? CalendarId = null,
     string? CalendarName = null)
 {
@@ -296,7 +297,8 @@ public sealed record FeatureFlagsUpdate(
     bool? OrderManagementEnabled = null,
     bool? CalendarPlanningEnabled = null,
     string? CalendarId = null,
-    string? CalendarName = null);
+    string? CalendarName = null,
+    bool? CampaignsEnabled = null);
 
 public abstract record UpdateFeatureFlagsResult
 {

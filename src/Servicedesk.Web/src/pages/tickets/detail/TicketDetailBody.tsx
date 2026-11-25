@@ -21,6 +21,7 @@ import type { TicketTimeline as TicketTimelineState } from "../useTicketTimeline
 import { PortalRegistrationCard } from "@/components/portal/PortalRegistrationCard";
 import { PinnedEventsSummary } from "../components/PinnedEventsSummary";
 import { TicketTimesheetPanel } from "../components/TicketTimesheetPanel";
+import { TicketMaintenanceNotes } from "../components/TicketMaintenanceNotes";
 import { TicketTimeAlertDialog } from "../components/TicketTimeAlertDialog";
 import { AddNoteForm } from "../components/AddNoteForm";
 import { buildMailContext } from "../mailContext";
@@ -336,6 +337,9 @@ export function TicketDetailBody({
             ticketSubject={ticket.subject}
           />
         </div>
+
+        {/* v0.1.67 — the customer's maintenance notes (planner tickets only). */}
+        <TicketMaintenanceNotes ticketId={ticketId} source={ticket.source} />
 
         {/* v0.0.103 — always-visible checklist progress (one row per
             attached checklist); clicking opens the docked panel. */}

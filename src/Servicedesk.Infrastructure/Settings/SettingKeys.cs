@@ -196,6 +196,24 @@ public static class SettingKeys
         public const string MaxAttempts = "Calendar.MaxAttempts";
     }
 
+    /// v0.1.67 — Campaigns: one mail per ticket to many tickets at once,
+    /// sent through the campaign outbox under the single-ticket mail rules.
+    public static class Campaigns
+    {
+        public const string Enabled = "Campaigns.Enabled";
+        public const string MaxRecipients = "Campaigns.MaxRecipients";
+        public const string SendRatePerMinute = "Campaigns.SendRatePerMinute";
+        public const string MaxAttempts = "Campaigns.MaxAttempts";
+        public const string ProposedDateFormat = "Campaigns.ProposedDateFormat";
+        public const string ProposedTimeFormat = "Campaigns.ProposedTimeFormat";
+        public const string ProposedDateCulture = "Campaigns.ProposedDateCulture";
+        public const string ApprovalLinkMaxDays = "Campaigns.ApprovalLinkMaxDays";
+        public const string ApprovalLinkLabel = "Campaigns.ApprovalLinkLabel";
+        public const string MaxScheduleDays = "Campaigns.MaxScheduleDays";
+        /// Phase 3 — the Maintenance planner master switch.
+        public const string MaintenanceEnabled = "Campaigns.MaintenanceEnabled";
+    }
+
     /// v0.0.105 — project tickets (a normal ticket flagged as project;
     /// other tickets link to it, with a project panel + time rollup).
     public static class Projects
@@ -2070,6 +2088,30 @@ public static class SettingDefaults
             "When a ticket is opened for the first time and its company has an open project ticket, ask the agent whether the ticket should be linked to that project. A 'no' is remembered per ticket, so the question is asked at most once."),
         new SettingDefault(SettingKeys.Projects.QueueId, "", "string", "Tickets",
             "Queue that holds every project ticket. When set, new and converted project tickets are placed in this queue automatically and cannot be moved to another queue (the queue field is hidden on project tickets); which agents see projects is controlled by this queue's access list. Leave empty to let project tickets sit in any queue like normal tickets."),
+
+        // v0.1.67 — Campaigns (bulk mail through the campaign outbox).
+        new SettingDefault(SettingKeys.Campaigns.Enabled, "true", "bool", "Tickets",
+            "Campaigns: send one mail to many tickets at once (for example the half-yearly firewall update request), each personalised with the ticket's contact and its own proposed date. Every mail is sent from its own ticket under the normal mail rules and shows on that ticket's timeline; the Campaigns page tracks who replied. Only users with the Campaigns feature flag see it. Turn off to stop all sending; existing campaigns are kept."),
+        new SettingDefault(SettingKeys.Campaigns.MaxRecipients, "500", "int", "Tickets",
+            "Campaigns: maximum number of tickets in one campaign (1 to 2000). Mails leave through a paced outbox, so a large campaign never blocks a request."),
+        new SettingDefault(SettingKeys.Campaigns.SendRatePerMinute, "20", "int", "Tickets",
+            "Campaigns: how many campaign mails the outbox sends per minute (1 to 60). Exchange Online allows about 30 messages per minute per mailbox; stay below that so normal ticket mail keeps flowing."),
+        new SettingDefault(SettingKeys.Campaigns.MaxAttempts, "5", "int", "Tickets",
+            "Campaigns: how often the outbox retries a mail after a temporary Microsoft 365 error (throttling, outage) before marking it failed (1 to 10). A failed mail can be retried from the campaign."),
+        new SettingDefault(SettingKeys.Campaigns.ProposedDateFormat, "dddd d MMMM yyyy", "string", "Tickets",
+            "Campaigns: how {{campaign.proposedDate}} is written in the mail (.NET date format, for example 'dddd d MMMM yyyy' or 'dd/MM/yyyy'). The date is shown in the server time zone."),
+        new SettingDefault(SettingKeys.Campaigns.ProposedTimeFormat, "HH:mm", "string", "Tickets",
+            "Campaigns: how {{campaign.proposedTime}} is written in the mail (.NET time format, for example 'HH:mm')."),
+        new SettingDefault(SettingKeys.Campaigns.ProposedDateCulture, "nl-BE", "string", "Tickets",
+            "Campaigns: language of day and month names in the proposed date (a culture code such as nl-BE, fr-BE or en-GB). This only affects the text in the customer mail, not the app."),
+        new SettingDefault(SettingKeys.Campaigns.ApprovalLinkMaxDays, "60", "int", "Tickets",
+            "Campaigns: the answer link ({{campaign.approvalLink}}) stays valid until the proposed date, but never longer than this many days after the mail (1 to 365). Until then the customer can change the answer."),
+        new SettingDefault(SettingKeys.Campaigns.ApprovalLinkLabel, "Answer online", "string", "Tickets",
+            "Campaigns: the text of the answer link in the mail, for example 'Confirm or choose another moment'. The link opens a page where the customer approves, declines or asks for another moment, with an optional note."),
+        new SettingDefault(SettingKeys.Campaigns.MaintenanceEnabled, "true", "bool", "Tickets",
+            "Maintenance planner: create a new ticket for every due maintenance cycle (the type's number of days ahead) and add it to that month's draft campaign for the type. Turn off to pause; plans and history are kept and due cycles start when it is turned back on."),
+        new SettingDefault(SettingKeys.Campaigns.MaxScheduleDays, "90", "int", "Tickets",
+            "Campaigns: how far ahead a round can be scheduled with 'Send on …' (1 to 365 days)."),
 
         // Storage — blob store, upload limits, blob GC and disk monitoring.
         new SettingDefault(SettingKeys.Storage.BlobRoot, "/var/lib/servicedesk/blobs", "string", "Storage",

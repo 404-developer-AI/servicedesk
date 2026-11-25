@@ -13,6 +13,8 @@ internal sealed class RepostAsPublicReplyPreviewer : ITriggerActionPreviewer
             return Task.FromResult(TriggerActionPreviewResult.Failed(Kind, "Requires a triggering article to repost."));
         if (!src.IsInternal)
             return Task.FromResult(TriggerActionPreviewResult.WouldNoOp(Kind, new { reason = "triggering article is already public" }));
+        if (ctx.ChangeSet.NoteReplyArticle is not null)
+            return Task.FromResult(TriggerActionPreviewResult.WouldNoOp(Kind, new { reason = "note replies are internal and never reposted" }));
         if (string.IsNullOrWhiteSpace(src.BodyHtml) && string.IsNullOrWhiteSpace(src.BodyText))
             return Task.FromResult(TriggerActionPreviewResult.Failed(Kind, "Triggering article has no body to repost."));
 

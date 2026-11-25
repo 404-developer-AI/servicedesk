@@ -72,6 +72,9 @@ public sealed class DoubleSubmitCsrfMiddleware
         // customer hitting the link has no session and the token-hash
         // gate + rate limiter together provide the defence.
         "/api/public/surveys/",
+        // v0.1.67 — the campaign answer link: same model (no session; the
+        // 256-bit token hash + the public-page rate limit are the defence).
+        "/api/campaign-answers/",
         // v0.0.54 — the secret-gated timesheet migration surface is called
         // by the standalone migrator with no session and no cookie; the
         // X-Timesheet-Import-Token header (constant-time compared) plus the

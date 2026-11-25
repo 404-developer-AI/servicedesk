@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using Microsoft.AspNetCore.DataProtection;
+using Servicedesk.Infrastructure.Security;
 
 namespace Servicedesk.Infrastructure.IntakeForms;
 
@@ -36,62 +36,14 @@ public sealed class IntakeFormTokenService : IIntakeFormTokenService
     /// ciphertext minted under the old value. Kept stable across deploys.
     public const string DataProtectionPurpose = "Servicedesk.IntakeForms.Token.v1";
 
-    private readonly IDataProtector _protector;
+    private readonly LinkTokenCodec _codec;
 
     public IntakeFormTokenService(IDataProtectionProvider dataProtection)
     {
-        _protector = dataProtection.CreateProtector(DataProtectionPurpose);
+        _codec = new LinkTokenCodec(dataProtection, DataProtectionPurpose);
     }
 
-    public (string Raw, byte[] Hash, byte[] Cipher) Mint()
-    {
-        Span<byte> rawBytes = stackalloc byte[32];
-        RandomNumberGenerator.Fill(rawBytes);
+    public (string Raw, byte[] Hash, byte[] Cipher) Mint() => _codec.Mint();
 
-        var raw = Base64UrlEncode(rawBytes);
-        var hash = SHA256.HashData(rawBytes);
-        var cipher = _protector.Protect(rawBytes.ToArray());
-
-        return (raw, hash, cipher);
-    }
-
-    public byte[]? HashForLookup(string rawFromUrl)
-    {
-        if (string.IsNullOrWhiteSpace(rawFromUrl) || rawFromUrl.Length > 64)
-        {
-            // 43 is the canonical length of base64url-encoded 32 bytes;
-            // anything clearly out of range is rejected before we touch
-            // the DB to keep token-enumeration scans cheap.
-            return null;
-        }
-
-        var bytes = TryBase64UrlDecode(rawFromUrl);
-        if (bytes is null || bytes.Length != 32) return null;
-
-        return SHA256.HashData(bytes);
-    }
-
-    private static string Base64UrlEncode(ReadOnlySpan<byte> bytes)
-    {
-        var b64 = Convert.ToBase64String(bytes);
-        // URL-safe variant: strip padding, swap +/-, swap /_.
-        return b64.TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    }
-
-    private static byte[]? TryBase64UrlDecode(string input)
-    {
-        // Reverse the three URL-safe substitutions and pad back to a
-        // multiple of 4. We're strict: only [A-Za-z0-9_-] is accepted.
-        foreach (var c in input)
-        {
-            var ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
-            if (!ok) return null;
-        }
-
-        var padLen = (4 - (input.Length % 4)) % 4;
-        var normalized = input.Replace('-', '+').Replace('_', '/') + new string('=', padLen);
-
-        try { return Convert.FromBase64String(normalized); }
-        catch (FormatException) { return null; }
-    }
+    public byte[]? HashForLookup(string rawFromUrl) => LinkTokenCodec.HashForLookup(rawFromUrl);
 }

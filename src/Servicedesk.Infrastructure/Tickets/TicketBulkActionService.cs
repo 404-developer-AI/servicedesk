@@ -70,10 +70,24 @@ public sealed class TicketBulkActionRejectedException : Exception
     public TicketBulkActionRejectedException(string code, string message) : base(message) => Code = code;
 }
 
+/// v0.1.67 — who runs the batch. Only the switch and the cap differ; every
+/// ticket runs the identical single-ticket rule set either way.
+public enum TicketBulkOrigin
+{
+    /// The ticket-list bulk dialog: gated by Tickets.BulkActionsEnabled,
+    /// capped by Tickets.BulkActionsMaxSelection.
+    Generic,
+
+    /// The "set pending" step after a campaign round: gated by the
+    /// campaign itself, capped by Campaigns.MaxRecipients.
+    Campaign,
+}
+
 public interface ITicketBulkActionService
 {
     Task<TicketBulkActionResult> ExecuteAsync(
-        TicketMutationActor actor, TicketBulkActionRequest request, CancellationToken ct);
+        TicketMutationActor actor, TicketBulkActionRequest request, CancellationToken ct,
+        TicketBulkOrigin origin = TicketBulkOrigin.Generic);
 }
 
 /// Runs a bulk action as N independent single-ticket mutations through
@@ -90,6 +104,10 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
     /// Absolute ceiling regardless of the admin setting — bounds one
     /// synchronous request's worth of work.
     public const int HardMaxSelection = 500;
+
+    /// Campaign rounds run in the background worker, not in a request, so
+    /// their ceiling is the campaign recipient ceiling.
+    public const int CampaignHardMaxSelection = 2000;
 
     private readonly ITicketMutationService _mutations;
     private readonly ISettingsService _settings;
@@ -112,12 +130,16 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
     }
 
     public async Task<TicketBulkActionResult> ExecuteAsync(
-        TicketMutationActor actor, TicketBulkActionRequest request, CancellationToken ct)
+        TicketMutationActor actor, TicketBulkActionRequest request, CancellationToken ct,
+        TicketBulkOrigin origin = TicketBulkOrigin.Generic)
     {
-        bool enabled;
-        enabled = await _settings.GetOrAsync<bool>(SettingKeys.Tickets.BulkActionsEnabled, true, ct);
-        if (!enabled)
-            throw new TicketBulkActionRejectedException("bulk_disabled", "Bulk actions are disabled.");
+        if (origin == TicketBulkOrigin.Generic)
+        {
+            bool enabled;
+            enabled = await _settings.GetOrAsync<bool>(SettingKeys.Tickets.BulkActionsEnabled, true, ct);
+            if (!enabled)
+                throw new TicketBulkActionRejectedException("bulk_disabled", "Bulk actions are disabled.");
+        }
 
         if (!request.HasAnyChange)
             throw new TicketBulkActionRejectedException("nothing_to_change", "Provide a message or at least one field change.");
@@ -135,9 +157,18 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
             throw new TicketBulkActionRejectedException("no_tickets", "Select at least one ticket.");
 
         int max;
-        max = await _settings.GetOrAsync<int>(SettingKeys.Tickets.BulkActionsMaxSelection, 100, ct);
-        if (max <= 0) max = 100;
-        max = Math.Min(max, HardMaxSelection);
+        if (origin == TicketBulkOrigin.Campaign)
+        {
+            max = await _settings.GetOrAsync<int>(SettingKeys.Campaigns.MaxRecipients, 500, ct);
+            if (max <= 0) max = 500;
+            max = Math.Min(max, CampaignHardMaxSelection);
+        }
+        else
+        {
+            max = await _settings.GetOrAsync<int>(SettingKeys.Tickets.BulkActionsMaxSelection, 100, ct);
+            if (max <= 0) max = 100;
+            max = Math.Min(max, HardMaxSelection);
+        }
         if (ids.Count > max)
             throw new TicketBulkActionRejectedException("too_many", $"A bulk action may touch at most {max} tickets.");
 
@@ -267,6 +298,7 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
             Payload: new
             {
                 batchId,
+                origin = origin.ToString(),
                 total = ids.Count,
                 succeeded,
                 skipped = skipped.Count,

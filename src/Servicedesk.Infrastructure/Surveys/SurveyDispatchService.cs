@@ -199,9 +199,9 @@ public sealed class SurveyDispatchService : ISurveyDispatchService
         if (string.IsNullOrWhiteSpace(refPrefix)) refPrefix = TicketReference.DefaultPrefix;
         var ticketRef = TicketReference.Format(ticket.Number, refPrefix);
 
-        var subject = ApplyTokens(survey.InviteSubject, tokens);
+        var subject = ComposeTokenRenderer.Render(survey.InviteSubject, tokens, ComposeTokenEscape.PlainText).Output;
         if (string.IsNullOrWhiteSpace(subject)) subject = $"How did we do? {ticketRef}";
-        var bodyHtml = ApplyTokens(survey.InviteBodyHtml, tokens);
+        var bodyHtml = ComposeTokenRenderer.Render(survey.InviteBodyHtml, tokens, ComposeTokenEscape.Html).Output;
         if (string.IsNullOrWhiteSpace(bodyHtml))
         {
             // Fallback body when an admin saved an empty invite template —
@@ -337,18 +337,6 @@ public sealed class SurveyDispatchService : ISurveyDispatchService
             new { ticketId = ticket.Id, assigneeUserId = (object?)ticket.AssigneeUserId ?? DBNull.Value },
             cancellationToken: ct));
         return rows.Select(r => new ContributingAgent(r.Id, r.Email)).ToList();
-    }
-
-    private static string ApplyTokens(string template, IReadOnlyDictionary<string, string> tokens)
-    {
-        if (string.IsNullOrEmpty(template)) return template ?? string.Empty;
-        var result = template;
-        foreach (var (token, value) in tokens)
-        {
-            if (string.IsNullOrEmpty(value)) continue;
-            result = result.Replace(token, value, StringComparison.Ordinal);
-        }
-        return result;
     }
 
     private static string BuildSurveyLink(string? publicBaseUrl, string rawToken)

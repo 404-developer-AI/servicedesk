@@ -28,6 +28,8 @@ import {
   type ProjectTimeRow,
 } from "@/lib/ticket-api";
 import { formatDuration } from "@/lib/timesheet-api";
+import { useAuth } from "@/auth/authStore";
+import { ProjectCampaignsSection } from "./ProjectCampaignsSection";
 
 export const projectOverviewKey = (ticketId: string) =>
   ["ticket", ticketId, "project-overview"] as const;
@@ -57,6 +59,7 @@ export function TicketProjectPanel({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const campaignsEnabled = !!useAuth().user?.campaignsEnabled;
   const overviewQ = useProjectOverview(ticketId, true);
   const overview = overviewQ.data ?? null;
 
@@ -151,6 +154,9 @@ export function TicketProjectPanel({
 
         {overview && (
           <>
+            {campaignsEnabled && (
+              <ProjectCampaignsSection projectTicketId={ticketId} defaultName={`Project #${ticketNumber}`} />
+            )}
             {/* Open linked tickets — draggable priority order */}
             <section>
               <div className="mb-1.5 flex items-baseline gap-2">

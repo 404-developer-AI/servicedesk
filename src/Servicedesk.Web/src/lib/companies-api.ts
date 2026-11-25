@@ -208,9 +208,10 @@ export const companyApi = {
     return request<Company[]>("GET", `/api/companies${qs ? `?${qs}` : ""}`);
   },
   get: (id: string) => request<CompanyDetail>("GET", `/api/companies/${id}`),
-  picker: (search?: string) => {
+  picker: (search?: string, id?: string) => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
+    if (id) params.set("id", id);
     const qs = params.toString();
     return request<CompanyPickerItem[]>("GET", `/api/companies/picker${qs ? `?${qs}` : ""}`);
   },

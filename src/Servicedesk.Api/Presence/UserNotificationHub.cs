@@ -36,6 +36,9 @@ public sealed class UserNotificationHub : Hub
             // ping carries no data, so a later revoke leaks nothing.
             if (await _users.GetBackofficeFormsEnabledAsync(userId))
                 await Groups.AddToGroupAsync(Context.ConnectionId, SignalRBackofficeFormNotifier.Group);
+            // v0.1.67 — Campaigns holders get the CampaignChanged ping (id only).
+            if (await _users.GetCampaignsEnabledAsync(userId))
+                await Groups.AddToGroupAsync(Context.ConnectionId, SignalRCampaignNotifier.Group);
         }
         await base.OnConnectedAsync();
     }

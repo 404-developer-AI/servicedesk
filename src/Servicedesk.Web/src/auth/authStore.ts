@@ -46,6 +46,9 @@ export type AuthUser = {
   /// v0.1.61 — per-user "Plan in calendars" opt-in (forms that create
   /// Outlook appointments). The API enforces it; this only drives the UI.
   calendarPlanningEnabled: boolean;
+  /// v0.1.67 — per-user opt-in for Campaigns (bulk mail). The API enforces
+  /// it; this only drives the UI.
+  campaignsEnabled: boolean;
   /// v0.0.59 — per-user opt-in for the Adsolut Orders feature (navbar
   /// overview under Assets, order detail, the ticket "Sync orders" button
   /// and "::" order linking). Surfaces nothing on its own without the

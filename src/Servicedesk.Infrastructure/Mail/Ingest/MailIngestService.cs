@@ -154,7 +154,7 @@ public sealed class MailIngestService : IMailIngestService
         Guid ticketId;
         if (existingTicketId is null)
         {
-            var defaults = await ResolveDefaultsAsync(ct);
+            var defaults = await Tickets.TicketDefaults.ResolveAsync(_taxonomy, ct);
             if (defaults is null)
             {
                 return new MailIngestResult(MailIngestOutcome.SkippedNoDefaults, null, null, null,
@@ -390,18 +390,6 @@ public sealed class MailIngestService : IMailIngestService
             "[MailIngest] merge redirect chain from {Start} exceeded {MaxHops} hops; landing on {Final} regardless.",
             startTicketId, maxHops, current);
         return current;
-    }
-
-    private async Task<(Guid StatusId, Guid PriorityId)?> ResolveDefaultsAsync(CancellationToken ct)
-    {
-        var statuses = await _taxonomy.ListStatusesAsync(ct);
-        var priorities = await _taxonomy.ListPrioritiesAsync(ct);
-        var status = statuses.FirstOrDefault(s => s.IsDefault && s.IsActive)
-                     ?? statuses.FirstOrDefault(s => s.IsActive);
-        var priority = priorities.FirstOrDefault(p => p.IsDefault && p.IsActive)
-                       ?? priorities.FirstOrDefault(p => p.IsActive);
-        if (status is null || priority is null) return null;
-        return (status.Id, priority.Id);
     }
 
     private async Task<string?> TryStoreRawAsync(string mailbox, string graphMessageId, CancellationToken ct)

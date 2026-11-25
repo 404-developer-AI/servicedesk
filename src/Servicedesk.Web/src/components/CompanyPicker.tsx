@@ -32,13 +32,22 @@ export function CompanyPicker({
     if (!open) setSearch("")
   }, [open])
 
+  // v0.1.67 — the agent-readable picker endpoint (the admin-only list
+  // 403'd for agents on the back-office and contact-gate screens).
   const { data: companies, isFetching } = useQuery({
     queryKey: ["companies", "picker", debouncedSearch],
-    queryFn: () => companyApi.list(debouncedSearch || undefined),
+    queryFn: () => companyApi.picker(debouncedSearch || undefined),
     placeholderData: (prev) => prev,
   })
+  const listed = companies?.find((c) => c.id === value) ?? null
+  const { data: selectedById } = useQuery({
+    queryKey: ["companies", "picker", "id", value],
+    queryFn: () => companyApi.picker(undefined, value!),
+    enabled: !!value && !listed,
+    staleTime: 5 * 60_000,
+  })
 
-  const selectedCompany = companies?.find((c) => c.id === value) ?? null
+  const selectedCompany = listed ?? selectedById?.[0] ?? null
 
   function handleSelect(companyId: string | null) {
     onChange(companyId)

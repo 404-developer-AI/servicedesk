@@ -61,17 +61,12 @@ public static partial class TicketEndpoints
             // a project. The composer hides the mail tab; this is the server
             // gate for stale clients. Only enforced while projects are on —
             // switching the feature off returns the ticket to normal rules.
-            if (ticket.IsProject)
-            {
-                bool projectsOn;
-                projectsOn = await settings.GetOrAsync<bool>(SettingKeys.Projects.Enabled, true, ct);
-                if (projectsOn)
-                    return Results.Conflict(new
-                    {
-                        error = "This is a project ticket — outbound mail is disabled on projects. Post an internal note, or mail from a linked ticket instead.",
-                        code = "project_ticket_mail_disabled",
-                    });
-            }
+            if (await ProjectMailGuard.IsBlockedAsync(settings, ticket.IsProject, ct))
+                return Results.Conflict(new
+                {
+                    error = "This is a project ticket — outbound mail is disabled on projects. Post an internal note, or mail from a linked ticket instead.",
+                    code = "project_ticket_mail_disabled",
+                });
 
             if (!Enum.TryParse<OutboundMailKind>(req.Kind, ignoreCase: true, out var kind))
                 return Results.BadRequest(new { error = "kind must be Reply, ReplyAll, or New." });

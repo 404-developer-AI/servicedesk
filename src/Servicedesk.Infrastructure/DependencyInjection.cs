@@ -147,12 +147,8 @@ public static class DependencyInjection
         services.AddSingleton<IActivityFeedQuery, ActivityFeedQuery>();
         services.AddHostedService<ActivityListenerWorker>();
 
-        // v0.1.61 — Outlook calendar planning from forms.
-        services.AddSingleton<Calendar.IGraphCalendarClient, Calendar.GraphCalendarClient>();
-        services.AddSingleton<Calendar.ICalendarSyncRepository, Calendar.CalendarSyncRepository>();
-        services.AddSingleton<Calendar.CalendarSyncSignal>();
-        services.AddScoped<Calendar.ICalendarSyncService, Calendar.CalendarSyncService>();
-        services.AddHostedService<Calendar.CalendarSyncWorker>();
+        Calendar.CalendarServices.AddCalendarServices(services);
+        Campaigns.CampaignServices.AddCampaignServices(services);
         services.AddHostedService<ActivityRetentionWorker>();
         services.AddSingleton<IRetentionHealth, RetentionHealth>();
         services.AddHostedService<RetentionWorker>();

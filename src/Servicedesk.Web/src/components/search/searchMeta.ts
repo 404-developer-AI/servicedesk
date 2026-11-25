@@ -32,6 +32,8 @@ export type SearchKind =
   | "remote-desktop-notes"
   | "ip-rules"
   | "tdsynnex-orders"
+  | "campaigns"
+  | "maintenance-plans"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -62,6 +64,8 @@ export const KIND_LABELS: Record<string, string> = {
   "remote-desktop-notes": "Remote Desktop notes",
   "ip-rules": "IP blocking",
   "tdsynnex-orders": "TD SYNNEX orders",
+  campaigns: "Campaigns",
+  "maintenance-plans": "Maintenance plans",
 };
 
 export const KIND_ORDER: string[] = [
@@ -92,6 +96,8 @@ export const KIND_ORDER: string[] = [
   "remote-desktop-notes",
   "ip-rules",
   "tdsynnex-orders",
+  "campaigns",
+  "maintenance-plans",
 ];
 
 export function labelForKind(kind: string): string {
@@ -176,6 +182,10 @@ export function hitHref(hit: SearchHit): string {
     case "tdsynnex-orders":
       // Opens Order Management with the order's detail panel.
       return `/order-management?order=${hit.entityId}`;
+    case "campaigns":
+      return `/campaigns/${hit.entityId}`;
+    case "maintenance-plans":
+      return `/maintenance?plan=${hit.entityId}`;
     default:
       return "#";
   }

@@ -1,6 +1,7 @@
 import { apiErrorMessage } from "@/lib/http";
+import { TokenVariableMenu } from "@/components/TokenVariableMenu";
 import { useMemo, useRef, useState } from "react";
-import { ChevronDown, Save, Tag } from "lucide-react";
+import { Save } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -22,14 +23,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 type EditorHandle = {
   chain: () => {
@@ -53,47 +46,11 @@ function TokenMenu({ onInsert }: { onInsert: (token: string) => void }) {
   const tokens = tokensQ.data?.tokens ?? [];
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-            "border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/15",
-          )}
-          title="Insert a placeholder that resolves to the requester / company when the template is applied"
-        >
-          <Tag className="h-3.5 w-3.5" />
-          Insert variable
-          <ChevronDown className="h-3.5 w-3.5" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-auto">
-        <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground/70">
-          Available variables
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {tokens.length === 0 ? (
-          <div className="px-2 py-2 text-xs text-muted-foreground">Loading…</div>
-        ) : (
-          tokens.map((t) => (
-            <DropdownMenuItem
-              key={t.token}
-              onSelect={(e) => {
-                e.preventDefault();
-                onInsert(t.token);
-              }}
-              className="flex items-center justify-between gap-3"
-            >
-              <span className="truncate text-sm">{t.label}</span>
-              <code className="shrink-0 rounded bg-glass-strong px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                {t.token}
-              </code>
-            </DropdownMenuItem>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <TokenVariableMenu
+      tokens={tokens}
+      onPick={onInsert}
+      title="Insert a placeholder that resolves to the requester / company when the template is applied"
+    />
   );
 }
 

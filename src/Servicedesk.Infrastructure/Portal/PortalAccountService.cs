@@ -333,8 +333,8 @@ public sealed class PortalAccountService : IPortalAccountService
     {
         var statuses = await _taxonomy.ListStatusesAsync(ct);
         var priorities = await _taxonomy.ListPrioritiesAsync(ct);
-        var status = statuses.FirstOrDefault(s => s.IsDefault && s.IsActive) ?? statuses.FirstOrDefault(s => s.IsActive);
-        var priority = priorities.FirstOrDefault(p => p.IsDefault && p.IsActive) ?? priorities.FirstOrDefault(p => p.IsActive);
+        var status = Tickets.TicketDefaults.PickStatus(statuses);
+        var priority = Tickets.TicketDefaults.PickPriority(priorities);
         if (status is null || priority is null) return null;
 
         // Registration tickets bypass triggers (deliberate — a "new ticket"

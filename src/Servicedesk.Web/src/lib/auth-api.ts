@@ -22,6 +22,8 @@ export type AuthUserPayload = {
   // v0.1.59 — Order Management (TD SYNNEX orders); server-enforced flag.
   orderManagementEnabled: boolean;
   calendarPlanningEnabled: boolean;
+  // v0.1.67 — Campaigns (bulk mail); server-enforced flag.
+  campaignsEnabled: boolean;
   adsolutOrdersEnabled: boolean;
   statisticsRead: boolean;
   statisticsWrite: boolean;

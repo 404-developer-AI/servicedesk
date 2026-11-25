@@ -515,24 +515,6 @@ public static class AuthEndpoints
         // Performance monitor). Each flag is feature-visibility for the SPA;
         // the API endpoints behind them enforce the same flags server-side.
         var f = await users.GetFeatureFlagsAsync(userId, ct);
-        var flags = f.Timesheet;
-        var isoFlags = f.Iso;
-        var kbEnabled = f.KbEnabled;
-        var searchEnabled = f.SearchEnabled;
-        var activityFeedEnabled = f.ActivityFeedEnabled;
-        var assetsEnabled = f.AssetsEnabled;
-        var adsolutTimesheetEnabled = f.AdsolutTimesheetEnabled;
-        var adsolutOrdersEnabled = f.AdsolutOrdersEnabled;
-        var timesheetBackofficeEnabled = f.TimesheetBackofficeEnabled;
-        var backofficeFormsEnabled = f.BackofficeFormsEnabled;
-        var orderManagementEnabled = f.OrderManagementEnabled;
-        var calendarPlanningEnabled = f.CalendarPlanningEnabled;
-        var statisticsRead = f.StatisticsRead;
-        var statisticsWrite = f.StatisticsWrite;
-        var contractsEnabled = f.ContractsEnabled;
-        var insightsEnabled = f.InsightsEnabled;
-        var feedbackEnabled = f.Feedback.Enabled;
-        var feedbackOwnOnly = f.Feedback.OwnOnly;
         // Whether the Adsolut integration is connected (configured + valid
         // refresh token, no refresh error). Resolved here so a non-admin
         // agent can gate the Adsolut timesheet tab without the admin-only
@@ -569,26 +551,27 @@ public static class AuthEndpoints
                 role,
                 amr,
                 twoFactorEnabled,
-                timesheetEnabled = flags.Enabled,
-                timesheetManager = flags.Manager,
-                isIsoMgm = isoFlags.Mgm,
-                isIsoDpo = isoFlags.Dpo,
-                kbEnabled,
-                searchEnabled,
-                activityFeedEnabled,
-                assetsEnabled,
-                adsolutTimesheetEnabled,
-                timesheetBackofficeEnabled,
-                backofficeFormsEnabled,
-                orderManagementEnabled,
-                calendarPlanningEnabled,
-                adsolutOrdersEnabled,
-                statisticsRead,
-                statisticsWrite,
-                contractsEnabled,
-                insightsEnabled,
-                feedbackEnabled,
-                feedbackOwnOnly,
+                timesheetEnabled = f.Timesheet.Enabled,
+                timesheetManager = f.Timesheet.Manager,
+                isIsoMgm = f.Iso.Mgm,
+                isIsoDpo = f.Iso.Dpo,
+                kbEnabled = f.KbEnabled,
+                searchEnabled = f.SearchEnabled,
+                activityFeedEnabled = f.ActivityFeedEnabled,
+                assetsEnabled = f.AssetsEnabled,
+                adsolutTimesheetEnabled = f.AdsolutTimesheetEnabled,
+                timesheetBackofficeEnabled = f.TimesheetBackofficeEnabled,
+                backofficeFormsEnabled = f.BackofficeFormsEnabled,
+                orderManagementEnabled = f.OrderManagementEnabled,
+                calendarPlanningEnabled = f.CalendarPlanningEnabled,
+                campaignsEnabled = f.CampaignsEnabled,
+                adsolutOrdersEnabled = f.AdsolutOrdersEnabled,
+                statisticsRead = f.StatisticsRead,
+                statisticsWrite = f.StatisticsWrite,
+                contractsEnabled = f.ContractsEnabled,
+                insightsEnabled = f.InsightsEnabled,
+                feedbackEnabled = f.Feedback.Enabled,
+                feedbackOwnOnly = f.Feedback.OwnOnly,
                 adsolutConnected,
                 dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
                 effectiveTheme,

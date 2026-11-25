@@ -22,6 +22,7 @@ import {
   MessageSquareText,
   MessageSquareLock,
   CalendarPlus,
+  Megaphone,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -58,6 +59,17 @@ const FLAG_GROUPS: Group[] = [
       { key: "adsolutTimesheetEnabled", label: "Adsolut Timesheet", icon: Receipt },
       { key: "timesheetBackofficeEnabled", label: "Back office (Resolved/CWI)", icon: ClipboardCheck },
       { key: "backofficeFormsEnabled", label: "Back office forms", icon: ClipboardList },
+    ],
+  },
+  {
+    title: "Campaigns",
+    flags: [
+      {
+        key: "campaignsEnabled",
+        label: "Campaigns",
+        icon: Megaphone,
+        description: "May mail many tickets at once (one mail per ticket) and follow up the answers.",
+      },
     ],
   },
   {

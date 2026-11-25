@@ -55,4 +55,13 @@ public enum TicketEventType
     // v0.1.44 — an agent changed "Pending till" (side panel or bulk).
     // Internal. Metadata: { from, to } as UTC ISO strings (null = unset).
     PendingTillChange,
+    // v0.1.67 — a campaign round finished sending (written on the linked
+    // project ticket only). Internal. Metadata: { campaignId, campaignName,
+    // roundNo, kind, sent, skipped, failed, total }.
+    CampaignSent,
+    // v0.1.67 — the customer answered a campaign through its answer link.
+    // Customer-visible, author = the requester (runs triggers like a
+    // customer article). Metadata: { campaignId, campaignName, choice,
+    // proposedText, changed }.
+    CampaignAnswer,
 }

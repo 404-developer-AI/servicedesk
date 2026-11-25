@@ -1,4 +1,5 @@
 import { apiErrorMessage } from "@/lib/http";
+import { PublicShell } from "@/components/PublicShell";
 import { formatDateTime } from "@/lib/dateFormat";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -492,16 +493,6 @@ function formatAnswer(
     default:
       return String(raw);
   }
-}
-
-function PublicShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="app-background min-h-screen w-full px-4 py-12">
-      <div className="mx-auto max-w-xl rounded-2xl border border-glass-strong bg-glass p-8 shadow-2xl backdrop-blur-xl">
-        {children}
-      </div>
-    </div>
-  );
 }
 
 function ExpiredState() {

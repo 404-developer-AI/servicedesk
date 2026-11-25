@@ -5,6 +5,7 @@ using Servicedesk.Infrastructure.KnowledgeBase;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Realtime;
+using Servicedesk.Infrastructure.Triggers;
 
 namespace Servicedesk.Infrastructure.Tickets.NoteThreads;
 
@@ -70,6 +71,9 @@ public interface INoteThreadService
 /// a like the author of what is liked — never oneself — in the personal Tags
 /// bell; mail follows each recipient's profile switch. @@-tags inside a reply
 /// go through the regular mention service (personal and group tags).
+/// A new reply runs the same trigger pass as a new note, with the reply as
+/// the article (<see cref="TriggerChangeSet.NoteReplyArticle"/>); likes and
+/// reply edits / deletes do not.
 public sealed class NoteThreadService : INoteThreadService
 {
     public const int MaxTextLength = 4000;
@@ -88,15 +92,18 @@ public sealed class NoteThreadService : INoteThreadService
     private readonly ITicketListNotifier _tickets;
     private readonly IAuditLogger _audit;
     private readonly IAttachmentRepository _attachments;
+    private readonly ITriggerService _triggers;
     private readonly ILogger<NoteThreadService> _logger;
 
     public NoteThreadService(
         INoteThreadRepository repo, ITicketMutationService mutations, ITicketHtmlSanitizer sanitizer,
         IUserService users, INotificationRepository notifications, IUserNotifier pusher,
         INotificationMailer mailer, IMentionNotificationService mentions, ITicketListNotifier tickets,
-        IAuditLogger audit, IAttachmentRepository attachments, ILogger<NoteThreadService> logger)
+        IAuditLogger audit, IAttachmentRepository attachments, ITriggerService triggers,
+        ILogger<NoteThreadService> logger)
     {
         _attachments = attachments;
+        _triggers = triggers;
         _repo = repo;
         _mutations = mutations;
         _sanitizer = sanitizer;
@@ -177,6 +184,17 @@ public sealed class NoteThreadService : INoteThreadService
                 BodyHtml: html, BodyText: text, MentionedMailboxIds: Array.Empty<Guid>(),
                 MentionedGroupIds: groups), ct);
         }
+
+        // A reply is agent work on the ticket: same trigger pass as a new note
+        // (e.g. "agent note while Waiting for Customer → reset status").
+        var article = new Domain.Tickets.TicketEvent(
+            Id: eventId, TicketId: ticketId, EventType: nameof(Domain.Tickets.TicketEventType.Note),
+            AuthorUserId: actor.UserId, AuthorContactId: null, AuthorName: reply.AuthorEmail,
+            BodyText: text, BodyHtml: null, MetadataJson: "{}", IsInternal: true,
+            CreatedUtc: reply.CreatedUtc, EditedUtc: null, EditedByUserId: null);
+        using (TriggerOrigin.Agent(actor.UserId))
+            await _triggers.EvaluateAsync(ticketId, eventId, TriggerActivatorKind.Action,
+                TriggerChangeSet.ForNoteReply(article), ct);
         return reply;
     }
 

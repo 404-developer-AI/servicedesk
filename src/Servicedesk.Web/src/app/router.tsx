@@ -203,6 +203,7 @@ function isPublicPath(path: string): boolean {
   if (path.startsWith("/intake/")) return true;
   if (path.startsWith("/surveys/")) return true;
   if (path.startsWith("/kb/public/")) return true;
+  if (path.startsWith("/campaign-answer/")) return true;
   return false;
 }
 
@@ -224,6 +225,7 @@ function isBareRoute(path: string): boolean {
   if (path.startsWith("/intake/")) return true;
   if (path.startsWith("/surveys/")) return true;
   if (path.startsWith("/kb/public/")) return true;
+  if (path.startsWith("/campaign-answer/")) return true;
   return false;
 }
 
@@ -621,6 +623,35 @@ const orderManagementRoute = createRoute({
     }
   },
   component: lazyRouteComponent(() => import("@/pages/order-management/OrderManagementPage"), "OrderManagementPage"),
+});
+
+// v0.1.67 — Campaigns (bulk mail, one mail per ticket). Agent + Admin role
+// gate plus the per-user `campaigns_enabled` flag (via /auth/me); every
+// /api/campaigns endpoint re-checks the flag.
+function campaignsGate(args: { location: { pathname: string } }) {
+  authGate(["Agent", "Admin"])(args);
+  if (!authedUser()?.campaignsEnabled) {
+    throw redirect({ to: "/" });
+  }
+}
+const campaignsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/campaigns",
+  beforeLoad: campaignsGate,
+  component: lazyRouteComponent(() => import("@/pages/campaigns/CampaignsPage"), "CampaignsPage"),
+});
+// v0.1.67 (phase 3) — the Maintenance planner; same flag as Campaigns.
+const maintenanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance",
+  beforeLoad: campaignsGate,
+  component: lazyRouteComponent(() => import("@/pages/maintenance/MaintenancePage"), "MaintenancePage"),
+});
+const campaignDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/campaigns/$campaignId",
+  beforeLoad: campaignsGate,
+  component: lazyRouteComponent(() => import("@/pages/campaigns/CampaignDetailPage"), "CampaignDetailPage"),
 });
 
 // v0.1.13 — Insights reporting dashboard. Agent + Admin role gate plus the
@@ -1105,6 +1136,14 @@ const publicIntakeRoute = createRoute({
   },
 });
 
+// v0.1.67 — public campaign answer link. Same bare-shell semantics as intake;
+// the server-side token validates every request.
+const publicCampaignAnswerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/campaign-answer/$token",
+  component: lazyRouteComponent(() => import("@/pages/campaigns/PublicCampaignAnswerRoute"), "PublicCampaignAnswerRoute"),
+});
+
 // v0.0.38 — public survey link. Same bare-shell semantics as intake.
 const publicSurveyRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -1250,6 +1289,10 @@ const routeTree = rootRoute.addChildren([
   insightsRoute,
   backofficeFormsRoute,
   orderManagementRoute,
+  campaignsRoute,
+  campaignDetailRoute,
+  maintenanceRoute,
+  publicCampaignAnswerRoute,
   contractsRoute,
   contractArticlesRoute,
   contractsOverviewRoute,

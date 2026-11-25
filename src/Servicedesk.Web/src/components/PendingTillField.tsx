@@ -41,6 +41,7 @@ export function PendingTillField({
   onCommit,
   className,
   commitOnChange = false,
+  pastMessage = PAST_MESSAGE,
 }: {
   /** Stored value (UTC ISO string) or null. */
   value: string | null;
@@ -53,6 +54,8 @@ export function PendingTillField({
    * to debounce. Defaults to the edit-flow behaviour: commit once on close.
    */
   commitOnChange?: boolean;
+  /** Toast for a past moment (v0.1.67 — campaigns reuse the field for proposed dates). */
+  pastMessage?: string;
 }) {
   const serverOffsetMinutes = useServerOffsetMinutes();
   const offsetMinutes = serverOffsetMinutes ?? 0;
@@ -75,7 +78,7 @@ export function PendingTillField({
         minUtc={minUtc}
         onChange={(v) => {
           if (isInPast(v)) {
-            toast.error(PAST_MESSAGE);
+            toast.error(pastMessage);
             return;
           }
           onCommit(v);
@@ -102,7 +105,7 @@ export function PendingTillField({
       onClose={() => {
         if (draft === value) return;
         if (isInPast(draft)) {
-          toast.error(PAST_MESSAGE);
+          toast.error(pastMessage);
           setDraft(value);
           return;
         }

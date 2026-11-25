@@ -60,7 +60,12 @@ public sealed record OutboundMailRequest(
     /// body references an image that lives on *another* ticket (copied from
     /// that ticket's timeline or composer). Null fails closed: such
     /// references are left untouched instead of being copied onto this ticket.
-    string? AuthorRole = null);
+    string? AuthorRole = null,
+    /// v0.1.67 — extra keys merged into the <c>MailSent</c> event metadata
+    /// (campaigns stamp <c>campaignId</c> / <c>campaignMessageId</c> for the
+    /// timeline badge and for outbox reconciliation). Keys that collide with
+    /// the built-in metadata are ignored — the built-ins always win.
+    IReadOnlyDictionary<string, string>? ExtraEventMetadata = null);
 
 public enum OutboundMailStatus
 {

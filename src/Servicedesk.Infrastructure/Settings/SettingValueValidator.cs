@@ -78,6 +78,14 @@ public static class SettingValueValidator
             SettingKeys.Portal.ConversationOrder =>
                 value is Portal.PortalConversationOrder.Oldest or Portal.PortalConversationOrder.Newest
                     ? null : "Choose oldest or newest.",
+            SettingKeys.Campaigns.MaxRecipients => IntRange(value, 1, 2000),
+            SettingKeys.Campaigns.SendRatePerMinute => IntRange(value, 1, 60),
+            SettingKeys.Campaigns.MaxAttempts => IntRange(value, 1, 10),
+            SettingKeys.Campaigns.ProposedDateFormat or SettingKeys.Campaigns.ProposedTimeFormat => DateFormat(value),
+            SettingKeys.Campaigns.ProposedDateCulture => Culture(value),
+            SettingKeys.Campaigns.ApprovalLinkMaxDays or SettingKeys.Campaigns.MaxScheduleDays => IntRange(value, 1, 365),
+            SettingKeys.Campaigns.ApprovalLinkLabel =>
+                value.Trim().Length is >= 1 and <= 120 ? null : "Enter a link text of 1 to 120 characters.",
             _ => null,
         };
     }
@@ -86,6 +94,36 @@ public static class SettingValueValidator
         => int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n)
            && n >= min && n <= max
             ? null : $"Choose a whole number from {min} to {max}.";
+
+    /// A .NET custom date/time format that formats without throwing.
+    private static string? DateFormat(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 64) return "Enter a date format of at most 64 characters.";
+        try
+        {
+            _ = new DateTime(2026, 1, 1, 9, 30, 0).ToString(value, System.Globalization.CultureInfo.InvariantCulture);
+            return null;
+        }
+        catch (FormatException)
+        {
+            return "This is not a valid date format.";
+        }
+    }
+
+    /// A culture code the runtime knows (nl-BE, fr-BE, en-GB…).
+    private static string? Culture(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "Enter a culture code such as nl-BE.";
+        try
+        {
+            var c = System.Globalization.CultureInfo.GetCultureInfo(value.Trim(), predefinedOnly: true);
+            return c.Equals(System.Globalization.CultureInfo.InvariantCulture) ? "Enter a culture code such as nl-BE." : null;
+        }
+        catch (System.Globalization.CultureNotFoundException)
+        {
+            return "Unknown culture code. Use a code such as nl-BE, fr-BE or en-GB.";
+        }
+    }
 
     /// Comma-separated GUIDs (empty allowed), at most 100.
     private static string? GuidCsv(string value)

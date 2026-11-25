@@ -59,6 +59,37 @@ public sealed class FeatureFlagEnforcementTests : IClassFixture<SharedHostFixtur
     [InlineData("GET", "/api/backoffice-forms/ticket/00000000-0000-0000-0000-000000000001")]
     [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/handle")]
     [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/reopen")]
+    // campaigns_enabled (v0.1.67 — Campaigns / bulk mail)
+    [InlineData("GET", "/api/campaigns/")]
+    [InlineData("GET", "/api/campaigns/tokens")]
+    [InlineData("GET", "/api/settings/campaigns")]
+    [InlineData("POST", "/api/campaigns/")]
+    [InlineData("GET", "/api/campaigns/00000000-0000-0000-0000-000000000001")]
+    [InlineData("PATCH", "/api/campaigns/00000000-0000-0000-0000-000000000001")]
+    [InlineData("DELETE", "/api/campaigns/00000000-0000-0000-0000-000000000001")]
+    [InlineData("POST", "/api/campaigns/00000000-0000-0000-0000-000000000001/duplicate")]
+    [InlineData("POST", "/api/campaigns/00000000-0000-0000-0000-000000000001/tickets")]
+    [InlineData("POST", "/api/campaigns/00000000-0000-0000-0000-000000000001/tickets/from-project")]
+    [InlineData("POST", "/api/campaigns/00000000-0000-0000-0000-000000000001/tickets/remove")]
+    [InlineData("PUT", "/api/campaigns/00000000-0000-0000-0000-000000000001/tickets/proposed")]
+    [InlineData("PUT", "/api/campaigns/00000000-0000-0000-0000-000000000001/tickets/00000000-0000-0000-0000-000000000002/decision")]
+    [InlineData("GET", "/api/campaigns/00000000-0000-0000-0000-000000000001/preview/00000000-0000-0000-0000-000000000002")]
+    [InlineData("POST", "/api/campaigns/00000000-0000-0000-0000-000000000001/plan")]
+    [InlineData("POST", "/api/campaigns/00000000-0000-0000-0000-000000000001/rounds")]
+    [InlineData("POST", "/api/campaigns/00000000-0000-0000-0000-000000000001/cancel-queued")]
+    [InlineData("POST", "/api/campaigns/00000000-0000-0000-0000-000000000001/retry-failed")]
+    // campaigns_enabled also guards the maintenance planner (v0.1.67)
+    [InlineData("GET", "/api/maintenance/plans")]
+    [InlineData("GET", "/api/maintenance/plans/00000000-0000-0000-0000-000000000001")]
+    [InlineData("POST", "/api/maintenance/plans")]
+    [InlineData("PUT", "/api/maintenance/plans/00000000-0000-0000-0000-000000000001")]
+    [InlineData("DELETE", "/api/maintenance/plans/00000000-0000-0000-0000-000000000001")]
+    [InlineData("POST", "/api/maintenance/plans/00000000-0000-0000-0000-000000000001/start-now")]
+    [InlineData("GET", "/api/maintenance/tokens")]
+    [InlineData("GET", "/api/maintenance/members/00000000-0000-0000-0000-000000000001/notes")]
+    [InlineData("POST", "/api/maintenance/members/00000000-0000-0000-0000-000000000001/notes")]
+    [InlineData("PUT", "/api/maintenance/members/00000000-0000-0000-0000-000000000001/notes/00000000-0000-0000-0000-000000000002")]
+    [InlineData("DELETE", "/api/maintenance/members/00000000-0000-0000-0000-000000000001/notes/00000000-0000-0000-0000-000000000002")]
     // calendar_planning_enabled (v0.1.61 — Outlook planning from forms)
     [InlineData("GET", "/api/calendar/availability?userIds=00000000-0000-0000-0000-000000000001&start=2026-11-23T08:00:00Z&end=2026-11-23T10:00:00Z")]
     // order_management_enabled (v0.1.59 — TD SYNNEX orders)
@@ -155,6 +186,10 @@ public sealed class FeatureFlagEnforcementTests : IClassFixture<SharedHostFixtur
         Assert.False(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.CalendarPlanning, default));
         users.CalendarPlanningEnabled[userId] = true;
         Assert.True(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.CalendarPlanning, default));
+
+        Assert.False(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.Campaigns, default));
+        users.CampaignsEnabled[userId] = true;
+        Assert.True(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.Campaigns, default));
     }
 
     [Fact]

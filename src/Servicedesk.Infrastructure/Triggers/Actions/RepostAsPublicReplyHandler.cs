@@ -34,6 +34,8 @@ internal sealed class RepostAsPublicReplyHandler : ITriggerActionHandler
             return TriggerActionResult.Failed(Kind, "Requires a triggering article to repost.");
         if (!src.IsInternal)
             return TriggerActionResult.NoOp(Kind, new { reason = "triggering article is already public" });
+        if (ctx.ChangeSet.NoteReplyArticle is not null)
+            return TriggerActionResult.NoOp(Kind, new { reason = "note replies are internal and never reposted" });
         if (string.IsNullOrWhiteSpace(src.BodyHtml) && string.IsNullOrWhiteSpace(src.BodyText))
             return TriggerActionResult.Failed(Kind, "Triggering article has no body to repost.");
 

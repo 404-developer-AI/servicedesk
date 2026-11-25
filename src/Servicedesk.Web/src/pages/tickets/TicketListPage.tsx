@@ -2,11 +2,11 @@ import * as React from "react";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Eye, Layers, Lock, ShieldAlert, Ticket, X } from "lucide-react";
+import { Eye, Lock, ShieldAlert, Ticket } from "lucide-react";
 import { ColumnSelector } from "@/components/ColumnSelector";
 import { Button } from "@/components/ui/button";
 import { TicketTableSkeleton } from "./components/TicketTable";
-import { GroupedTicketList, type TicketSelection } from "./components/GroupedTicketList";
+import { GroupedTicketList } from "./components/GroupedTicketList";
 import { ViewTabs } from "@/components/ViewTabs";
 import { OTHER_TAB, countReadyByTab, filterByTab } from "@/lib/viewTabs";
 import { useTicketOverlayStore } from "@/stores/useTicketOverlayStore";
@@ -14,6 +14,8 @@ import { useAuth } from "@/auth/authStore";
 import { useServerNowMs } from "@/hooks/useServerTime";
 import { toast } from "sonner";
 import { BulkActionDialog } from "./components/BulkActionDialog";
+import { BulkSelectionBar } from "./components/BulkSelectionBar";
+import { useTicketBulkSelection } from "./components/useTicketBulkSelection";
 import { ticketApi, type TicketListQuery, type TicketListItem, type DisplayConfig, type ViewSearchMode } from "@/lib/ticket-api";
 import { viewApi } from "@/lib/views-api";
 import { agentQueueApi } from "@/lib/queue-access-api";
@@ -21,7 +23,6 @@ import { preferencesApi } from "@/lib/preferences-api";
 import { settingsApi } from "@/lib/settings-api";
 import { taxonomyApi } from "@/lib/taxonomy-api";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
-import { cn } from "@/lib/utils";
 import { useTicketListRealtime } from "@/hooks/useTicketRealtime";
 import { rowMatchesColumns, searchableColumns, searchTokens } from "@/lib/ticketColumns";
 import { ViewSearchBar } from "./components/ViewSearchBar";
@@ -358,57 +359,11 @@ export function TicketListPage() {
   const bulkEnabled = bulkSettings?.enabled !== false;
   const bulkMax = bulkSettings?.maxSelection ?? 100;
 
-  const [selected, setSelected] = React.useState<Set<string>>(() => new Set());
   const [bulkOpen, setBulkOpen] = React.useState(false);
-
-  // A different view/filter is a different working set: start clean.
-  React.useEffect(() => {
-    setSelected(new Set());
-  }, [filters, viewId]);
-
-  // Prune ids that left the loaded list (resolved away, moved out of the
-  // filter by a realtime refresh) so the count and the dialog never include
-  // tickets the agent can no longer see.
-  React.useEffect(() => {
-    if (selected.size === 0) return;
-    const present = new Set(items.map((t) => t.id));
-    let changed = false;
-    for (const id of selected) if (!present.has(id)) { changed = true; break; }
-    if (!changed) return;
-    setSelected((cur) => new Set([...cur].filter((id) => present.has(id))));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
-
-  const selection: TicketSelection | undefined = React.useMemo(
-    () =>
-      bulkEnabled
-        ? {
-            selected,
-            onToggle: (id) =>
-              setSelected((cur) => {
-                const next = new Set(cur);
-                if (next.has(id)) next.delete(id);
-                else next.add(id);
-                return next;
-              }),
-            onSetMany: (ids, checked) =>
-              setSelected((cur) => {
-                const next = new Set(cur);
-                for (const id of ids) {
-                  if (checked) next.add(id);
-                  else next.delete(id);
-                }
-                return next;
-              }),
-          }
-        : undefined,
-    [bulkEnabled, selected],
-  );
-  const selectedItems = React.useMemo(
-    () => (selected.size === 0 ? [] : items.filter((t) => selected.has(t.id))),
-    [items, selected],
-  );
-  const overCap = selectedItems.length > bulkMax;
+  // v0.1.67 — Campaigns flag holders can select rows too ("Add to campaign").
+  const campaignsEnabled = !!user?.campaignsEnabled;
+  const { selection, selectedItems, clear: clearSelection } = useTicketBulkSelection(
+    items, filters, viewId, bulkEnabled || campaignsEnabled);
 
   const pageTitle = viewData?.name ?? "Tickets";
   const PageIcon = viewId ? Eye : Ticket;
@@ -487,49 +442,14 @@ export function TicketListPage() {
       )}
 
       {selection && selectedItems.length > 0 && (
-        <div
-          className={cn(
-            "glass-panel flex shrink-0 items-center justify-between gap-3 px-3 py-2 ring-1 transition-colors",
-            overCap ? "ring-amber-500/40" : "ring-primary/30",
-          )}
-          role="toolbar"
-          aria-label="Bulk actions"
-        >
-          <div className="flex min-w-0 items-center gap-2 text-xs">
-            <span className="rounded-md bg-primary/15 px-2 py-0.5 font-semibold text-primary">
-              {selectedItems.length} selected
-            </span>
-            {overCap ? (
-              <span className="truncate text-amber-300">
-                Bulk actions are limited to {bulkMax} tickets at a time — deselect some to continue.
-              </span>
-            ) : (
-              <span className="truncate text-muted-foreground">
-                Shift-click a checkbox to select a range.
-              </span>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <Button
-              size="sm"
-              className="h-8 gap-1.5"
-              disabled={overCap}
-              onClick={() => setBulkOpen(true)}
-            >
-              <Layers className="h-3.5 w-3.5" />
-              Bulk edit…
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 gap-1 px-2 text-xs text-muted-foreground"
-              onClick={() => setSelected(new Set())}
-            >
-              <X className="h-3.5 w-3.5" />
-              Clear
-            </Button>
-          </div>
-        </div>
+        <BulkSelectionBar
+          selectedItems={selectedItems}
+          bulkEnabled={bulkEnabled}
+          bulkMax={bulkMax}
+          campaignsEnabled={campaignsEnabled}
+          onBulkEdit={() => setBulkOpen(true)}
+          onClear={clearSelection}
+        />
       )}
 
       <div className="flex-1 min-h-0">
@@ -593,12 +513,12 @@ export function TicketListPage() {
         )}
       </div>
 
-      {selection && (
+      {selection && bulkEnabled && (
         <BulkActionDialog
           open={bulkOpen}
           onOpenChange={setBulkOpen}
           selected={selectedItems}
-          onCompleted={() => setSelected(new Set())}
+          onCompleted={clearSelection}
         />
       )}
     </div>

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useSidebarStore } from "@/stores/useSidebarStore";
 import { visibleNavItems, type NavItem } from "@/shell/navItems";
+import { passesNavFlagGate } from "@/shell/navFlagGates";
 import { NewTicketDrawer } from "@/shell/NewTicketDrawer";
 import { useSystemVersion } from "@/hooks/useSystemVersion";
 import {
@@ -184,72 +185,8 @@ export function Sidebar() {
   ];
   const items = allItems.filter((item) => {
     if (item.to === "/tickets" && (inView || (navSettings && !navSettings.showOpenTickets))) return false;
-    // v0.0.35 — Timesheet is per-user opt-in. Even with the right role,
-    // a user without `timesheet_enabled` or `timesheet_manager` should
-    // not see the menu item.
-    if (item.to === "/timesheet"
-        && !user?.timesheetEnabled
-        && !user?.timesheetManager) {
-      return false;
-    }
-    // v0.0.40 polish — Knowledge Base is per-user opt-in. Same rationale
-    // as Timesheet above: role gates Agent+Admin, but a user without the
-    // `kb_enabled` flag never sees the entry.
-    if (item.to === "/kb" && !user?.kbEnabled) {
-      return false;
-    }
-    // v0.0.42 — Activity feed is per-user opt-in. Hides the link from
-    // users whose admin has not enabled the flag; server-side endpoint
-    // and SignalR hub also enforce the same gate.
-    if (item.to === "/activity" && !user?.activityFeedEnabled) {
-      return false;
-    }
-    // v0.0.52 — Assets is per-user opt-in (Tactical RMM mirror). The
-    // backend route is gated by AuthorizationPolicies.RequireAgent so a
-    // Customer never reaches it; the per-user flag adds the role-side
-    // visibility filter.
-    if (item.to === "/assets" && !user?.assetsEnabled) {
-      return false;
-    }
-    // v0.0.59 — Orders is per-user opt-in (Adsolut ERP mirror). Same
-    // rationale as Assets: role gates Agent+Admin, the `adsolut_orders_enabled`
-    // flag adds the visibility filter; backend /api/orders carries RequireAgent.
-    if (item.to === "/orders" && !user?.adsolutOrdersEnabled) {
-      return false;
-    }
-    // v0.0.69 — Statistics is per-user opt-in (statistics_read). Role gates
-    // Agent+Admin; the backend /api/statistics endpoints enforce the same flag.
-    if (item.to === "/statistics" && !user?.statisticsRead) {
-      return false;
-    }
-    // v0.1.13 — Insights is per-user opt-in (insights_enabled). Role gates
-    // Agent+Admin; the route gate and /api/insights enforce the same flag.
-    if (item.to === "/insights" && !user?.insightsEnabled) {
-      return false;
-    }
-    // v0.1.54 — Back office forms is per-user opt-in (backoffice_forms_enabled).
-    if (item.to === "/backoffice-forms" && !user?.backofficeFormsEnabled) {
-      return false;
-    }
-    // v0.1.59 — Order Management is per-user opt-in (order_management_enabled).
-    if (item.to === "/order-management" && !user?.orderManagementEnabled) {
-      return false;
-    }
-    // v0.1.25 — SLA switched off globally (Settings → SLA): no SLA log.
-    if (item.to === "/sla-log" && user?.slaEnabled === false) {
-      return false;
-    }
-    // v0.0.76 — Contracts is per-user opt-in (contracts_enabled). Role gates
-    // Agent+Admin; the /contracts route gate enforces the same flag.
-    if (item.to === "/contracts" && !user?.contractsEnabled) {
-      return false;
-    }
-    // Employee Feedback is per-user opt-in — either full (feedback_enabled) or
-    // restricted (feedback_own_only). Role gates Agent+Admin; the /feedback
-    // route gate enforces the same.
-    if (item.to === "/feedback" && !user?.feedbackEnabled && !user?.feedbackOwnOnly) {
-      return false;
-    }
+    // Per-user feature flags (visibility only; the API enforces them too).
+    if (!passesNavFlagGate(item.to, user)) return false;
     return true;
   });
 

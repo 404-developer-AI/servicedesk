@@ -1,4 +1,5 @@
 import { apiErrorMessage } from "@/lib/http";
+import { TokenVariableMenu } from "@/components/TokenVariableMenu";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,12 +8,10 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
-  ChevronDown,
   Link as LinkIcon,
   Loader2,
   Plus,
   Save,
-  Tag,
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,14 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { RichTextEditor } from "@/components/RichTextEditor";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   composeTemplatesApi,
   type ComposeTokenInfo,
@@ -144,60 +135,6 @@ type EditorHandle = {
   };
 };
 
-/// Dropdown that lists the available `{{token}}` placeholders. Mirrors the
-/// compose-template editor's "Insert variable" picker so the two surfaces
-/// feel identical. `onPick` receives the literal token string.
-function VariableMenu({
-  tokens,
-  onPick,
-}: {
-  tokens: ComposeTokenInfo[];
-  onPick: (token: string) => void;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-            "border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/15",
-          )}
-          title="Insert a placeholder that resolves to the recipient's ticket data at send time"
-        >
-          <Tag className="h-3.5 w-3.5" />
-          Insert variable
-          <ChevronDown className="h-3.5 w-3.5" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-auto">
-        <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground/70">
-          Available variables
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {tokens.length === 0 ? (
-          <div className="px-2 py-2 text-xs text-muted-foreground">Loading…</div>
-        ) : (
-          tokens.map((t) => (
-            <DropdownMenuItem
-              key={t.token}
-              onSelect={(e) => {
-                e.preventDefault();
-                onPick(t.token);
-              }}
-              className="flex items-center justify-between gap-3"
-            >
-              <span className="truncate text-sm">{t.label}</span>
-              <code className="shrink-0 rounded bg-glass-strong px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                {t.token}
-              </code>
-            </DropdownMenuItem>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
   const navigate = useNavigate();
@@ -441,7 +378,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
         <div>
           <div className="flex items-center justify-between">
             <Label>Subject</Label>
-            <VariableMenu
+            <TokenVariableMenu
               tokens={inviteTokens}
               onPick={(token) =>
                 setInviteSubject((s) => (s ? `${s} ${token}` : token))
@@ -475,7 +412,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
                 <LinkIcon className="h-3.5 w-3.5" />
                 Insert survey link
               </button>
-              <VariableMenu
+              <TokenVariableMenu
                 tokens={inviteTokens}
                 onPick={(token) => insertIntoBody(token)}
               />

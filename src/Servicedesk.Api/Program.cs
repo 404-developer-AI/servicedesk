@@ -32,6 +32,7 @@ using Servicedesk.Api.Taxonomy;
 using Servicedesk.Api.Search;
 using Servicedesk.Api.Statistics;
 using Servicedesk.Api.Insights;
+using Servicedesk.Api.Campaigns;
 using Servicedesk.Api.Checklists;
 using Servicedesk.Api.Forms;
 using Servicedesk.Api.Tickets;
@@ -208,6 +209,9 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITimesheetComm
 // v0.1.54 — Back office forms: payload-less list/badge refresh ping.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.IBackofficeFormNotifier,
     Servicedesk.Api.Presence.SignalRBackofficeFormNotifier>();
+// v0.1.67 — Campaigns: payload-less dashboard refresh ping.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Campaigns.ICampaignNotifier,
+    Servicedesk.Api.Presence.SignalRCampaignNotifier>();
 // v0.1.54 — group tags: toast + shared-block refresh per member.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.IGroupTagNotifier,
     Servicedesk.Api.Presence.SignalRGroupTagNotifier>();
@@ -763,34 +767,7 @@ app.MapGet("/api/system/login-banner", async (ISettingsService settings, Cancell
 })
 .WithName("GetLoginBanner");
 
-// Default theme — public derived-settings endpoint. The login page reads
-// this before authentication so anonymous users land on the admin-configured
-// default theme on their first ever visit (when no localStorage exists).
-// Values: 'steaan' | 'light' | 'dark' (v0.0.108). Unknown / corrupt values
-// silently fall back to the factory default so a hand-edited DB row can't
-// break paint. Settings-store failures are swallowed and reported as the
-// factory default — the login page must always load.
-app.MapGet("/api/system/default-theme", async (ISettingsService settings, CancellationToken ct) =>
-{
-    // Settings store unreachable — null falls through to the factory default.
-    var raw = await settings.GetOrAsync<string?>(SettingKeys.Ui.DefaultTheme, null, ct);
-    return Results.Ok(new { theme = UiThemes.NormalizeOrFactory(raw) });
-})
-.WithName("GetSystemDefaultTheme");
-
-// Ticket reference prefix — public derived-settings endpoint (v0.0.57). The
-// app reads this once at bootstrap so the copy-to-clipboard button produces
-// the admin-configured "Ticket#1234" form. Anonymous + cheap (single cached
-// settings read); a store failure falls back to the factory default so the
-// copy button always has a sane prefix.
-app.MapGet("/api/system/ticket-reference-prefix", async (ISettingsService settings, CancellationToken ct) =>
-{
-    // Settings store unreachable — null falls through with the factory default.
-    var raw = await settings.GetOrAsync<string?>(SettingKeys.Tickets.ReferencePrefix, null, ct);
-    var prefix = string.IsNullOrWhiteSpace(raw) ? TicketReference.DefaultPrefix : raw;
-    return Results.Ok(new { prefix });
-})
-.WithName("GetTicketReferencePrefix");
+app.MapPublicSettingsEndpoints();
 
 app.MapCspReportEndpoint();
 app.MapAuditEndpoints();
@@ -812,6 +789,7 @@ app.MapChecklistTemplateEndpoints();
 app.MapFormTemplateEndpoints();
 app.MapTicketFormEndpoints();
 app.MapBackofficeFormEndpoints();
+app.MapCampaignEndpoints();
 Servicedesk.Api.Calendar.CalendarEndpoints.MapCalendarEndpoints(app);
 app.MapTagGroupEndpoints();
 app.MapNoteThreadEndpoints();

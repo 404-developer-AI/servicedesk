@@ -19,6 +19,14 @@ public interface IComposeTokenResolver
         string? agentEmail,
         CancellationToken ct);
 
+    /// v0.1.67 — resolve for many tickets in one query (campaign preview,
+    /// validation and send). Tickets that do not exist are absent from the
+    /// result.
+    Task<IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, string>>> ResolveForTicketsAsync(
+        IReadOnlyCollection<Guid> ticketIds,
+        string? agentEmail,
+        CancellationToken ct);
+
     /// Resolve from a free-standing contact (and optional company) — used by
     /// the New-Ticket drawer where no ticket exists yet. Ticket-level tokens
     /// stay empty; contact + company tokens fill in where possible.
@@ -41,8 +49,19 @@ public sealed class ComposeTokenResolver : IComposeTokenResolver
     public async Task<IReadOnlyDictionary<string, string>> ResolveForTicketAsync(
         Guid ticketId, string? agentEmail, CancellationToken ct)
     {
+        var many = await ResolveForTicketsAsync(new[] { ticketId }, agentEmail, ct);
+        return many.TryGetValue(ticketId, out var map) ? map : Build(null, agentEmail);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, string>>> ResolveForTicketsAsync(
+        IReadOnlyCollection<Guid> ticketIds, string? agentEmail, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, IReadOnlyDictionary<string, string>>();
+        if (ticketIds.Count == 0) return result;
+
         const string sql = """
-            SELECT t.number                                          AS TicketNumber,
+            SELECT t.id                                              AS TicketId,
+                   t.number                                          AS TicketNumber,
                    t.subject                                         AS TicketSubject,
                    c.first_name                                      AS ContactFirstName,
                    c.last_name                                       AS ContactLastName,
@@ -59,15 +78,16 @@ public sealed class ComposeTokenResolver : IComposeTokenResolver
             FROM tickets t
             LEFT JOIN contacts c   ON c.id = t.requester_contact_id
             LEFT JOIN companies co ON co.id = t.company_id
-            WHERE t.id = @ticketId
-            LIMIT 1
+            WHERE t.id = ANY(@ids)
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var row = await conn.QueryFirstOrDefaultAsync<ContextRow>(
-            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+        var rows = await conn.QueryAsync<ContextRow>(
+            new CommandDefinition(sql, new { ids = ticketIds.Distinct().ToArray() }, cancellationToken: ct));
 
-        return Build(row, agentEmail);
+        foreach (var row in rows)
+            result[row.TicketId] = Build(row, agentEmail);
+        return result;
     }
 
     public async Task<IReadOnlyDictionary<string, string>> ResolveForContactAsync(
@@ -172,6 +192,7 @@ public sealed class ComposeTokenResolver : IComposeTokenResolver
     // for nullable row-DTOs even when the row exists.
     private sealed class ContextRow
     {
+        public Guid TicketId { get; set; }
         public long TicketNumber { get; set; }
         public string? TicketSubject { get; set; }
         public string? ContactFirstName { get; set; }

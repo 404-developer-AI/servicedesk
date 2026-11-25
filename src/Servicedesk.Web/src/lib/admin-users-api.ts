@@ -46,6 +46,8 @@ export type UserAdminRow = {
   calendarPlanningEnabled: boolean;
   calendarId: string | null;
   calendarName: string | null;
+  // v0.1.67 — per-user opt-in for Campaigns (bulk mail).
+  campaignsEnabled: boolean;
   // v0.0.59 — per-user opt-in for the Adsolut Orders feature.
   adsolutOrdersEnabled: boolean;
   // v0.0.69 — per-user opt-in for the Statistics feature. read = view
@@ -86,6 +88,7 @@ export type FeatureFlagsUpdate = Partial<{
   feedbackOwnOnly: boolean;
   orderManagementEnabled: boolean;
   calendarPlanningEnabled: boolean;
+  campaignsEnabled: boolean;
   /// Empty string clears (default calendar).
   calendarId: string;
   calendarName: string;

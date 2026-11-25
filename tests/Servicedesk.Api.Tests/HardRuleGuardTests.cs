@@ -103,4 +103,37 @@ public sealed class HardRuleGuardTests
             + "(CLAUDE.md → Global search; tests/Servicedesk.Api.Tests/Database): " + string.Join(", ", missing));
         Assert.All(SearchSourcesWithoutDbTest.Keys, name => Assert.Contains(name, sources));
     }
+
+    // ---- bulk mail only through Campaigns, through the one mail path --------
+
+    [Fact]
+    public void Campaigns_send_only_through_the_single_ticket_mail_service()
+    {
+        // No second mail path: campaign code never talks to Graph directly.
+        var offenders = RepoFiles.Enumerate("src/Servicedesk.Infrastructure/Campaigns", "*.cs")
+            .Concat(RepoFiles.Enumerate("src/Servicedesk.Api/Campaigns", "*.cs"))
+            .Where(path => Regex.IsMatch(File.ReadAllText(path), @"\bIGraphMailClient\b|\bGraphMailClient\b"))
+            .Select(RepoFiles.Relative)
+            .ToList();
+        Assert.True(offenders.Count == 0,
+            "Campaign mail goes through IOutboundMailService only (CLAUDE.md → Campaigns): " + string.Join(", ", offenders));
+
+        var sender = File.ReadAllText(Path.Combine(RepoFiles.Root(), "src/Servicedesk.Infrastructure/Campaigns/CampaignSendService.cs"));
+        Assert.Contains("IOutboundMailService", sender);
+    }
+
+    [Fact]
+    public void The_generic_bulk_action_never_sends_mail()
+    {
+        var files = new[]
+        {
+            "src/Servicedesk.Infrastructure/Tickets/TicketBulkActionService.cs",
+            "src/Servicedesk.Web/src/pages/tickets/components/BulkActionDialog.tsx",
+        };
+        var mail = new Regex(@"IOutboundMailService|IGraphMailClient|SendMailAsync|/mail[""'`]", RegexOptions.Compiled);
+        var offenders = files.Where(f => mail.IsMatch(File.ReadAllText(Path.Combine(RepoFiles.Root(), f)))).ToList();
+        Assert.True(offenders.Count == 0,
+            "Bulk actions post no outbound mail; bulk mail exists only as Campaigns (CLAUDE.md → Bulk actions): "
+            + string.Join(", ", offenders));
+    }
 }

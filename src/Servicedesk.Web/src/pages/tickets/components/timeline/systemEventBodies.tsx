@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useServerTimeZone } from "@/hooks/useServerTime";
 import { formatDateTime } from "@/lib/dateFormat";
 import { formatDuration } from "@/lib/timesheet-api";
@@ -219,6 +220,54 @@ export function ProjectRevertedBody() {
     <span className="text-sm text-muted-foreground">
       Ticket converted back to a normal ticket
     </span>
+  );
+}
+
+/// v0.1.67 — one line per finished campaign round on the project: how many
+/// linked tickets got the mail (each mail sits on its own ticket).
+export function CampaignSentBody({ meta }: { meta: Meta }) {
+  const id = typeof meta.campaignId === "string" ? meta.campaignId : null;
+  const name = typeof meta.campaignName === "string" ? meta.campaignName : "Campaign";
+  const sent = Number(meta.sent ?? 0);
+  const total = Number(meta.total ?? 0);
+  const followUp = meta.kind === "FollowUp";
+  return (
+    <span className="text-sm text-muted-foreground">
+      {followUp ? "Follow-up of " : ""}
+      {id ? (
+        <Link to="/campaigns/$campaignId" params={{ campaignId: id }} className="text-foreground/80 hover:text-primary">
+          {name}
+        </Link>
+      ) : (
+        <span className="text-foreground/80">{name}</span>
+      )}{" "}
+      sent to <span className="text-foreground/80 tabular-nums">{sent}/{total}</span> tickets
+    </span>
+  );
+}
+
+const CAMPAIGN_ANSWER_TEXT: Record<string, string> = {
+  Approved: "approved the proposed moment",
+  OtherTime: "asked for another moment",
+  Declined: "declined",
+};
+
+/// v0.1.67 — the customer's answer through a campaign's answer link.
+export function CampaignAnswerBody({ meta, note }: { meta: Meta; note: string | null | undefined }) {
+  const choice = typeof meta.choice === "string" ? CAMPAIGN_ANSWER_TEXT[meta.choice] ?? meta.choice : "answered";
+  const proposed = typeof meta.proposedText === "string" ? meta.proposedText : null;
+  const name = typeof meta.campaignName === "string" ? meta.campaignName : "the campaign";
+  const preferred = typeof meta.preferredText === "string" ? meta.preferredText : null;
+  return (
+    <div className="space-y-1 text-sm">
+      <p className="text-muted-foreground">
+        Customer {meta.changed === true ? "changed the answer: " : ""}
+        <span className="text-foreground/80">{choice}</span>
+        {proposed && <> ({proposed})</>} — {name}
+      </p>
+      {preferred && <p className="text-muted-foreground">Preferred moment: <span className="text-foreground/80">{preferred}</span></p>}
+      {note && <p className="whitespace-pre-line text-foreground">{note}</p>}
+    </div>
   );
 }
 

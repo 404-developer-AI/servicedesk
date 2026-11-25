@@ -30,10 +30,10 @@ public sealed class UserAdminService : IUserAdminService
         _settings = settings;
     }
 
-    public async Task<IReadOnlyList<UserAdminRow>> ListAllAsync(CancellationToken ct = default)
-    {
-        const string sql = """
-            SELECT  u.id              AS Id,
+    /// The whitelisted <see cref="UserAdminRow"/> projection, in constructor
+    /// order (Dapper maps positional records by column order).
+    private const string UserRowColumns = """
+            u.id              AS Id,
                     u.email           AS Email,
                     u.role_name       AS Role,
                     u.auth_mode       AS AuthMode,
@@ -62,8 +62,15 @@ public sealed class UserAdminService : IUserAdminService
                     u.insights_enabled  AS InsightsEnabled,
                     u.order_management_enabled AS OrderManagementEnabled,
                     u.calendar_planning_enabled AS CalendarPlanningEnabled,
+                    u.campaigns_enabled AS CampaignsEnabled,
                     u.calendar_id       AS CalendarId,
                     u.calendar_name     AS CalendarName
+            """;
+
+    public async Task<IReadOnlyList<UserAdminRow>> ListAllAsync(CancellationToken ct = default)
+    {
+        const string sql = $"""
+            SELECT {UserRowColumns}
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             -- v0.1.0: customer-portal accounts have their own admin surface
@@ -92,38 +99,8 @@ public sealed class UserAdminService : IUserAdminService
 
     public async Task<UserAdminRow?> GetByIdAsync(Guid userId, CancellationToken ct = default)
     {
-        const string sql = """
-            SELECT  u.id              AS Id,
-                    u.email           AS Email,
-                    u.role_name       AS Role,
-                    u.auth_mode       AS AuthMode,
-                    u.external_subject AS ExternalSubject,
-                    u.is_active       AS IsActive,
-                    (t.enabled IS TRUE) AS TwoFactorEnabled,
-                    u.created_utc     AS CreatedUtc,
-                    u.last_login_utc  AS LastLoginUtc,
-                    u.timesheet_enabled AS TimesheetEnabled,
-                    u.timesheet_manager AS TimesheetManager,
-                    u.is_iso_mgm        AS IsIsoMgm,
-                    u.is_iso_dpo        AS IsIsoDpo,
-                    u.kb_enabled        AS KbEnabled,
-                    u.search_enabled    AS SearchEnabled,
-                    u.activity_feed_enabled AS ActivityFeedEnabled,
-                    u.assets_enabled    AS AssetsEnabled,
-                    u.adsolut_timesheet_enabled AS AdsolutTimesheetEnabled,
-                    u.timesheet_backoffice_enabled AS TimesheetBackofficeEnabled,
-                    u.backoffice_forms_enabled AS BackofficeFormsEnabled,
-                    u.adsolut_orders_enabled AS AdsolutOrdersEnabled,
-                    u.statistics_read   AS StatisticsRead,
-                    u.statistics_write  AS StatisticsWrite,
-                    u.contracts_enabled AS ContractsEnabled,
-                    u.feedback_enabled  AS FeedbackEnabled,
-                    u.feedback_own_only AS FeedbackOwnOnly,
-                    u.insights_enabled  AS InsightsEnabled,
-                    u.order_management_enabled AS OrderManagementEnabled,
-                    u.calendar_planning_enabled AS CalendarPlanningEnabled,
-                    u.calendar_id       AS CalendarId,
-                    u.calendar_name     AS CalendarName
+        const string sql = $"""
+            SELECT {UserRowColumns}
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
@@ -861,6 +838,7 @@ public sealed class UserAdminService : IUserAdminService
             && update.InsightsEnabled is null
             && update.OrderManagementEnabled is null
             && update.CalendarPlanningEnabled is null
+            && update.CampaignsEnabled is null
             && update.CalendarId is null
             && update.CalendarName is null)
         {
@@ -915,36 +893,12 @@ public sealed class UserAdminService : IUserAdminService
                 insights_enabled = COALESCE(@insightsEnabled, insights_enabled),
                 order_management_enabled = COALESCE(@orderManagementEnabled, order_management_enabled),
                 calendar_planning_enabled = COALESCE(@calendarPlanningEnabled, calendar_planning_enabled),
+                campaigns_enabled = COALESCE(@campaignsEnabled, campaigns_enabled),
                 calendar_id   = CASE WHEN @calendarId   IS NULL THEN calendar_id   ELSE NULLIF(@calendarId, '')   END,
                 calendar_name = CASE WHEN @calendarName IS NULL THEN calendar_name ELSE NULLIF(@calendarName, '') END
             WHERE id = @id
             """,
-            new
-            {
-                id = userId,
-                timesheetEnabled = update.TimesheetEnabled,
-                timesheetManager = update.TimesheetManager,
-                isIsoMgm = update.IsIsoMgm,
-                isIsoDpo = update.IsIsoDpo,
-                kbEnabled = update.KbEnabled,
-                searchEnabled = update.SearchEnabled,
-                activityFeedEnabled = update.ActivityFeedEnabled,
-                assetsEnabled = update.AssetsEnabled,
-                adsolutTimesheetEnabled = update.AdsolutTimesheetEnabled,
-                timesheetBackofficeEnabled = update.TimesheetBackofficeEnabled,
-                backofficeFormsEnabled = update.BackofficeFormsEnabled,
-                adsolutOrdersEnabled = update.AdsolutOrdersEnabled,
-                statisticsRead = update.StatisticsRead,
-                statisticsWrite = update.StatisticsWrite,
-                contractsEnabled = update.ContractsEnabled,
-                feedbackEnabled = update.FeedbackEnabled,
-                feedbackOwnOnly = update.FeedbackOwnOnly,
-                insightsEnabled = update.InsightsEnabled,
-                orderManagementEnabled = update.OrderManagementEnabled,
-                calendarPlanningEnabled = update.CalendarPlanningEnabled,
-                calendarId = update.CalendarId,
-                calendarName = update.CalendarName,
-            },
+            FeatureFlagParameters(userId, update),
             tx,
             cancellationToken: ct));
         await tx.CommitAsync(ct);
@@ -957,6 +911,15 @@ public sealed class UserAdminService : IUserAdminService
     }
 
     // ---- helpers -------------------------------------------------------
+
+    /// The update's properties bind by name to the @camelCase parameters
+    /// (Dapper matches case-insensitively); null keeps the column value.
+    private static DynamicParameters FeatureFlagParameters(Guid userId, FeatureFlagsUpdate update)
+    {
+        var p = new DynamicParameters(update);
+        p.Add("id", userId);
+        return p;
+    }
 
     private static bool IsValidAssignableRole(string role) =>
         string.Equals(role, "Agent", StringComparison.Ordinal) ||

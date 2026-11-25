@@ -1,4 +1,12 @@
 import * as React from "react";
+import {
+  ARTICLE_TYPE_OPTIONS,
+  FORM_EVENT_OPTIONS,
+  FORM_SAVE_EVENT_OPTIONS,
+  ORDER_CHANGE_OPTIONS,
+  ORDER_STATUS_OPTIONS,
+  SENDER_OPTIONS,
+} from "./conditionOptions";
 import { useQuery } from "@tanstack/react-query";
 import { formTemplatesApi } from "@/lib/forms-api";
 import { Plus, Trash2, ChevronDown, FolderTree } from "lucide-react";
@@ -43,53 +51,6 @@ type Props = {
   };
 };
 
-const SENDER_OPTIONS = [
-  { value: "Customer", label: "Customer" },
-  { value: "Agent", label: "Agent" },
-  { value: "System", label: "System" },
-];
-
-/// v0.1.58 — form saves (the `form.save_event` field), any form.
-const FORM_SAVE_EVENT_OPTIONS = [
-  { value: "created", label: "Filled in (new form)" },
-  { value: "updated", label: "Edited (new version)" },
-];
-
-/// v0.1.54 — back office form events (the `form.backoffice_event` field).
-const FORM_EVENT_OPTIONS = [
-  { value: "submitted", label: "Submitted to back office" },
-  { value: "handled", label: "Handled by back office" },
-  { value: "reopened", label: "Reopened (back on the list)" },
-];
-
-/// v0.1.59 — what changed on a linked TD SYNNEX order (`order.change`).
-/// Values are the server's TdSynnexChangeKind constants.
-const ORDER_CHANGE_OPTIONS = [
-  { value: "status", label: "Order status" },
-  { value: "ship_date", label: "Expected ship date" },
-  { value: "shipment", label: "Shipment / delivery note" },
-  { value: "invoice", label: "Invoice" },
-  { value: "quantity", label: "Quantity" },
-  { value: "lines", label: "Lines added or removed" },
-];
-
-/// v0.1.59 — TD SYNNEX order statuses (`order.status`).
-const ORDER_STATUS_OPTIONS = [
-  { value: "OPEN", label: "Open" },
-  { value: "INVESTIGATION", label: "Investigation" },
-  { value: "SHIPPING", label: "Shipping" },
-  { value: "COMPLETED", label: "Completed" },
-  { value: "REJECTED", label: "Rejected" },
-];
-
-const ARTICLE_TYPE_OPTIONS = [
-  { value: "MailReceived", label: "Mail received" },
-  { value: "MailSent", label: "Mail sent" },
-  { value: "Comment", label: "Comment" },
-  { value: "Note", label: "Note" },
-  { value: "Call", label: "Phone call" },
-  { value: "PortalMessage", label: "Portal message (customer)" },
-];
 
 /// Conditions section of the trigger editor. One-level AND mode renders a
 /// flat row-list — adding a row appends a leaf to the root group. Expert

@@ -95,7 +95,8 @@ public sealed class TriggerRenderContextFactory : ITriggerRenderContextFactory
             ["ticket.customer.email"] = contact?.Email,
             ["ticket.company.name"] = company?.Name,
 
-            ["article.body_text"] = ctx.TriggeringEvent?.BodyText,
+            // A note reply's text stays out of rendered mail / notes (see NoteReplyArticle).
+            ["article.body_text"] = ctx.ChangeSet.NoteReplyArticle is null ? ctx.TriggeringEvent?.BodyText : null,
             ["article.from_email"] = articleFrom,
             ["article.subject"] = articleSubject ?? ticket.Subject,
 

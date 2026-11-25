@@ -7107,6 +7107,353 @@ public sealed class DatabaseBootstrapper : IHostedService
             WHERE status IN ('Pending','Failed','CancelPending');
         CREATE INDEX IF NOT EXISTS ix_ticket_form_calendar_events_form
             ON ticket_form_calendar_events (form_id);
+
+        -- ===================================================================
+        -- v0.1.67 — Campaigns: one mail per ticket to many tickets at once.
+        -- * users.campaigns_enabled: per-user flag (access boundary).
+        -- * campaigns: the message (subject + body with {{tokens}}), an
+        --   optional link to a project ticket and a default proposed date.
+        -- * campaign_tickets: the recipients (one row per ticket; a ticket can
+        --   be in several campaigns), a per-ticket proposed date, and the
+        --   agent's decision on the customer's answer.
+        -- * campaign_rounds: one send (initial or follow-up); subject + body
+        --   are frozen when the round starts. An optional "set Pending till"
+        --   is applied per ticket right after its mail went out (so a fast
+        --   customer answer is never hidden by a late status change);
+        --   campaign_messages.pending_result keeps the outcome.
+        -- * campaign_messages: the outbox — one row per ticket per round,
+        --   rendered at enqueue time, sent by CampaignSendWorker through the
+        --   normal single-ticket mail path. UNIQUE (round_id, ticket_id) is
+        --   the database-level guard against a double send.
+        -- "Reply received" / "timer expired" are derived at read time from
+        --   ticket_events; nothing is written per ticket change.
+        -- CampaignSent: one internal event on the linked project per round.
+        -- ===================================================================
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS campaigns_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        CREATE TABLE IF NOT EXISTS campaigns (
+            id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name                  TEXT        NOT NULL,
+            subject               TEXT        NOT NULL DEFAULT '',
+            body_html             TEXT        NOT NULL DEFAULT '',
+            source_template_id    UUID        NULL REFERENCES compose_templates(id) ON DELETE SET NULL,
+            project_ticket_id     UUID        NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            default_proposed_utc  TIMESTAMPTZ NULL,
+            state                 TEXT        NOT NULL DEFAULT 'Draft',
+            duplicated_from_id    UUID        NULL REFERENCES campaigns(id) ON DELETE SET NULL,
+            created_by_user_id    UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
+            search_text           TEXT        GENERATED ALWAYS AS (lower(name || ' ' || subject)) STORED,
+            CONSTRAINT chk_campaigns_state CHECK (state IN ('Draft','Active','Archived'))
+        );
+        CREATE INDEX IF NOT EXISTS ix_campaigns_list ON campaigns (state, updated_utc DESC);
+        CREATE INDEX IF NOT EXISTS ix_campaigns_project ON campaigns (project_ticket_id)
+            WHERE project_ticket_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_campaigns_search_trgm
+            ON campaigns USING GIN (search_text gin_trgm_ops);
+
+        CREATE TABLE IF NOT EXISTS campaign_tickets (
+            campaign_id           UUID        NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+            ticket_id             UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            proposed_utc          TIMESTAMPTZ NULL,
+            source                TEXT        NOT NULL DEFAULT 'Selection',
+            added_by_user_id      UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            added_utc             TIMESTAMPTZ NOT NULL DEFAULT now(),
+            decision              TEXT        NULL,
+            decision_by_user_id   UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            decision_utc          TIMESTAMPTZ NULL,
+            PRIMARY KEY (campaign_id, ticket_id),
+            CONSTRAINT chk_campaign_tickets_source CHECK (source IN ('Selection','Project')),
+            CONSTRAINT chk_campaign_tickets_decision
+                CHECK (decision IS NULL OR decision IN ('Approved','OtherTime','Declined'))
+        );
+        CREATE INDEX IF NOT EXISTS ix_campaign_tickets_ticket ON campaign_tickets (ticket_id);
+
+        CREATE TABLE IF NOT EXISTS campaign_rounds (
+            id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            campaign_id           UUID        NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+            round_no              INT         NOT NULL,
+            kind                  TEXT        NOT NULL,
+            subject               TEXT        NOT NULL,
+            body_html             TEXT        NOT NULL,
+            sent_by_user_id       UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            sent_by_role          TEXT        NOT NULL,
+            pending_status_id     UUID        NULL REFERENCES statuses(id) ON DELETE SET NULL,
+            pending_till_utc      TIMESTAMPTZ NULL,
+            started_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
+            completed_utc         TIMESTAMPTZ NULL,
+            CONSTRAINT chk_campaign_rounds_kind CHECK (kind IN ('Initial','FollowUp')),
+            CONSTRAINT ux_campaign_rounds_no UNIQUE (campaign_id, round_no)
+        );
+
+        CREATE TABLE IF NOT EXISTS campaign_messages (
+            id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            round_id              UUID        NOT NULL REFERENCES campaign_rounds(id) ON DELETE CASCADE,
+            campaign_id           UUID        NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+            ticket_id             UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            state                 TEXT        NOT NULL DEFAULT 'Queued',
+            skip_reason           TEXT        NULL,
+            to_address            TEXT        NOT NULL DEFAULT '',
+            rendered_subject      TEXT        NOT NULL DEFAULT '',
+            rendered_body_html    TEXT        NOT NULL DEFAULT '',
+            not_before_utc        TIMESTAMPTZ NULL,
+            claimed_utc           TIMESTAMPTZ NULL,
+            attempts              INT         NOT NULL DEFAULT 0,
+            next_attempt_utc      TIMESTAMPTZ NULL,
+            last_error            TEXT        NOT NULL DEFAULT '',
+            sent_utc              TIMESTAMPTZ NULL,
+            mail_event_id         BIGINT      NULL,
+            pending_result        TEXT        NULL,
+            created_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_campaign_messages_state
+                CHECK (state IN ('Queued','Sending','Sent','Failed','Skipped','Cancelled')),
+            CONSTRAINT ux_campaign_messages_round_ticket UNIQUE (round_id, ticket_id)
+        );
+        -- The worker's queue: queued rows, due first.
+        CREATE INDEX IF NOT EXISTS ix_campaign_messages_due
+            ON campaign_messages (next_attempt_utc NULLS FIRST, created_utc)
+            WHERE state = 'Queued';
+        -- Dashboard: latest message per ticket per campaign.
+        CREATE INDEX IF NOT EXISTS ix_campaign_messages_ticket
+            ON campaign_messages (campaign_id, ticket_id, created_utc DESC);
+        -- Stale-claim reconciliation.
+        CREATE INDEX IF NOT EXISTS ix_campaign_messages_sending
+            ON campaign_messages (claimed_utc) WHERE state = 'Sending';
+
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked',
+                                  'SurveySent','SurveySubmitted','SurveyExpired',
+                                  'TimeLimitAlertDismissed','TimeLimitExtended',
+                                  'TimeLimitTrackingDisabled','StatusGateDecision',
+                                  'ChecklistAttached','ChecklistDetached','ChecklistCompleted',
+                                  'ChecklistReopened','ChecklistItemChanged','ChecklistCloseBlocked',
+                                  'ProjectConverted','ProjectReverted',
+                                  'ProjectLinked','ProjectUnlinked',
+                                  'PortalMessage','TicketFlagChange','Call',
+                                  'PendingTillChange','CampaignSent')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.1.67 (Campaigns phase 2) — scheduled rounds + the customer
+        -- answer link.
+        -- * campaign_rounds.scheduled_utc: "send on …" (server time); the
+        --   round's outbox rows carry it as not_before_utc.
+        -- * campaign_tickets.approval_token_*: one public answer link per
+        --   recipient per campaign (sha256 lookup key + DataProtection
+        --   ciphertext so a follow-up round embeds the same link again; the
+        --   raw token is never stored). Valid until approval_expires_utc
+        --   (the proposed date, capped by Campaigns.ApprovalLinkMaxDays).
+        -- * decision_source / decision_note: who recorded the decision
+        --   (Agent on the dashboard, Customer through the link) and the
+        --   customer's optional note.
+        -- * CampaignAnswer: the customer's answer on the ticket timeline
+        --   (customer-visible, author = the requester; runs triggers).
+        -- ===================================================================
+        ALTER TABLE campaign_rounds ADD COLUMN IF NOT EXISTS scheduled_utc TIMESTAMPTZ NULL;
+
+        ALTER TABLE campaign_tickets ADD COLUMN IF NOT EXISTS approval_token_hash   BYTEA       NULL;
+        ALTER TABLE campaign_tickets ADD COLUMN IF NOT EXISTS approval_token_cipher BYTEA       NULL;
+        ALTER TABLE campaign_tickets ADD COLUMN IF NOT EXISTS approval_expires_utc  TIMESTAMPTZ NULL;
+        ALTER TABLE campaign_tickets ADD COLUMN IF NOT EXISTS decision_source       TEXT        NULL;
+        ALTER TABLE campaign_tickets ADD COLUMN IF NOT EXISTS decision_note         TEXT        NULL;
+        -- "Another moment" through the answer link: the customer's preferred
+        -- date (server-local calendar date) and optional time of day.
+        ALTER TABLE campaign_tickets ADD COLUMN IF NOT EXISTS decision_preferred_date   DATE NULL;
+        ALTER TABLE campaign_tickets ADD COLUMN IF NOT EXISTS decision_preferred_minute INT  NULL;
+        -- Shown on the answer page with "Another moment" (e.g. "an intervention
+        -- at another moment is charged at 150 %"). Public text, written by agents.
+        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS other_time_notice TEXT NOT NULL DEFAULT '';
+        ALTER TABLE campaign_tickets DROP CONSTRAINT IF EXISTS chk_campaign_tickets_decision_source;
+        ALTER TABLE campaign_tickets ADD CONSTRAINT chk_campaign_tickets_decision_source
+            CHECK (decision_source IS NULL OR decision_source IN ('Agent','Customer'));
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_campaign_tickets_approval_token
+            ON campaign_tickets (approval_token_hash) WHERE approval_token_hash IS NOT NULL;
+
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked',
+                                  'SurveySent','SurveySubmitted','SurveyExpired',
+                                  'TimeLimitAlertDismissed','TimeLimitExtended',
+                                  'TimeLimitTrackingDisabled','StatusGateDecision',
+                                  'ChecklistAttached','ChecklistDetached','ChecklistCompleted',
+                                  'ChecklistReopened','ChecklistItemChanged','ChecklistCloseBlocked',
+                                  'ProjectConverted','ProjectReverted',
+                                  'ProjectLinked','ProjectUnlinked',
+                                  'PortalMessage','TicketFlagChange','Call',
+                                  'PendingTillChange','CampaignSent','CampaignAnswer')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.1.67 (Campaigns phase 3) — Maintenance planner (owner design:
+        -- one plan with many members, see ARCHITECTURE.md).
+        -- * maintenance_plans: the recurring intervention — queue, optional
+        --   ticket template + ticket subject, the mail (subject + body), the
+        --   next intervention (server-local DATE + time of day), "mail N days
+        --   before", schedule Manual (no next date until someone sets one) or
+        --   Automatic (fixed calendar, every N months; anchor_day keeps the
+        --   day of month), optional auto-send (as send_as_user_id, rechecked
+        --   at every send) and an optional Pending status until the
+        --   intervention.
+        -- * maintenance_plan_members: company + contact (+ optional label,
+        --   e.g. "HQ"); one ticket per member per round.
+        -- * maintenance_rounds: one per plan per intervention date (UNIQUE —
+        --   never started twice) with its own campaign.
+        -- * maintenance_round_tickets: one row per member per round (PK) —
+        --   the ticket is recorded right after creation, so a retry never
+        --   creates a second one.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS maintenance_plans (
+            id                     UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name                   TEXT        NOT NULL,
+            notes                  TEXT        NOT NULL DEFAULT '',
+            queue_id               UUID        NOT NULL REFERENCES queues(id),
+            ticket_template_id     UUID        NULL REFERENCES ticket_templates(id) ON DELETE SET NULL,
+            ticket_subject         TEXT        NOT NULL DEFAULT '',
+            mail_subject           TEXT        NOT NULL DEFAULT '',
+            mail_body_html         TEXT        NOT NULL DEFAULT '',
+            schedule_mode          TEXT        NOT NULL DEFAULT 'Manual',
+            interval_months        INT         NULL,
+            next_intervention_date DATE        NULL,
+            intervention_minute    INT         NOT NULL DEFAULT 540,
+            anchor_day             INT         NULL,
+            mail_days_before       INT         NOT NULL DEFAULT 14,
+            auto_send              BOOLEAN     NOT NULL DEFAULT FALSE,
+            send_as_user_id        UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            pending_status_id      UUID        NULL REFERENCES statuses(id) ON DELETE SET NULL,
+            is_active              BOOLEAN     NOT NULL DEFAULT TRUE,
+            created_by_user_id     UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc            TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc            TIMESTAMPTZ NOT NULL DEFAULT now(),
+            search_text            TEXT        GENERATED ALWAYS AS (lower(name || ' ' || notes)) STORED,
+            CONSTRAINT chk_maintenance_plans_mode CHECK (schedule_mode IN ('Manual','Automatic')),
+            CONSTRAINT chk_maintenance_plans_interval CHECK (
+                (schedule_mode = 'Manual' AND interval_months IS NULL)
+                OR (schedule_mode = 'Automatic' AND interval_months BETWEEN 1 AND 60)),
+            CONSTRAINT chk_maintenance_plans_minute CHECK (intervention_minute BETWEEN 0 AND 1439),
+            CONSTRAINT chk_maintenance_plans_days CHECK (mail_days_before BETWEEN 0 AND 180),
+            CONSTRAINT chk_maintenance_plans_anchor CHECK (anchor_day IS NULL OR anchor_day BETWEEN 1 AND 31)
+        );
+        -- How long the ticket waits after an automatic mail: NULL = until
+        -- the intervention moment, N = N days after the mail (capped at the
+        -- intervention moment).
+        ALTER TABLE maintenance_plans ADD COLUMN IF NOT EXISTS pending_days INT NULL
+            CONSTRAINT chk_maintenance_plans_pending_days CHECK (pending_days BETWEEN 1 AND 365);
+        -- The time of day (server-local) the round starts on the mail day.
+        ALTER TABLE maintenance_plans ADD COLUMN IF NOT EXISTS mail_minute INT NOT NULL DEFAULT 540
+            CONSTRAINT chk_maintenance_plans_mail_minute CHECK (mail_minute BETWEEN 0 AND 1439);
+        -- One reminder per round (owner decision): N days after the first
+        -- mail, to recipients without a reply or decision, auto-send plans only.
+        ALTER TABLE maintenance_plans ADD COLUMN IF NOT EXISTS other_time_notice TEXT NOT NULL DEFAULT '';
+        ALTER TABLE maintenance_plans ADD COLUMN IF NOT EXISTS reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE maintenance_plans ADD COLUMN IF NOT EXISTS reminder_days INT NOT NULL DEFAULT 3
+            CONSTRAINT chk_maintenance_plans_reminder_days CHECK (reminder_days BETWEEN 1 AND 60);
+        ALTER TABLE maintenance_plans ADD COLUMN IF NOT EXISTS reminder_subject TEXT NOT NULL DEFAULT '';
+        ALTER TABLE maintenance_plans ADD COLUMN IF NOT EXISTS reminder_body_html TEXT NOT NULL DEFAULT '';
+        -- The worker's probe: active plans with a next intervention.
+        CREATE INDEX IF NOT EXISTS ix_maintenance_plans_next
+            ON maintenance_plans (next_intervention_date) WHERE is_active AND next_intervention_date IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_maintenance_plans_search_trgm
+            ON maintenance_plans USING GIN (search_text gin_trgm_ops);
+
+        CREATE TABLE IF NOT EXISTS maintenance_plan_members (
+            id                     UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            plan_id                UUID        NOT NULL REFERENCES maintenance_plans(id) ON DELETE CASCADE,
+            company_id             UUID        NULL REFERENCES companies(id) ON DELETE SET NULL,
+            contact_id             UUID        NOT NULL REFERENCES contacts(id),
+            label                  TEXT        NOT NULL DEFAULT '',
+            is_active              BOOLEAN     NOT NULL DEFAULT TRUE,
+            created_utc            TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        -- "Skip the next round" (e.g. just updated): consumed when the plan's
+        -- next round starts, recorded on that round as a skipped row.
+        ALTER TABLE maintenance_plan_members ADD COLUMN IF NOT EXISTS skip_next_round BOOLEAN NOT NULL DEFAULT FALSE;
+        CREATE INDEX IF NOT EXISTS ix_maintenance_plan_members_plan ON maintenance_plan_members (plan_id);
+        CREATE INDEX IF NOT EXISTS ix_maintenance_plan_members_company ON maintenance_plan_members (company_id);
+
+        CREATE TABLE IF NOT EXISTS maintenance_rounds (
+            id                     UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            plan_id                UUID        NOT NULL REFERENCES maintenance_plans(id) ON DELETE CASCADE,
+            intervention_date      DATE        NOT NULL,
+            intervention_minute    INT         NOT NULL,
+            state                  TEXT        NOT NULL DEFAULT 'Pending',
+            campaign_id            UUID        NULL REFERENCES campaigns(id) ON DELETE SET NULL,
+            attempts               INT         NOT NULL DEFAULT 0,
+            next_attempt_utc       TIMESTAMPTZ NULL,
+            last_error             TEXT        NOT NULL DEFAULT '',
+            created_utc            TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_maintenance_rounds_state CHECK (state IN ('Pending','Created','Failed')),
+            CONSTRAINT ux_maintenance_rounds_plan_date UNIQUE (plan_id, intervention_date)
+        );
+        CREATE INDEX IF NOT EXISTS ix_maintenance_rounds_open
+            ON maintenance_rounds (next_attempt_utc NULLS FIRST, created_utc) WHERE state IN ('Pending','Failed');
+        CREATE INDEX IF NOT EXISTS ix_maintenance_rounds_plan
+            ON maintenance_rounds (plan_id, intervention_date DESC);
+
+        CREATE TABLE IF NOT EXISTS maintenance_round_tickets (
+            round_id               UUID        NOT NULL REFERENCES maintenance_rounds(id) ON DELETE CASCADE,
+            member_id              UUID        NOT NULL REFERENCES maintenance_plan_members(id) ON DELETE CASCADE,
+            ticket_id              UUID        NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            created_utc            TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (round_id, member_id)
+        );
+        ALTER TABLE maintenance_round_tickets ADD COLUMN IF NOT EXISTS skipped BOOLEAN NOT NULL DEFAULT FALSE;
+        -- Set when the round's reminder was claimed (claim = once, even after a
+        -- crash); the note says what happened ("sent to 2", "everyone answered").
+        ALTER TABLE maintenance_rounds ADD COLUMN IF NOT EXISTS reminder_utc TIMESTAMPTZ NULL;
+        ALTER TABLE maintenance_rounds ADD COLUMN IF NOT EXISTS reminder_note TEXT NOT NULL DEFAULT '';
+        CREATE INDEX IF NOT EXISTS ix_maintenance_round_tickets_ticket
+            ON maintenance_round_tickets (ticket_id) WHERE ticket_id IS NOT NULL;
+
+        -- Maintenance notes (v0.1.67): per plan member (owner decision 1a) —
+        -- the original written in the planner plus additions written during an
+        -- intervention (ticket_id = that ticket). One live set, shown and
+        -- edited on every round ticket of the member and in the planner; never
+        -- copied onto a ticket. Internal only. Soft delete; every write keeps
+        -- a revision (who, when, the text). Searchable (owner decision 4b).
+        CREATE TABLE IF NOT EXISTS maintenance_member_notes (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            member_id           UUID        NOT NULL REFERENCES maintenance_plan_members(id) ON DELETE CASCADE,
+            body_html           TEXT        NOT NULL,
+            ticket_id           UUID        NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            created_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            updated_utc         TIMESTAMPTZ NULL,
+            is_deleted          BOOLEAN     NOT NULL DEFAULT FALSE,
+            search_text         TEXT        GENERATED ALWAYS AS (lower(regexp_replace(body_html, '<[^>]*>', ' ', 'g'))) STORED
+        );
+        CREATE INDEX IF NOT EXISTS ix_maintenance_member_notes_member ON maintenance_member_notes (member_id, created_utc);
+        CREATE INDEX IF NOT EXISTS ix_maintenance_member_notes_search_trgm
+            ON maintenance_member_notes USING GIN (search_text gin_trgm_ops) WHERE NOT is_deleted;
+        CREATE TABLE IF NOT EXISTS maintenance_member_note_revisions (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            note_id             UUID        NOT NULL REFERENCES maintenance_member_notes(id) ON DELETE CASCADE,
+            action              TEXT        NOT NULL,
+            body_html           TEXT        NOT NULL,
+            ticket_id           UUID        NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            by_user_id          UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_maintenance_note_revisions_action CHECK (action IN ('Added','Edited','Deleted'))
+        );
+        CREATE INDEX IF NOT EXISTS ix_maintenance_member_note_revisions_note ON maintenance_member_note_revisions (note_id, created_utc);
+
+        ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS maintenance_round_id UUID NULL REFERENCES maintenance_rounds(id) ON DELETE SET NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_campaigns_maintenance_round
+            ON campaigns (maintenance_round_id) WHERE maintenance_round_id IS NOT NULL;
+
+        ALTER TABLE campaign_tickets DROP CONSTRAINT IF EXISTS chk_campaign_tickets_source;
+        ALTER TABLE campaign_tickets ADD CONSTRAINT chk_campaign_tickets_source
+            CHECK (source IN ('Selection','Project','Maintenance'));
         """;
 
     private readonly NpgsqlDataSource _dataSource;

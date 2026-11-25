@@ -50,6 +50,12 @@ public static class SearchSourceKind
     // v0.1.59 - TD SYNNEX orders (Order Management); hit -> the dashboard
     // with the order opened. order_management_enabled holders only.
     public const string TdSynnexOrders = "tdsynnex-orders";
+    // v0.1.67 - Campaigns (bulk mail); hit -> the campaign page.
+    // campaigns_enabled holders only.
+    public const string Campaigns = "campaigns";
+    // v0.1.67 - maintenance plans (planner); hit -> the planner with the
+    // plan opened. campaigns_enabled holders only.
+    public const string MaintenancePlans = "maintenance-plans";
 }
 
 /// Per-user feature flags that gate availability of certain search sources.
@@ -88,6 +94,9 @@ public static class SearchFeature
 
     /// v0.1.59 — gates the TD SYNNEX orders source (order_management_enabled).
     public const string OrderManagement = "orderManagement";
+
+    /// v0.1.67 — gates the Campaigns source (campaigns_enabled).
+    public const string Campaigns = "campaigns";
 }
 
 /// Sort order for the full-page search. Parsed from the `sort` query param

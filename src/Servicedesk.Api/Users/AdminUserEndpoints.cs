@@ -415,33 +415,9 @@ public static class AdminUserEndpoints
 
     public sealed record UpdateKbFlagRequest(bool Enabled);
 
-    public sealed record UpdateFeatureFlagsRequest(
-        bool? TimesheetEnabled,
-        bool? TimesheetManager,
-        bool? IsIsoMgm,
-        bool? IsIsoDpo,
-        bool? KbEnabled,
-        bool? SearchEnabled,
-        bool? ActivityFeedEnabled,
-        bool? AssetsEnabled,
-        bool? AdsolutTimesheetEnabled,
-        bool? TimesheetBackofficeEnabled,
-        bool? BackofficeFormsEnabled,
-        bool? AdsolutOrdersEnabled,
-        bool? StatisticsRead,
-        bool? StatisticsWrite,
-        bool? ContractsEnabled,
-        bool? FeedbackEnabled,
-        bool? FeedbackOwnOnly,
-        bool? InsightsEnabled = null,
-        bool? OrderManagementEnabled = null,
-        bool? CalendarPlanningEnabled = null,
-        string? CalendarId = null,
-        string? CalendarName = null);
-
     private static async Task<IResult> UpdateFeatureFlags(
         Guid id,
-        [FromBody] UpdateFeatureFlagsRequest request,
+        [FromBody] FeatureFlagsUpdate update,
         HttpContext httpContext,
         IUserAdminService admin,
         IAuditLogger audit,
@@ -450,34 +426,10 @@ public static class AdminUserEndpoints
         var adminId = ActorContext.TryGetUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
-        if (request.CalendarId is { Length: > 1000 })
+        if (update.CalendarId is { Length: > 1000 })
             return Results.BadRequest(new { error = "Calendar id is too long." });
-        if (request.CalendarName is { Length: > 200 })
+        if (update.CalendarName is { Length: > 200 })
             return Results.BadRequest(new { error = "Calendar name is too long." });
-
-        var update = new FeatureFlagsUpdate(
-            request.TimesheetEnabled,
-            request.TimesheetManager,
-            request.IsIsoMgm,
-            request.IsIsoDpo,
-            request.KbEnabled,
-            request.SearchEnabled,
-            request.ActivityFeedEnabled,
-            request.AssetsEnabled,
-            request.AdsolutTimesheetEnabled,
-            request.TimesheetBackofficeEnabled,
-            request.BackofficeFormsEnabled,
-            request.AdsolutOrdersEnabled,
-            request.StatisticsRead,
-            request.StatisticsWrite,
-            request.ContractsEnabled,
-            request.FeedbackEnabled,
-            request.FeedbackOwnOnly,
-            request.InsightsEnabled,
-            request.OrderManagementEnabled,
-            request.CalendarPlanningEnabled,
-            request.CalendarId,
-            request.CalendarName);
 
         var result = await admin.UpdateFeatureFlagsAsync(id, update, adminId.Value, ct);
         return result switch
@@ -509,6 +461,7 @@ public static class AdminUserEndpoints
                         insights_enabled = updated.Row.InsightsEnabled,
                         order_management_enabled = updated.Row.OrderManagementEnabled,
                         calendar_planning_enabled = updated.Row.CalendarPlanningEnabled,
+                        campaigns_enabled = updated.Row.CampaignsEnabled,
                         calendar_id = updated.Row.CalendarId,
                         calendar_name = updated.Row.CalendarName,
                     },

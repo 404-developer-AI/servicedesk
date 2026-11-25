@@ -51,6 +51,19 @@ public sealed record TriggerChangeSet(
         return referencedFields.Contains(TriggerFieldKeys.FormSaveEvent) == FormEvent.IsSavePass;
     }
 
+    /// Set only on a note-reply pass: an agent replied to an internal note or
+    /// call. A reply is not a ticket_events row, so this stands in as the
+    /// triggering article — an internal Note by the replier with the reply's
+    /// text — and matches the same article conditions a new note does. Its
+    /// <see cref="Domain.Tickets.TicketEvent.Id"/> is the root note, so the run
+    /// row and a notify bell point there. Reply text never leaves the server:
+    /// repost-as-public no-ops and <c>article.body_text</c> renders empty.
+    /// Likes and reply edits never start a pass.
+    public Domain.Tickets.TicketEvent? NoteReplyArticle { get; init; }
+
+    public static TriggerChangeSet ForNoteReply(Domain.Tickets.TicketEvent article)
+        => new(new HashSet<string>(), ArticleAdded: true) { NoteReplyArticle = article };
+
     public static TriggerChangeSet ForOrder(TriggerOrderEvent evt)
     {
         var changed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { TriggerFieldKeys.OrderChange };

@@ -15,6 +15,8 @@ public enum UserFeature
     OrderManagement,
     /// v0.1.61 — "Plan in calendars" (Outlook planning from forms).
     CalendarPlanning,
+    /// v0.1.67 — Campaigns (bulk mail through the campaign outbox).
+    Campaigns,
 }
 
 /// A per-user feature flag is an access boundary, not UI visibility: the
@@ -56,6 +58,7 @@ public static class FeatureFlagFilter
         UserFeature.Timesheet => (await users.GetTimesheetFlagsAsync(userId, ct)).Enabled,
         UserFeature.OrderManagement => await users.GetOrderManagementEnabledAsync(userId, ct),
         UserFeature.CalendarPlanning => await users.GetCalendarPlanningEnabledAsync(userId, ct),
+        UserFeature.Campaigns => await users.GetCampaignsEnabledAsync(userId, ct),
         _ => false,
     };
 }
